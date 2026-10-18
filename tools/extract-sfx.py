@@ -4,7 +4,7 @@ Every extracted bank (the game's and the shared system bank) is merged into one 
 waves and programs; each sound's notes point at programs of the bank its record names.
 Random RSEQ parameters are retained as ranges for the browser adapter.
 """
-import json,struct
+import collections,json,struct
 from nintendo_audio import wave_files,decode_wave,write_wav,u32
 from paths import DOL,assets,game
 out=assets(game())
@@ -23,7 +23,8 @@ used=set()
 # Sequences that change tempo after other tracks may have started (not modelled: none expected).
 late_tempo=set()
 def trace(seq,start,bank_programs):
- notes=[];queue=[(start,0)];tracks=0;variables={}
+ # Sequence variables start at -1 (nw4r's default); nothing the port runs sets them.
+ notes=[];queue=[(start,0)];tracks=0;variables=collections.defaultdict(lambda:-1)
  # Tempo and timebase belong to the sequence player, not to a track: tracks opened by the
  # first one (echo layers, for example) run at the tempo it set.
  player={'tempo':120,'timebase':48}
@@ -51,15 +52,28 @@ def trace(seq,start,bank_programs):
      lo=int.from_bytes(seq[pc:pc+2],'big',signed=True);hi=int.from_bytes(seq[pc+2:pc+4],'big',signed=True)
      for _ in range(4):byte()
      random=[lo,hi];return (lo+hi)//2
-    if argkind==0xa1:return variables.get(byte(),0)
+    if argkind==0xa1:return variables[byte()]
     return vlq() if kind=='vlq' else ((byte()<<8)|byte()) if kind=='short' else byte()
+   # A conditional command (0xa2) whose condition is false is read past and not run.
+   if not execute:
+    if op<0x80:byte();arg('vlq')
+    elif op in (0x80,0x81):arg('vlq')
+    elif op==0x88:byte();addr()
+    elif op in (0x89,0x8a):addr()
+    elif 0xb0<=op<=0xdf:
+     arg()
+     if arg2:arg('short')
+    elif 0xe0<=op<=0xe3 or op==0xfe:arg('short')
+    elif op==0xf0:byte();byte();arg('short')
+    elif op not in (0xfb,0xfc,0xfd,0xff):raise ValueError(f'unhandled conditional {op:x} at {at:x}')
+    continue
    if op<0x80:
     velocity=byte();length=arg('vlq');p=programs[bank_programs+state['program']];rate=2**((op+state['transpose']-p['key']+state['bend']/128*state['bendRange'])/12)*p['pitch']
     duration=length*60/state['tempo']/state['timebase'] if length else waves[p['wave']]['samples']/waves[p['wave']]['rate']/rate
     notes.append(dict(state,program=bank_programs+state['program'],time=t,note=op,velocity=velocity,length=length,duration=duration,random=pending.copy()))
     if state['noteWait']:t+=duration
    elif op==0xf0:
-    sub=byte();v=byte();x=arg('short');old=variables.get(v,0)
+    sub=byte();v=byte();x=arg('short');old=variables[v]
     if execute:
      if sub==0x80:variables[v]=x
      elif sub==0x81:variables[v]=old+x
