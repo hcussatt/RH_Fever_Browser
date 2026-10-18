@@ -4,7 +4,11 @@ Standalone browser versions of Rhythm Heaven Fever minigames, built from the
 community decompilation and from your own copy of the game. The long-term goal
 is a real-time multiplayer mod.
 
-Playable today: **Hole in One**, **Tap Trial** and **Love Rap**.
+> **AI disclosure.** All of the code in this repository was written by Claude
+> (Anthropic) through Claude Code. A human tests every major build. This project
+> is primarily a work of AI.
+
+Playable today: **Hole in One**, **Tap Trial**, **Love Rap** and **Sneaky Spirits**.
 
 ## No game files in this repository
 
