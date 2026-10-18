@@ -16,7 +16,9 @@ def read(a,n):
         if start<=a and a+n<=start+size:return blob[off+a-start:off+a-start+n]
     raise ValueError(hex(a))
 
-SHARED={'GameUtil/TimeRatio.cpp','GameUtil/InputChecker.cpp','Game/ExChecker.cpp','GameUtil/CellAnim.cpp','GameUtil/Random.cpp'}
+SHARED={'GameUtil/TickFlow.cpp','GameUtil/TimeRatio.cpp','GameUtil/InputChecker.cpp','Game/ExChecker.cpp','GameUtil/CellAnim.cpp','GameUtil/Random.cpp'}
+# Single pure functions outside those units that the chart interpreter needs.
+SHARED_FUNCTIONS={'calc_initial_wave_tempo__13CSoundManagerFP8WaveInfo'}
 # Each game's manifest names the original units whose functions are translated.
 units=set(manifest(GAME)['wii']['units'])|SHARED
 ranges=[];unit=None
@@ -30,7 +32,7 @@ for line in (DECOMP/'config/SOME01/symbols.txt').read_text().splitlines():
     if not m:continue
     name,a=m[1],int(m[2],0);symbols[name]=a
     size=re.search(r'type:function size:(0x\w+)',line)
-    if size and any(lo<=a<hi for lo,hi,_ in ranges):funcs.append((a,int(size[1],0),name))
+    if size and (any(lo<=a<hi for lo,hi,_ in ranges) or name in SHARED_FUNCTIONS):funcs.append((a,int(size[1],0),name))
 # Disassemble the DOL's text sections directly. Gekko mode is required:
 # default binutils reads paired-single instructions as unrelated VSX ones.
 objdump=os.environ.get('RHF_OBJDUMP','powerpc-eabi-objdump')
@@ -95,9 +97,11 @@ def generate(a,size,name):
         elif m in ['lwzx','lhax','lhzx','lbzx','stwx','stfsx']:
             addr=f'({q[1]}+{q[2]})'
             c=f'{q[0]}='+{'lwzx':'rd32','lhax':'rds16','lhzx':'rd16','lbzx':'rd8'}.get(m,'rd32')+f'({addr});' if m in ['lwzx','lhax','lhzx','lbzx'] else f'{"wrf32" if m=="stfsx" else "wr32"}({addr},{q[0]});'
+        elif m=='lwzux':
+            c=f'{{uint32_t address={q[1]}+{q[2]};{q[0]}=rd32(address);{q[1]}=address;}}'
         elif m in ['li','lis','mr','fmr']:
             c=f'{q[0]}={q[1]}' + ('*65536u;' if m=='lis' else ';')
-        elif m in ['addi','subi','addis','add','subf','mulli','mullw','or','xor','xoris']:
+        elif m in ['addi','subi','addis','add','subf','mulli','mullw','or','xor','xoris','and','andc','nor']:
             if m=='addis':v=f'{q[1]}+({q[2]}*65536u)'
             elif m in ['addi','add']:v=f'{q[1]}+({q[2]})'
             elif m=='subi':v=f'{q[1]}-({q[2]})'
@@ -106,6 +110,9 @@ def generate(a,size,name):
             elif m=='or':v=f'{q[1]}|{q[2]}'
             elif m=='xor':v=f'{q[1]}^{q[2]}'
             elif m=='xoris':v=f'{q[1]}^({q[2]}*65536u)'
+            elif m=='and':v=f'{q[1]}&{q[2]}'
+            elif m=='andc':v=f'{q[1]}&~{q[2]}'
+            elif m=='nor':v=f'~({q[1]}|{q[2]})'
             c=f'{q[0]}={v};'
         elif m in ['neg','cntlzw','extsh','extsb']:
             v={'neg':f'-{q[1]}','cntlzw':f'({q[1]}?__builtin_clz({q[1]}):32)','extsh':f'(int16_t){q[1]}','extsb':f'(int8_t){q[1]}'}[m]
@@ -125,6 +132,13 @@ def generate(a,size,name):
                     i=(i+1)%32
                 v=f'rotl({q[1]},{q[2]})&{hex(mask)}u'
             c+=f'{q[0]}={v};'
+        elif m=='rlwimi':
+            mb,me=int(p[3],0),int(p[4],0);mask=0;i=mb
+            while True:
+                mask|=1<<(31-i)
+                if i==me:break
+                i=(i+1)%32
+            c=f'{q[0]}=(rotl({q[1]},{q[2]})&{hex(mask)}u)|({q[0]}&{hex(~mask&0xffffffff)}u);'
         elif m in ['mulhw','mulhwu']:
             cast='int64_t)(int32_t' if m=='mulhw' else 'uint64_t)(uint32_t'
             c=f'{q[0]}=((({cast}){q[1]})*(({cast}){q[2]}))>>32;'

@@ -7,9 +7,9 @@ import {loadGame} from '../dist/engine/runtime.mjs';
 const id=process.argv[2];
 const g=await loadGame(new URL(`../dist/${id}/`,import.meta.url),readFile);
 console.log('init',g.core._pool_count(),g.drain());
-const delay=Number(process.argv.find(x=>x.startsWith('--offset='))?.split('=')[1]||0);let frame=0;const auto=process.argv.includes('--auto');const targets=g.timeline.events.filter(e=>e.op===512).map(e=>e.tick+48+delay);let ti=0;let judgments=[];const sounds=[];
+const delay=Number(process.argv.find(x=>x.startsWith('--offset='))?.split('=')[1]||0);let frame=0;const auto=process.argv.includes('--auto');const targets=g.timeline.commands.filter(c=>c.op===512).map(c=>c.tick+48+delay);let ti=0;let judgments=[];const sounds=[];
 try {for(;frame<Math.ceil(g.secondsAtTick(g.timeline.endTick)*60);frame++){const tick=g.tickAtSeconds((frame+1)/60);const press=auto&&ti<targets.length&&tick>=targets[ti];if(press)ti++;judgments.push(...g.step(tick,press).filter(e=>e[0]===2));for(const sid of g.sounds)sounds.push({sid,time:(frame+1)/60});g.sounds.length=0;if(frame%600===0)console.log('frame',frame,'tick',g.tick,'actors',g.core._pool_count(),'stats',g.stats());}}
-catch(e){console.error('failed frame',frame,'tick',g.tick,'event',g.eventIndex,g.timeline.events[g.eventIndex-1]);throw e;}
+catch(e){console.error('failed frame',frame,'tick',g.tick);throw e;}
 console.log('judgments',judgments);
 console.log('done',g.stats());
 

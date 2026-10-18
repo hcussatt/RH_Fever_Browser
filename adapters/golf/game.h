@@ -5,7 +5,7 @@
 #define GAME_SCENE_UPDATE 0x80066338  // scene _onCalc
 #define GAME_FLOW_COMMAND 0x80065134  // MyFlow chart command dispatcher
 #define GAME_WRONG_INPUT 0x80065768   // reaction to a press with no cue
-#define GAME_AUX_SCRIPTS 0            // aux scripts run one command
+#define GAME_FLOW_CREATE 0x8006508c   // MyFlow::create(chart, rest)
 #define GAME_END_CHECKER_ON_HIT 0
 #define GAME_CHART_TEMPO 0            // fixed tempo; no set_tempo export
 #define GAME_CALLS

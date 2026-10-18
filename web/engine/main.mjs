@@ -35,7 +35,7 @@ const pollGamepad=bindControls(canvas,{press,
 async function start(){
  const source=audio.createBufferSource();source.buffer=music;const gain=audio.createGain();gain.gain.value=.55;source.connect(gain).connect(audio.destination);startTime=audio.currentTime+.1;source.start(startTime);
  // Chart cues are scheduled on the audio thread before playback starts.
- for(const e of g.timeline.events)if(e.op===0x23)sfx.play(e.args[0],startTime+g.secondsAtTick(e.tick));g.options.chartAudioScheduled=true;g.sounds.length=0;running=true;window.rhf.source=source;requestAnimationFrame(loop);
+ for(const s of g.timeline.sounds)sfx.play(s.sound,startTime+g.secondsAtTick(s.tick));g.options.chartAudioScheduled=true;g.sounds.length=0;running=true;window.rhf.source=source;requestAnimationFrame(loop);
 }
 play.onclick=async()=>{
  if(play.disabled)return;play.disabled=true;
