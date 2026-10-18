@@ -20,7 +20,8 @@ try{
  window.rhf={g,renderer,audio,sfx,inputs:input.presses,metrics,heardTime,stats:g.stats,result:null,get frame(){return frame;}};
  play.disabled=false;play.textContent='Play';
 }catch(e){fail(e);}
-function soundEvents(){for(const s of g.sounds)sfx.play(s.sound,undefined,s);g.sounds.length=0;}
+// Live sounds play at their chart tick on the audio clock, like the pre-scheduled ones.
+function soundEvents(){for(const s of g.sounds)sfx.play(s.sound,s.tick==null?undefined:startTime+g.secondsAtTick(s.tick),s);g.sounds.length=0;}
 // Time of the audio the player is hearing now, on the AudioContext clock.
 function heardTime(){
  const t=audio.getOutputTimestamp?.();

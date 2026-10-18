@@ -76,8 +76,10 @@ export async function loadGame(gameUrl,load=fetchBytes,{timeline:withTimeline=tr
    // Tuning (10) applies to the sound played just before it.
    if(e[0]===10){if(last)last[['volume','pitch','pan'][e[1]]]=rest(e[2]);continue;}
    last=null;
-   if(e[0]===1||e[0]===5){last={sound:e[1]};if(e[0]===1||!options.chartAudioScheduled||!prescheduled(e[1],tick+rest(e[2])))sounds.push(last);}
-   if(e[0]===5)chartSounds.push(Object.assign(last,{tick:tick+rest(e[2])}));
+   // The chart tempo when it plays: listed sequences are stretched to it (see audio.mjs).
+   // Its chart tick: a sound started late (a hit's response flow starts in the past) keeps to the beat.
+   if(e[0]===1||e[0]===5){const at=tick+rest(e[2]);last={sound:e[1],tick:at,tempo:clock.tempoAtTick(at)};if(e[0]===1||!options.chartAudioScheduled||!prescheduled(e[1],at))sounds.push(last);}
+   if(e[0]===5)chartSounds.push(last);
    else if(e[0]===8)commands.push({tick:tick+rest(e[2]),op:e[1]});
    else if(e[0]===7){ended=true;endTick=tick+rest(e[2]);}
    else if(e[0]===11)layoutEvents.push({frame:steps,action:e[1],value:e[2]});
