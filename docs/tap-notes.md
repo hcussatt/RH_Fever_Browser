@@ -16,7 +16,7 @@ Validation:
 - Same report: 110-second stereo 48 kHz offline audio render, peak .69546, RMS .10211, zero clipped/nonfinite samples, 313 sound events / 830 voices. This checks digital output, not physical device dropouts or perceptual parity.
 - `evidence/tap-keyboard-check.json`: four timed synthetic browser key presses alternating Space and X produced four hits. Receipt-to-simulation delay 9.94–21.83 ms; this is not click-to-photon latency. Physical gamepad and Safari testing remain outstanding.
 
-Audio uses the same provisional Web Audio mixer/envelope adapter as golf. Exact NW4R/DSP mixing, release curves, resampling, effects and stereo behavior are not certified. Canvas follows the original widescreen projection (+/-416 x +/-228), with original sprite geometry; GX filtering, matrix precision and TEV effects remain unqualified. Host reciprocal-square-root approximation and platform/layout stubs retain the bridge limitations documented in `research/golf/RECOMPILATION.md`. Perfect failure guards are adapted, but full Perfect attempt UI/lifecycle is absent.
+Audio uses the same mixer as golf: original note envelopes and volume rules (`docs/engine.md`, Audio). Resampling, effects and stereo behavior are not certified. Canvas follows the original widescreen projection (+/-416 x +/-228), with original sprite geometry; GX filtering, matrix precision and TEV effects remain unqualified. Host reciprocal-square-root approximation and platform/layout stubs retain the bridge limitations documented in `research/golf/RECOMPILATION.md`. Perfect failure guards are adapted, but full Perfect attempt UI/lifecycle is absent.
 
 Reproduce:
 

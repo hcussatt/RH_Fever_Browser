@@ -16,9 +16,9 @@ GAME = game()
 SOURCE = require(source(GAME))
 OUT = assets(GAME)
 
-# Banks, sound IDs and BRSAR groups chosen by the original scene, from the manifest.
+# Cell-animation banks come from the manifest; sounds come from the chart (tools/chart-index.py).
 PROFILE = manifest(GAME)['wii']
-SOUND_IDS = [i for first, last in PROFILE['sounds'] for i in range(first, last+1)]
+CHART = json.loads(require(OUT/'original-chart.json').read_text())
 u16 = lambda b,o=0: struct.unpack_from('>H', b,o)[0]
 u32 = lambda b,o=0: struct.unpack_from('>I', b,o)[0]
 
@@ -29,7 +29,18 @@ def textures():
     for i in range(u32(data,4)):
         header = u32(data,u32(data,8)+i*8)
         h,w,fmt,start = struct.unpack_from('>HHII',data,header)
-        assert fmt == 5, 'Expected RGB5A3 textures'
+        assert fmt in (5,6), f'Unsupported texture format {fmt}'
+        name=f'texture-{i}.png'
+        if fmt == 6:
+            # RGBA8: 4x4 tiles of 64 bytes, alpha/red pairs then green/blue pairs.
+            tiles = np.frombuffer(data,dtype=np.uint8,count=w*h*4,offset=start).reshape(h//4,w//4,2,16,2)
+            rgba = np.empty((h//4,w//4,16,4),dtype=np.uint8)
+            rgba[...,3],rgba[...,0] = tiles[:,:,0,:,0],tiles[:,:,0,:,1]
+            rgba[...,1],rgba[...,2] = tiles[:,:,1,:,0],tiles[:,:,1,:,1]
+            rgba = rgba.reshape(h//4,w//4,4,4,4).transpose(0,2,1,3,4).reshape(h,w,4)
+            Image.fromarray(rgba,'RGBA').save(OUT/name)
+            paths.append(name)
+            continue
         words = np.frombuffer(data,dtype='>u2',count=w*h,offset=start).astype(np.uint16)
         words = words.reshape(h//4,w//4,4,4).transpose(0,2,1,3).reshape(h,w)
         opaque = (words&0x8000)!=0
@@ -39,7 +50,6 @@ def textures():
             rgba[:,:,ch] = np.where(opaque,(v<<3)|(v>>2),((words>>[8,4,0][ch])&15)*17)
         a=(words>>12)&7
         rgba[:,:,3] = np.where(opaque,255,(a<<5)|(a<<2)|(a>>1))
-        name=f'texture-{i}.png'
         Image.fromarray(rgba,'RGBA').save(OUT/name)
         paths.append(name)
     return paths
@@ -71,32 +81,44 @@ def bank(name):
     labels={n:int(i) for n,i in re.findall(r'#define\s+(\w+)\s+(\d+)',(SOURCE/('rcad_'+name+'_labels.h')).read_text(encoding='cp932'))}
     return {'texture':texture,'cells':cells,'animations':animations,'labels':labels}
 
-def audio_groups(sound_ids=None,group_ids=None):
+def audio_groups():
+    """The sound groups the game loads with its main chart, minus groups holding only other
+    music (the tutorial's); every sound stored in those groups; and the chart's backing track."""
     b=require(BRSAR).read_bytes();base=u32(b,0x18)+8
     table=lambda off:base+u32(b,base+off+4)
     ref=lambda t,i:base+u32(b,t+8+i*8)
     sounds=table(0);groups=table(0x20)
-    records={}
-    names={int(i):n for n,i in re.findall(r'unsigned int (\w+) = (\d+);',(DECOMP/'build_default/SOME01/include/rev_tengoku.rsid').read_text()) if n.startswith(('SE_','WSD_'))}
-    sound_ids=sound_ids or [35]+list(range(758,798))
-    for sid in sound_ids:
-        s=ref(sounds,sid);sub=base+u32(b,s+0x1c)
-        records[sid]={'name':names.get(sid),'fileId':u32(b,s+4),'type':b[s+22],'volume':b[s+20],'player':u32(b,s+8),'data':list(struct.unpack_from('>4I',b,sub))}
-    # Golf backing music and the original golf sound-effect bank/sequence group.
-    files={}
-    for gi in (group_ids or [98,19]):
+    def items(gi):
         g=ref(groups,gi);items=base+u32(b,g+0x24)
-        for i in range(u32(b,items)):
-            item=ref(items,i);fid,off,size,woff,wsize=struct.unpack_from('>5I',b,item)
+        return g,[ref(items,i) for i in range(u32(b,items))]
+    file_of=lambda sid:u32(b,ref(sounds,sid)+4)
+    music_file=file_of(CHART['musicSound'])
+    holds=lambda gi,fid:any(u32(b,item)==fid for item in items(gi)[1])
+    loads=[l for l in CHART['groupLoads'] if any(holds(gi,music_file) for gi in l)]
+    if not loads:raise SystemExit(f'{GAME}: no sound group load includes the music (file {music_file})')
+    files={}
+    for gi in dict.fromkeys(gi for l in loads for gi in l):
+        g,group_items=items(gi);found={}
+        for item in group_items:
+            fid,off,size,woff,wsize=struct.unpack_from('>5I',b,item)
             metadata=b[u32(b,g+16)+off:u32(b,g+16)+off+size]
-            wave_data=b[u32(b,g+24)+woff:u32(b,g+24)+woff+wsize]
-            files[fid]={'magic':metadata[:4].decode('ascii'),'metadata':f'file-{fid}.bin','waves':f'wave-{fid}.bin' if wsize else None}
+            found[fid]=(metadata,b[u32(b,g+24)+woff:u32(b,g+24)+woff+wsize])
+        if music_file not in found and not any(m[:4] in (b'RBNK',b'RSEQ') for m,_ in found.values()):
+            continue
+        for fid,(metadata,wave_data) in found.items():
+            files[fid]={'magic':metadata[:4].decode('ascii'),'metadata':f'file-{fid}.bin','waves':f'wave-{fid}.bin' if wave_data else None}
             (OUT/f'file-{fid}.bin').write_bytes(metadata)
-            if wsize:(OUT/f'wave-{fid}.bin').write_bytes(wave_data)
-    return {'sounds':records,'files':files}
+            if wave_data:(OUT/f'wave-{fid}.bin').write_bytes(wave_data)
+    names={int(i):n for n,i in re.findall(r'unsigned int (\w+) = (\d+);',(DECOMP/'build_default/SOME01/include/rev_tengoku.rsid').read_text()) if n.startswith(('SE_','WSD_'))}
+    records={}
+    for sid in range(u32(b,sounds)):
+        if file_of(sid) not in files:continue
+        s=ref(sounds,sid);sub=base+u32(b,s+0x1c)
+        records[sid]={'name':names.get(sid),'fileId':file_of(sid),'type':b[s+22],'volume':b[s+20],'player':u32(b,s+8),'data':list(struct.unpack_from('>4I',b,sub))}
+    return {'sounds':records,'files':files,'musicFile':music_file}
 
 if __name__=='__main__':
-    out={'textures':textures(),'banks':{n:bank(n) for n in PROFILE['banks']},'audio':audio_groups(SOUND_IDS,PROFILE['soundGroups'])}
+    out={'textures':textures(),'banks':{n:bank(n) for n in PROFILE['banks']},'audio':audio_groups()}
     out['provenance']={'game':'Rhythm Heaven Fever SOME01','dolSha1':DOL_SHA1}
     (OUT/'original-assets.json').write_text(json.dumps(out,separators=(',',':'))+'\n')
     print(json.dumps({'banks':{n:{'cells':len(b['cells']),'animations':len(b['animations'])} for n,b in out['banks'].items()},'textures':out['textures'],'audioFiles':out['audio']['files']},indent=2))

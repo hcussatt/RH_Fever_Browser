@@ -25,9 +25,9 @@ static uint32_t hits,misses,through,stray,perfect_failed,score_sum,score_count,w
 // Chart player: the original CTickFlow interpreter (translated with the game)
 // runs every chart script live. These stand in for CTickFlowManager.
 static uint32_t chart_flows[256],chart_flow_count,chart_rerun,chart_instances,current_flow,music_sound=0xffffffff,music_started,song_ended;
-static uint32_t chart_sound,tf_values[16],sound_handle;
+static uint32_t chart_sound,tf_values[16],sound_handle,envelope;
 static float frame_ticks; // nominal ticks per 60 Hz frame at the chart's current tempo
-static float delta_ticks,current_tempo=GAME_DEFAULT_TEMPO,wrong_timer;
+static float delta_ticks,current_tempo,wrong_timer;
 typedef struct {uint32_t count,animations,cells;} Bank;
 static Bank banks[256];
 EM_JS(void,panic_js,(uint32_t address,uint32_t kind,uint32_t pc,uint32_t stack,uint32_t depth),{console.error(Array.from(HEAPU32.subarray(stack/4,stack/4+depth)).map(x=>x.toString(16)));throw new Error('Original code '+kind+' at 0x'+address.toString(16)+' after 0x'+pc.toString(16));});
@@ -142,23 +142,26 @@ static void call(uint32_t address){
   case 0x801dbe04:case 0x801dbe14:r[3]=1024;break;
   case 0x801dc0d4:break; // Renderer sorts the original layer values.
   case 0x801e2698:case 0x801e3ea8:f[1].d=delta_ticks;break;
-#if GAME_CHART_TEMPO
   case 0x801e26b4:f[1].d=(float)(f[1].d/((current_tempo*48.0f)/60.0f));break;
-#endif
   case 0x801e2ca8:f[1].d=current_tempo;break;
   case 0x801e4178:r[3]=1;break;
-  case 0x801e9158:if(checker_count>=128)panic(checker_count,7);checkers[checker_count++]=r[4];break;
+  case 0x801e9158:if(checker_count>=128)panic(checker_count,7);checkers[checker_count++]=r[4];emit(9,r[4],0);break; // new input checker (9): the dry run reads its target tick
   case 0x801e9488:score_sum+=(r[4]?r[4]:wrong_count*5);score_count++;wrong_count=0;break;
   case 0x801eaf2c:checkpoint(r[4],r[5]);break;
   case 0x801e9d68:r[3]=0;break; // Single-controller statistics channel.
   case 0x801e4f60:if(chart_sound)emit(5,r[4],rd32(current_flow+0x1c));else emit(1,r[4],0);break; // Chart sounds (5, with the flow's rest) are scheduled ahead by the browser.
-  case 0x801e60e0:case 0x801e62b8:case 0x801e65f4:case 0x801e676c:case 0x801e68e0:case 0x801e6a54:case 0x801e6bc8:break; // Sound tuning: not yet modelled.
+  // Volume, pitch and pan set on a sound just played (10: 0 volume, 1 pitch, 2 pan, as float bits).
+  case 0x801e65f4:case 0x801e676c:case 0x801e68e0:{union{float v;uint32_t u;}x={.v=f[1].d};emit(10,address==0x801e65f4?0:address==0x801e676c?1:2,x.u);break;}
+  case 0x801e60e0:case 0x801e62b8:case 0x801e6a54:case 0x801e6bc8:break; // Stop and tempo tuning: not yet modelled.
   case 0x80009abc:case 0x80009e98:{uint32_t reason=address==0x80009abc?1:r[3];
     if(address==0x80009abc)wr8(0x803201a0,1);
     if((rd32(0x803201bc)&reason)&&rd8(0x803201b8)&&rd8(0x803201b9)&&!rd8(0x803201ba)){
       wr8(0x803201ba,1);perfect_failed=reason;emit(3,reason,0);
     }break;}
   case 0x80009a9c:case 0x80009e58:break; // Input visualizer / Perfect hit icon.
+  case 0x801a7a20:case 0x801a7a90:{ // nw4r::math::SinFIdx / CosFIdx: 256-step table at 0x802dfe70 with deltas
+    float x=f[1].d,a=fabsf(x);while(a>65536.0f)a-=65536.0f;uint32_t i=(uint32_t)a&0xffff;float frac=a-(float)i;uint32_t e=0x802dfe70+(i&0xff)*16;
+    if(address==0x801a7a20){float v=rdf32(e)+frac*rdf32(e+8);f[1].d=x<0.0f?-v:v;}else f[1].d=rdf32(e+4)+frac*rdf32(e+12);break;}
   case 0x801a7990:f[1].d=(float)(1.0/sqrt(f[1].d));break; // TODO: qualify original FrSqrt approximation.
   case 0x801a7850:f[1].d=expf(f[1].d);break;
   case 0x801a78f0:f[1].d=logf(f[1].d);break;
@@ -193,6 +196,7 @@ static void call(uint32_t address){
   // Input-check settings (forced inputs, offsets, input recording) and button cooldown: normal play.
   case 0x801e923c:case 0x801e9c30:case 0x801e9c38:case 0x801e9c40:case 0x801e9d58:case 0x801e9d80:case 0x801e9d84:case 0x801d5500:break;
   case 0x8010a084:r[3]=0;break; // sprintf (only for input recording file names)
+  case 0x80039e00:case 0x8003a1d0:break; // Balloon text placement is presentation-only.
   case 0x801e73d4:{uint32_t found=0;for(uint32_t i=0;i<162&&!found;i++)if(rd16(0x802e8210+i*8)==(r[4]&0xffff))found=0x802e8210+i*8;r[3]=found;break;} // CSoundManager::find_wave_info over the DOL's wave table
   // Layout transitions (frame decoration); not yet ported.
   case 0x8007263c:case 0x800726ac:case 0x8007271c:case 0x80072794:case 0x8007280c:break;
@@ -225,7 +229,7 @@ EMSCRIPTEN_KEEPALIVE uint32_t allocate(uint32_t size){return alloc(size);}
 EMSCRIPTEN_KEEPALIVE void install_bank(uint32_t id,uint32_t count,uint32_t animations,uint32_t cells){banks[id]=(Bank){count,animations,cells};}
 EMSCRIPTEN_KEEPALIVE void reset_runtime(void){
   memset(ram,0,sizeof(ram));memset(r,0,sizeof(r));memset(f,0,sizeof(f));memset(cr,0,sizeof(cr));memset(banks,0,sizeof(banks));
-  memset(tf_values,0,sizeof(tf_values));sound_handle=0;
+  memset(tf_values,0,sizeof(tf_values));sound_handle=envelope=0;
   chart_flow_count=chart_rerun=chart_instances=current_flow=music_started=song_ended=0;music_sound=0xffffffff;frame_ticks=0;heap=0x80500000;call_depth=actor_count=checker_count=event_count=frame_number=layout_count=0;
   hits=misses=through=stray=perfect_failed=score_sum=score_count=wrong_count=0;wrong_timer=0;
   memset(canvas_timing,0,sizeof(canvas_timing));base_canvas=0;
@@ -249,9 +253,8 @@ EMSCRIPTEN_KEEPALIVE void initialize_scene(void){
 }
 EMSCRIPTEN_KEEPALIVE uint32_t scene_address(void){return scene;}
 EMSCRIPTEN_KEEPALIVE uint32_t current_key(uint32_t actor){return key(actor);}
-#if GAME_CHART_TEMPO
+// The backing track's tempo at the current tick (the browser clock reads it from the chart's tempo table).
 EMSCRIPTEN_KEEPALIVE void set_tempo(float tempo){current_tempo=tempo;}
-#endif
 EMSCRIPTEN_KEEPALIVE void set_delta(float ticks){delta_ticks=ticks;}
 EMSCRIPTEN_KEEPALIVE void set_perfect_active(uint32_t enabled){wr8(0x803201b9,enabled);}
 // Start the minigame's chart at its first command.
@@ -259,6 +262,23 @@ EMSCRIPTEN_KEEPALIVE void start_chart(uint32_t code){create_flow(code,0);}
 EMSCRIPTEN_KEEPALIVE void set_frame_ticks(float ticks){frame_ticks=ticks;}
 EMSCRIPTEN_KEEPALIVE uint32_t chart_state(void){return music_started|(song_ended<<1);}
 EMSCRIPTEN_KEEPALIVE void begin_frame(void){run_flows();}
+// One note's volume envelope from the original nw4r EnvGenerator, as the mixer would apply it:
+// amplitude ratios at each 3 ms update, released after release_ms (negative: never). Returns the count.
+EMSCRIPTEN_KEEPALIVE uint32_t envelope_curve(int attack,int hold,int decay,int sustain,int release,int release_ms,uint32_t out,uint32_t max){
+  if(!envelope)envelope=alloc(32);
+  uint32_t env=envelope,n=0;
+  r[3]=env;call(0x801b0940);
+  r[3]=env;f[1].d=rdf32(0x80329310);call(0x801b09d0); // Reset(VOLUME_INIT)
+  r[3]=env;r[4]=attack;call(0x801b0b80);r[3]=env;r[4]=hold;call(0x801b0ba0);r[3]=env;r[4]=decay;call(0x801b0bc0);
+  r[3]=env;r[4]=sustain;call(0x801b0c60);r[3]=env;r[4]=release;call(0x801b0c70);
+  for(;n<max;n++){
+    if(release_ms>=0&&(int)(n*3)>=release_ms)wr32(env,4); // STATUS_RELEASE
+    r[3]=env;call(0x801b09f0);call(0x801c5a50);float ratio=f[1].d;wrf32(out+n*4,ratio);
+    if(rd32(env)==4&&ratio==0.0f){n++;break;}
+    r[3]=env;r[4]=3;call(0x801b0a20);
+  }
+  return n;
+}
 // Vanilla fixed-frame A sampling: original checker receives inputAge=0.
 // Historical timestamp correction / rollback is FUTURE USE ONLY and inactive.
 // See research/timing/FUTURE-USE.md before any later experiment.

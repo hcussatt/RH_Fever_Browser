@@ -31,15 +31,15 @@ export async function loadGame(gameUrl,load=fetchBytes,{timeline:withTimeline=tr
   b.cells.forEach((objects,i)=>{const p=alloc(objects.length*32);w16(cp+i*8,objects.length);w32(cp+i*8+4,p);objects.forEach((o,j)=>{const a=p+j*32;[o.sx,o.sy,o.w,o.h,o.palette,o.reserved,o.x,o.y].forEach((v,k)=>w16(a+k*2,v));wf(a+16,o.scaleX);wf(a+20,o.scaleY);wf(a+24,o.angle);w8(a+28,o.flipX);w8(a+29,o.flipY);w8(a+30,o.alpha);});});
   core._install_bank(id,b.animations.length,ap,cp);
  });
- core._initialize_scene();
+ core._set_tempo(clock.tempoAtTick(0));core._initialize_scene();
  const f32bits=new DataView(new ArrayBuffer(4));
  const rest=bits=>(f32bits.setUint32(0,bits),f32bits.getFloat32(0));
  let tick=0,ended=false,endTick=null;
- const sounds=[],chartSounds=[],commands=[];const options={chartAudioScheduled:false};
+ const sounds=[],chartSounds=[],commands=[],cues=[];const options={chartAudioScheduled:false};
  function drain(){const n=core._events_count(),p=core._events_ptr();const out=[];for(let i=0;i<n;i++)out.push(Array.from(core.HEAPU32.subarray(p/4+i*4,p/4+i*4+4)));core._events_clear();return out;}
  function frame(ticks,press){
   core._set_delta(ticks);core._set_frame_ticks(ticks);
-  if(profile.chartTempo)core._set_tempo(ticks*60/48);
+  core._set_tempo(clock.tempoAtTick(tick));
   core._begin_frame();
   if(press)core._press_a();
   core._finish_frame();
@@ -59,16 +59,29 @@ export async function loadGame(gameUrl,load=fetchBytes,{timeline:withTimeline=tr
  // Events carry the issuing flow's rest; the command ran at the frame's end tick plus that rest.
  function step(nextTick,press=false){
   const events=frame(nextTick-tick,press);tick=nextTick;
+  // A new checker's perfect tick: its target (mTickJust, +0x58) less the ticks it has counted (mTickPass, +0x54).
+  for(const e of events)if(e[0]===9)cues.push(tick+f32(e[1]+0x58)-f32(e[1]+0x54));
+  let last=null;
   for(const e of events){
-   if(e[0]===1||e[0]===5&&!options.chartAudioScheduled)sounds.push(e[1]);
-   if(e[0]===5)chartSounds.push({tick:tick+rest(e[2]),sound:e[1]});
+   // Tuning (10) applies to the sound played just before it.
+   if(e[0]===10){if(last)last[['volume','pitch','pan'][e[1]]]=rest(e[2]);continue;}
+   last=null;
+   if(e[0]===1||e[0]===5){last={sound:e[1]};if(e[0]===1||!options.chartAudioScheduled)sounds.push(last);}
+   if(e[0]===5)chartSounds.push(Object.assign(last,{tick:tick+rest(e[2])}));
    else if(e[0]===8)commands.push({tick:tick+rest(e[2]),op:e[1]});
    else if(e[0]===7){ended=true;endTick=tick+rest(e[2]);}
   }
   return events;
  }
+ // Original nw4r note envelope: amplitude at each 3 ms mixer update (see platform.c envelope_curve).
+ let envelopeOut=0;
+ function envelope(attack,hold,decay,sustain,release,releaseMs,steps){
+  envelopeOut||=alloc(4096*4);
+  const n=core._envelope_curve(attack,hold,decay,sustain,release,releaseMs,envelopeOut,Math.min(steps,4096));
+  return Float32Array.from({length:n},(_,i)=>f32(envelopeOut+i*4));
+ }
  // Judgment counters kept by the platform backend (adapters/wii/platform.c stat()).
  const stats=()=>Array.from({length:9},(_,i)=>core._stat(i));
  function result(){const s=stats();return {hits:s[0],misses:s[1],through:s[2],stray:s[3],perfectFailed:s[4]};}
- return {manifest,base,core,options,assets,chart,clock,secondsAtTick:clock.secondsAtTick,tickAtSeconds:clock.tickAtSeconds,banks,timeline,step,drain,sounds,chartSounds,commands,stats,result,u8,u16,u32,f32,w8,w16,w32,wf,alloc,offset,get tick(){return tick;},get ended(){return ended;},get endTick(){return endTick;}};
+ return {manifest,base,core,options,assets,chart,clock,secondsAtTick:clock.secondsAtTick,tickAtSeconds:clock.tickAtSeconds,banks,timeline,step,drain,sounds,chartSounds,commands,cues,envelope,stats,result,u8,u16,u32,f32,w8,w16,w32,wf,alloc,offset,get tick(){return tick;},get ended(){return ended;},get endTick(){return endTick;}};
 }

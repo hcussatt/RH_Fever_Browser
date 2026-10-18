@@ -7,8 +7,8 @@ import {loadGame} from '../dist/engine/runtime.mjs';
 const id=process.argv[2];
 const g=await loadGame(new URL(`../dist/${id}/`,import.meta.url),readFile);
 console.log('init',g.core._pool_count(),g.drain());
-const delay=Number(process.argv.find(x=>x.startsWith('--offset='))?.split('=')[1]||0);let frame=0;const auto=process.argv.includes('--auto');const targets=g.timeline.commands.filter(c=>c.op===512).map(c=>c.tick+48+delay);let ti=0;let judgments=[];const sounds=[];
-try {for(;frame<Math.ceil(g.secondsAtTick(g.timeline.endTick)*60);frame++){const tick=g.tickAtSeconds((frame+1)/60);const press=auto&&ti<targets.length&&tick>=targets[ti];if(press)ti++;judgments.push(...g.step(tick,press).filter(e=>e[0]===2));for(const sid of g.sounds)sounds.push({sid,time:(frame+1)/60});g.sounds.length=0;if(frame%600===0)console.log('frame',frame,'tick',g.tick,'actors',g.core._pool_count(),'stats',g.stats());}}
+const delay=Number(process.argv.find(x=>x.startsWith('--offset='))?.split('=')[1]||0);let frame=0;const auto=process.argv.includes('--auto');const targets=g.timeline.cues.map(t=>t+delay);let ti=0;let judgments=[];const sounds=[];
+try {for(;frame<Math.ceil(g.secondsAtTick(g.timeline.endTick)*60);frame++){const tick=g.tickAtSeconds((frame+1)/60);const press=auto&&ti<targets.length&&tick>=targets[ti];if(press)ti++;judgments.push(...g.step(tick,press).filter(e=>e[0]===2));for(const {sound,tick,...tuning} of g.sounds)sounds.push({sid:sound,time:(frame+1)/60,...tuning});g.sounds.length=0;if(frame%600===0)console.log('frame',frame,'tick',g.tick,'actors',g.core._pool_count(),'stats',g.stats());}}
 catch(e){console.error('failed frame',frame,'tick',g.tick);throw e;}
 console.log('judgments',judgments);
 console.log('done',g.stats());
@@ -17,7 +17,7 @@ if(auto&&delay===0){await mkdir(new URL(`../dist/${id}/qa/`,import.meta.url),{re
 
 // Expected [hits, misses, through, stray, perfectFailed] for each game's cue count.
 const stats=g.stats().slice(0,5),cues=targets.length;
-const expected={golf:64,tap:102}[id];
+const expected={golf:64,tap:102,rap:31}[id];
 if(expected)assert.equal(cues,expected);
 if(auto&&delay===0)assert.deepEqual(stats,[cues,0,0,0,0]);
 if(!auto)assert.deepEqual(stats,[0,0,cues,0,2]);

@@ -38,17 +38,40 @@ the interpreter calls.
 
 - `tools/chart-index.py` finds the game's main chart from the executable: the
   scene change to the manifest's `scene` whose chart starts grading (ExFlow
-  `0x118`), its music (`PREPARE_WAVE`) and that music's tempo table. It writes
-  `assets/original-chart.json`.
+  `0x118`), its music (`PREPARE_WAVE`), that music's tempo table, and the sound
+  groups the loading charts load before preparing the scene. It writes
+  `assets/original-chart.json`. `tools/extract-assets.py` keeps the group loads
+  that include the music and extracts every sound stored in those groups.
 - At load the chart runs silently from its first command to the music start,
   which is chart tick 0. From then on the browser clock drives it.
 - `tools/chart-timeline.mjs` does one silent run of the whole level at build
   time and writes `assets/original-timeline.json`: the chart's own sounds with
   their exact ticks (scheduled ahead on the audio thread so they never depend
-  on frame timing), the game commands with their ticks (input cues for the
+  on frame timing), the game commands with their ticks, each input checker's
+  perfect tick (`cues`, from the checker's own pass and just ticks; used by the
   autoplay tests) and the tick where grading starts (the end of the song).
 - Every event the chart emits during play carries the issuing flow's remaining
   rest, so its exact tick is the frame's end tick plus that rest.
+
+## Audio
+
+`web/engine/audio.mjs` plays the original samples with Web Audio, following the
+original nw4r sound code where it matters for how a game sounds:
+
+- Note envelopes (attack, hold, decay, sustain, release) come from the original
+  `EnvGenerator`, translated with the game code and stepped every 3 ms like
+  `Channel::Update` (`envelope()` in `runtime.mjs`). Curves are cached per shape.
+- Volume follows the original rules: the sound record's volume and the
+  instrument's volume are linear, velocity and track volumes squared. The
+  backing track plays at its own record volume through the same output, so
+  music and sounds keep the original balance. The output is the game's master
+  volume (0.7) times a fixed browser headroom.
+- Volume, pitch and pan the chart sets on a sound (TickFlow sound tuning, event
+  kind 10) ride along with that sound, in the live events and in the timeline.
+- Pitch interpolation, LFO and filters are approximated.
+
+`web/engine/qa/audio-check.mjs` renders a whole autoplay run offline and reports
+peak, clipping and RMS.
 
 ## Results and versus mode (planned)
 
@@ -66,9 +89,9 @@ Nothing on the frame loop or audio path ever waits on the network.
 1. `games/<id>/game.json`: copy an existing one. `wii.units` are the decomp
    translation units to translate (see `third_party/rhf-decomp/config/SOME01/splits.txt`);
    `banks` are the cell-animation banks in the order the scene registers them;
-   `sounds`/`soundGroups`/`music` select the BRSAR data; `scene` names the
+   `scene` names the
    decomp's scene (`sceneVariant` picks one main chart when the scene has
-   several); `perfectActive`, `chartTempo`, `projection` and `endsWithMusic`
+   several); `perfectActive`, `projection` and `endsWithMusic`
    cover how the game plays and ends.
 2. `adapters/<id>/game.h`: the scene constructor, init, update, flow command and
    wrong-input addresses and the flow constructor, plus any extra platform calls the game makes
