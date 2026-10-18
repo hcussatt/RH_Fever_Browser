@@ -1,5 +1,6 @@
 """Shared locations. Everything under build/ and dist/ is generated from the
 user's own disc image and must never be committed (see scripts/check-clean.py)."""
+import json
 import os
 import pathlib
 
@@ -10,7 +11,7 @@ DISC = BUILD/'disc'                 # files read out of the user's ISO
 DOL = DISC/'main.dol'
 BRSAR = DISC/'rev_tengoku.brsar'
 DECOMP = ROOT/'third_party/rhf-decomp'
-GAMES = ('golf', 'tap')
+GAMES = tuple(sorted(p.parent.name for p in (ROOT/'games').glob('*/game.json')))
 DOL_SHA1 = 'd96d2c7e50b0c713cb8fcb18835258351ada5576'   # USA SOME01 main.dol
 
 
@@ -19,6 +20,11 @@ def game():
     if name not in GAMES:
         raise SystemExit(f'Unknown game profile {name!r}; known: {", ".join(GAMES)}')
     return name
+
+
+def manifest(name):
+    """games/<name>/game.json: the game's hand-written profile (no game data)."""
+    return json.loads((ROOT/'games'/name/'game.json').read_text())
 
 
 def source(name):

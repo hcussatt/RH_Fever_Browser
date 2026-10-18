@@ -1,5 +1,5 @@
 export async function createRenderer(g,canvas){
- const images=await Promise.all(g.assets.textures.map(async n=>{const i=new Image();i.src=new URL('assets/'+n,import.meta.url);await i.decode();return i;}));
+ const images=await Promise.all(g.assets.textures.map(async n=>{const i=new Image();i.src=new URL('assets/'+n,g.base);await i.decode();return i;}));
  const ctx=canvas.getContext('2d',{alpha:false});
  const {u8,u16,u32,f32,core,banks}=g;
  const mul=(a,b)=>[a[0]*b[0]+a[2]*b[1],a[1]*b[0]+a[3]*b[1],a[0]*b[2]+a[2]*b[3],a[1]*b[2]+a[3]*b[3],a[0]*b[4]+a[2]*b[5]+a[4],a[1]*b[4]+a[3]*b[5]+a[5]];
@@ -19,7 +19,9 @@ export async function createRenderer(g,canvas){
   states=new Map();ctx.setTransform(1,0,0,1,0,0);ctx.fillStyle='#000';ctx.fillRect(0,0,canvas.width,canvas.height);
   const pool=core.HEAPU32.subarray(core._pool_ptr()/4,core._pool_ptr()/4+core._pool_count()),active=core.HEAPU32.subarray(core._active_ptr()/4,core._active_ptr()/4+core._pool_count());
   const actors=Array.from(pool).filter((a,i)=>active[i]&&u8(a+12)!==255&&u8(a+0xa7)).sort((a,b)=>(u32(b+0x98)|0)-(u32(a+0x98)|0));
-  const scale=canvas.width/854,origin=[scale,0,0,scale,427*scale,240*scale];
+  // Screen units from the manifest. Tap Trial uses the original wide projection,
+  // x +/-416, y +/-228 (CellAnimManager::setupProj); Hole in One's 854x480 is not yet qualified.
+  const [w,h]=g.manifest.wii.projection,origin=[canvas.width/w,0,0,canvas.height/h,canvas.width/2,canvas.height/2];
   for(const a of actors){const s=state(a);ctx.imageSmoothingEnabled=!!u8(a+0xa8);
    for(const o of s.objects){const alpha=Math.floor(s.k.alpha*o.alpha*s.opacity/255/255)/255;if(!alpha||!o.w||!o.h)continue;
     let m=mul(origin,s.m);m=mul(m,trs(o.x+o.w*o.scaleX/2,o.y+o.h*o.scaleY/2,o.angle,o.scaleX*(o.flipX?-1:1),o.scaleY*(o.flipY?-1:1)));

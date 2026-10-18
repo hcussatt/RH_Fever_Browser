@@ -93,8 +93,8 @@ function listen(port) {
   server.listen(port, host, () => {
     const address = server.address();
     const url = `http://${host}:${address.port}/`;
-    console.log(`wasm-dolphin running at ${url}`);
-    console.log("Open it in Chrome, then drag a disc image onto the page.");
+    console.log(`Rhythm Heaven Fever web running at ${url}`);
+    console.log("Open it in Chrome and pick a game.");
     if (shouldOpen) {
       openInBrowser(url);
     }

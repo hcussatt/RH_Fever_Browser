@@ -1,8 +1,10 @@
 // Original samples and RSEQ note data; Web Audio substitutes for the Wii mixer.
 // Envelope, LFO, filter and resampling parity remain unqualified. See RECOMPILATION.md.
-export async function createAudio(context){
- const data=await (await fetch(new URL('assets/sfx.json',import.meta.url))).json();
- const buffers=await Promise.all(data.waves.map(async w=>context.decodeAudioData(await (await fetch(new URL('assets/'+w.file,import.meta.url))).arrayBuffer())));
+// gameUrl: the game's folder (dist/<id>/), whose assets/ the build extracted.
+export async function createAudio(context,gameUrl){
+ const asset=name=>new URL('assets/'+name,gameUrl);
+ const data=await (await fetch(asset('sfx.json'))).json();
+ const buffers=await Promise.all(data.waves.map(async w=>context.decodeAudioData(await (await fetch(asset(w.file))).arrayBuffer())));
  const master=context.createGain();master.gain.value=.24;master.connect(context.destination);
  const active=new Set(),telemetry={played:0,unknown:[],late:0,maxLateMs:0};
  const clamp=(x,a,b)=>Math.min(b,Math.max(a,x));

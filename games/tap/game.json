@@ -1,0 +1,18 @@
+{
+  "id": "tap",
+  "title": "Tap Trial",
+  "action": "Tap",
+  "platform": "wii",
+  "wii": {
+    "cellanim": "EN/content2/cellanim/agbTap/ver0/cellanim.szs",
+    "units": ["Game/AgbTap/SceneAgbTap.cpp", "Game/AgbTap/MyChecker.cpp", "Game/AgbTap/MyFlow.cpp"],
+    "banks": ["agb_tap", "agb_tap_bg"],
+    "sounds": [[157, 157], [1250, 1261]],
+    "soundGroups": [192, 57],
+    "music": 131,
+    "afterPrelude": [["drain"], ["set_perfect_active", 1]],
+    "chartTempo": true,
+    "projection": [832, 456],
+    "endsWithMusic": true
+  }
+}

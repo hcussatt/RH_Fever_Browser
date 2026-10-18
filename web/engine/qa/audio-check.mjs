@@ -1,7 +1,9 @@
-import {createAudio} from '../audio.mjs?headroom=2';
-export async function checkAudio(){
+// Offline render of a full autoplay run (dist/<id>/qa/autoplay-sounds.json, written
+// by tests/test-runtime.mjs --auto). From a game page: (await import('../engine/qa/audio-check.mjs')).checkAudio(location.href)
+import {createAudio} from '../audio.mjs';
+export async function checkAudio(gameUrl){
  const sampleRate=48000,context=new OfflineAudioContext(2,Math.ceil(110*sampleRate),sampleRate);
- const [adapter,music,sounds]=await Promise.all([createAudio(context),fetch(new URL('../assets/music.wav',import.meta.url)).then(r=>r.arrayBuffer()).then(b=>context.decodeAudioData(b)),fetch(new URL('./autoplay-sounds.json',import.meta.url)).then(r=>r.json())]);
+ const [adapter,music,sounds]=await Promise.all([createAudio(context,gameUrl),fetch(new URL('assets/music.wav',gameUrl)).then(r=>r.arrayBuffer()).then(b=>context.decodeAudioData(b)),fetch(new URL('qa/autoplay-sounds.json',gameUrl)).then(r=>r.json())]);
  const source=context.createBufferSource(),gain=context.createGain();source.buffer=music;gain.gain.value=.55;source.connect(gain).connect(context.destination);source.start(0);
  for(const e of sounds)adapter.play(e.sid,e.time);
  const output=await context.startRendering();let peak=0,clips=0,nonfinite=0,rms=0;

@@ -59,15 +59,17 @@ included here. Provide it in one of these ways:
 | --- | --- |
 | `build.sh`, `serve.sh` | Build everything from the ISO; serve `dist/` locally |
 | `tools/extract-disc.py` | Reads `main.dol`, cellanim archives and the sound archive from the ISO, checking the executable's SHA1 |
-| `tools/recompile.py` | Translates each game's original PowerPC functions to C (per-game profiles) |
-| `tools/build-core.sh` | Compiles that C plus the hand-written adapter to WASM |
+| `games/<game>/game.json` | Each game's manifest: title, original code units, banks, sounds, timing options |
+| `tools/recompile.py` | Translates each game's original PowerPC functions to C |
+| `tools/build-core.sh` | Compiles that C plus the Wii platform backend to WASM |
 | `tools/extract-assets.py`, `extract-sfx.py`, `decode-music.py` | Textures, cell animations, sound programs, samples and music |
 | `tools/golf-timeline.py`, `tap-timeline.py` | Trace each game's original rhythm chart |
-| `adapters/<game>/runtime.c` | Hand-written platform services the translated code calls |
-| `web/<game>/` | Page, renderer, input and Web Audio code |
+| `adapters/wii/platform.c` | Hand-written Wii platform services the translated code calls, shared by every game |
+| `adapters/<game>/game.h` | The original addresses and game-specific calls one game needs |
+| `web/engine/` | Shared page, clock, input, renderer and Web Audio code |
 | `tests/` | Timing-window and full-level tests (run by `build.sh`) |
 | `third_party/rhf-decomp` | [conhlee/rhf](https://github.com/conhlee/rhf) decomp (CC0), pinned; `patches/` holds local matching work |
-| `docs/` | Notes from the previous developer, including the original handoff brief |
+| `docs/` | [How the engine works](docs/engine.md), plus notes from the previous developer |
 
 ## Status and limits
 

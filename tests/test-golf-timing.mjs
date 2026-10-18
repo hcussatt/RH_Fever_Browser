@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {readFile,writeFile,mkdir} from 'node:fs/promises';
-import {loadGolf} from '../dist/golf/runtime.mjs';
-const g=await loadGolf(n=>readFile(new URL('../dist/golf/assets/'+n,import.meta.url)));
+import {loadGame} from '../dist/engine/runtime.mjs';
+const g=await loadGame(new URL('../dist/golf/',import.meta.url),readFile);
 const c=g.alloc(512),quality=g.alloc(32);
 const call=(a,b=c,d=0,e=0,h=0,f1=0)=>g.core._invoke_original(a,b,d,e,h,f1,0,0)>>>0;
 const F=Math.fround;
