@@ -82,12 +82,13 @@ def bank(name):
     return {'texture':texture,'cells':cells,'animations':animations,'labels':labels}
 
 def audio_groups():
-    """The sound groups the game loads with its main chart, minus groups holding only other
-    music (the tutorial's); every sound stored in those groups; and the chart's backing track."""
+    """The system sound group, the sound groups the game loads with its main chart (minus groups
+    holding only other music, the tutorial's), every sound stored in those groups, and the
+    chart's backing track."""
     b=require(BRSAR).read_bytes();base=u32(b,0x18)+8
     table=lambda off:base+u32(b,base+off+4)
     ref=lambda t,i:base+u32(b,t+8+i*8)
-    sounds=table(0);groups=table(0x20)
+    sounds=table(0);banks=table(8);groups=table(0x20)
     def items(gi):
         g=ref(groups,gi);items=base+u32(b,g+0x24)
         return g,[ref(items,i) for i in range(u32(b,items))]
@@ -97,7 +98,8 @@ def audio_groups():
     loads=[l for l in CHART['groupLoads'] if any(holds(gi,music_file) for gi in l)]
     if not loads:raise SystemExit(f'{GAME}: no sound group load includes the music (file {music_file})')
     files={}
-    for gi in dict.fromkeys(gi for l in loads for gi in l):
+    # Group 0 is the system set every minigame shares (SE_MISS and the other common sounds).
+    for gi in dict.fromkeys([0]+[gi for l in loads for gi in l]):
         g,group_items=items(gi);found={}
         for item in group_items:
             fid,off,size,woff,wsize=struct.unpack_from('>5I',b,item)
@@ -115,6 +117,8 @@ def audio_groups():
         if file_of(sid) not in files:continue
         s=ref(sounds,sid);sub=base+u32(b,s+0x1c)
         records[sid]={'name':names.get(sid),'fileId':file_of(sid),'type':b[s+22],'volume':b[s+20],'player':u32(b,s+8),'data':list(struct.unpack_from('>4I',b,sub))}
+        # A sequence sound plays its notes with the instruments of one bank (SeqSoundInfo bankId).
+        if records[sid]['type']==1:records[sid]['bankFile']=u32(b,ref(banks,records[sid]['data'][1])+4)
     return {'sounds':records,'files':files,'musicFile':music_file}
 
 if __name__=='__main__':

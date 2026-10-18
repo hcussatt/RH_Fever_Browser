@@ -9,7 +9,7 @@ time.
 | Layer | Where | Knows about |
 | --- | --- | --- |
 | Shell | `web/engine/main.mjs`, `clock.mjs`, `input.mjs`, `index.html` | The page, the audio clock, player input, pause, the end-of-song result. Nothing console-specific. |
-| Wii backend | `web/engine/runtime.mjs`, `renderer.mjs`, `audio.mjs`, `adapters/wii/platform.c` | Translated PowerPC code in WASM, cell animations, NW4R sound programs. |
+| Wii backend | `web/engine/runtime.mjs`, `renderer.mjs`, `layout.mjs`, `audio.mjs`, `adapters/wii/platform.c` | Translated PowerPC code in WASM, cell animations, NW4R layouts, NW4R sound programs. |
 | Game | `games/<id>/game.json`, `adapters/<id>/game.h` | One minigame's original addresses, banks, sounds and timing options. |
 
 Built output: `dist/engine/` holds the shared code once; `dist/<id>/` holds the
@@ -41,7 +41,10 @@ the interpreter calls.
   `0x118`), its music (`PREPARE_WAVE`), that music's tempo table, and the sound
   groups the loading charts load before preparing the scene. It writes
   `assets/original-chart.json`. `tools/extract-assets.py` keeps the group loads
-  that include the music and extracts every sound stored in those groups.
+  that include the music and extracts every sound stored in those groups, plus
+  the system group (group 0: `SE_MISS` and the other sounds every game shares).
+  `tools/extract-sfx.py` merges every bank and sequence in them; each sound plays
+  with the bank its record names.
 - At load the chart runs silently from its first command to the music start,
   which is chart tick 0. From then on the browser clock drives it.
 - `tools/chart-timeline.mjs` does one silent run of the whole level at build
@@ -52,6 +55,22 @@ the interpreter calls.
   autoplay tests) and the tick where grading starts (the end of the song).
 - Every event the chart emits during play carries the issuing flow's remaining
   rest, so its exact tick is the frame's end tick plus that rest.
+- Flows that only start during play (the response to a hit or a miss) are not in
+  the timeline. Their chart sounds play live: `runtime.mjs` schedules ahead only
+  the sounds it can match to the timeline.
+
+## Layouts
+
+Some games draw 2D layouts (NW4R lyt) over the cell animations, like Love Rap's
+lyric captions. `tools/extract-layout.py` converts the layout named in the
+manifest's `wii.layout` (panes, materials, BRLAN animations, textures), the
+glyphs its font needs and the game's message text (`riq_E.bmg`).
+`web/engine/layout.mjs` draws it: pictures and text tinted by their material's
+two colour registers, animations stepped once per game frame like
+`CLayoutAnimation`, and wide-screen location adjustment like `CLayoutManager`.
+The game's layout class is replaced in `adapters/<id>/game.h` by layout events
+(kind 11: play or stop an animation, set a text box's message, offset a pane),
+indexing the manifest's `animations`, `texts` and `panes` lists.
 
 ## Audio
 

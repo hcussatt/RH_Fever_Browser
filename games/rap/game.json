@@ -10,6 +10,15 @@
     "units": ["Game/Rap/SceneRap.cpp", "Game/Rap/MyChecker.cpp", "Game/Rap/MyFlow.cpp", "Game/Pseudo3D.cpp"],
     "banks": ["rap", "rap_bg", "rap_bg_01", "rap_airplane"],
     "projection": [854, 480],
-    "endsWithMusic": false
+    "endsWithMusic": false,
+    "layout": {
+      "archive": "EN/content2/layout/layout_rap.szs",
+      "file": "rap.brlyt",
+      "animations": [["N_message_00", "rap_show"], ["N_miss_msg_00", "rap_show"], ["N_message_01", "rap_show"], ["N_message_02", "rap_show"],
+                     ["N_message_00", "rap_hide"], ["N_miss_msg_00", "rap_hide"], ["N_message_01", "rap_hide"], ["N_message_02", "rap_hide"]],
+      "startAtEnd": [4, 6, 7],
+      "texts": ["T_message_00", "T_miss_msg_00", "T_message_01", "T_message_02"],
+      "panes": ["N_message_02"]
+    }
   }
 }

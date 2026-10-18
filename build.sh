@@ -37,6 +37,7 @@ for game in $games; do
   echo "== $game: converting assets"
   RHF_GAME=$game python3 tools/extract-assets.py >/dev/null
   RHF_GAME=$game python3 tools/extract-sfx.py >/dev/null
+  RHF_GAME=$game python3 tools/extract-layout.py >/dev/null
   RHF_GAME=$game python3 tools/decode-music.py
   tools/stage-web.sh "$game"
   node tools/chart-timeline.mjs "$game"
