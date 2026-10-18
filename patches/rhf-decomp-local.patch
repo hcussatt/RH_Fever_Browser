@@ -1,0 +1,178 @@
+diff --git a/src/Game/Baseball/SceneBaseball.cpp b/src/Game/Baseball/SceneBaseball.cpp
+new file mode 100644
+index 0000000..79f8f49
+--- /dev/null
++++ b/src/Game/Baseball/SceneBaseball.cpp
+@@ -0,0 +1,118 @@
++#include "Baseball/SceneBaseball.hpp"
++#include "Sound.hpp"
++#include "rev_tengoku.rsid"
++#include "cellanim/baseball/ver0/rcad_golfman_labels.h"
++#include "cellanim/baseball/ver0/rcad_golf_monkey_labels.h"
++
++extern "C" {
++
++// 0x8006669c: accepted, mistimed, and unhandled A swing dispatch.
++void fn_8006669C(CSceneBaseball *scene, u32 button, s32 type) {
++    if (button == 4) {
++        if (type == 0) {
++            scene->mGolfer->setAnim(golfman_golfman_just);
++        } else if (type == 1) {
++            scene->mGolfer->setAnim(golfman_golfman_miss);
++        } else if (type == 2) {
++            scene->mGolfer->setAnim(golfman_golfman_out);
++        }
++        gSoundManager->play(SE_GOLF_SWING);
++    }
++}
++
++void fn_80066A1C(CSceneBaseball *scene) {
++    scene->mGolfer->setAnim(golfman_golfman_wait);
++}
++
++void fn_80066A28(CSceneBaseball *scene) {
++    scene->mGolfer->setAnim(golfman_golfman_look);
++}
++
++void fn_80066A34(CSceneBaseball *scene) {
++    scene->mGolfer->setAnim(golfman_golfman_greet);
++}
++
++void fn_80066A40(CSceneBaseball *scene) {
++    CCellAnim *golfer = scene->mGolfer;
++    u16 anim = golfer->getAnimID();
++    if (anim == golfman_golfman_out && golfer->getPlaying()) {
++        golfer->prepareAnim(golfman_golfman_ready, NULL);
++        return;
++    }
++    if (anim != golfman_golfman_ready) {
++        golfer->setAnim(golfman_golfman_ready);
++    }
++}
++
++void fn_80066A7C(CSceneBaseball *scene) {
++    CCellAnim *golfer = scene->mGolfer;
++    if (golfer->getAnimID() != golfman_golfman_ready && !golfer->getPlaying()) {
++        golfer->setAnim(golfman_golfman_beat);
++    }
++}
++
++void fn_80066AA4(CSceneBaseball *scene) {
++    if (scene->mGolfer->getAnimID() == golfman_golfman_ready) {
++        scene->mGolfer->setAnim(golfman_golfman_through);
++        gSoundManager->play(SE_GOLF_AUTO_SWING);
++    }
++}
++
++void fn_80066AEC(CSceneBaseball *scene, s32 enabled) {
++    if (enabled) {
++        scene->mGolfer->setAnim(golfman_golfman_through_Gorilla);
++    }
++}
++
++void fn_80066B18(CSceneBaseball *scene) {
++    CCellAnim *monkey = scene->mMonkey;
++    if (monkey->getAnimID() != golf_monkey_monkey_pitch || !monkey->getPlaying()) {
++        monkey->setAnim(golf_monkey_monkey_ready_S);
++    }
++    gSoundManager->play(SE_GOLF_MONKEY_READY);
++}
++
++void fn_80066B6C(CSceneBaseball *scene) {
++    scene->mMonkey->setAnim(golf_monkey_monkey_pitch);
++    scene->mMonkey->prepareAnim(golf_monkey_monkey_wait, NULL);
++}
++
++void fn_80066BB0(CSceneBaseball *scene) {
++    scene->mMonkey->setScale(1.0f, 1.0f);
++    scene->mMonkey->setAnim(golf_monkey_monkey_turn);
++    scene->mMonkey->prepareAnim(golf_monkey_monkey_wait, NULL);
++}
++
++void fn_80066C0C(CSceneBaseball *scene, s32 count) {
++    scene->mMonkey->setAnim(golf_monkey_monkey_wait);
++    scene->mMonkeyFace->setAnim(golf_monkey_monkey_face_talk);
++    s32 remaining = count - 1;
++    for (s32 i = 0; i < remaining; i++) {
++        scene->mMonkeyFace->prepareAnim(golf_monkey_monkey_face_talk, NULL);
++    }
++}
++
++void fn_80066C88(CSceneBaseball *scene) {
++    CCellAnim *monkey = scene->mMonkey;
++    if (!monkey->getPlaying() || monkey->getAnimID() == golf_monkey_monkey_wait ||
++        monkey->getAnimID() == golf_monkey_monkey_inst_dodo) {
++        monkey->setAnim(golf_monkey_monkey_beat);
++        scene->mMonkey->prepareAnim(golf_monkey_monkey_wait, NULL);
++    }
++}
++
++void fn_80066D98(CSceneBaseball *scene, s32 phase) {
++    switch (phase) {
++    case 0:
++        scene->mGorilla->setAnim(golf_monkey_gorilla_ready_00);
++        break;
++    case 1:
++        scene->mGorilla->setAnim(golf_monkey_gorilla_ready_01);
++        break;
++    case 2:
++        scene->mGorilla->setAnim(golf_monkey_gorilla_ready_02);
++        break;
++    }
++}
++
++} // extern "C"
+diff --git a/src/Game/Baseball/SceneBaseball.hpp b/src/Game/Baseball/SceneBaseball.hpp
+new file mode 100644
+index 0000000..aea460a
+--- /dev/null
++++ b/src/Game/Baseball/SceneBaseball.hpp
+@@ -0,0 +1,27 @@
++#ifndef GAME_BASEBALL_SCENEBASEBALL_HPP
++#define GAME_BASEBALL_SCENEBASEBALL_HPP
++
++#include "ExScene.hpp"
++#include "CellAnim.hpp"
++
++// Partial layout recovered from SOME01, 0x80065B2C and its scene callbacks.
++// Address-named C entry points retain the current original symbol identities.
++// Do not link this partial unit until the remaining callbacks/data are recovered.
++class CSceneBaseball : public CExScene {
++public:
++    s32 mCamera;                 // 0x34
++    CCellAnim *mGolfer;          // 0x38
++    CCellAnim *mMonkey;          // 0x3c
++    CCellAnim *mMonkeyFace;      // 0x40
++    CCellAnim *mGorilla;         // 0x44
++    CCellAnim *mBallEffect;      // 0x48
++    CCellAnim *mWhale;           // 0x4c
++    CCellAnim *mBgEffect;        // 0x50
++    CCellAnim *mBgParticles[16]; // 0x54
++    CLayout *mGolfLayout;       // 0x94
++    s32 unk98;
++    s32 unk9C;
++    s32 unkA0;
++};
++
++#endif
+diff --git a/src/GameUtil/TimeRatio.cpp b/src/GameUtil/TimeRatio.cpp
+index 75ba787..76ecd84 100644
+--- a/src/GameUtil/TimeRatio.cpp
++++ b/src/GameUtil/TimeRatio.cpp
+@@ -248,14 +248,14 @@ void CTRParabola::fn_801EA8E0(f32 x0, f32 y0, f32 velY0, f32 x1, f32 y1, f32 vel
+     calcParabola(curvature, mY1 - mY0);
+ }
+ 
+-// not matching (needs shuffling around)
++// Preserve the original multiply/FMA order; regrouping t*t changes rounding.
+ void CTRParabola::_14(void) {
+     f32 t = mEasedT;
+ 
+     // a + (b - a) * t
+     mCurrentX = mOutputStart + (mOutputEnd - mOutputStart) * t;
+     // ax^2 + bx + c
+-    mCurrentY = (mA * (t * t)) + (mB * t) + mY0;
++    mCurrentY = (mB * t) + ((mA * t) * t + mY0);
+     // a + (b - a) * t
+     mCurrentZ = mZ0 + (mZ1 - mZ0) * t;
+ }

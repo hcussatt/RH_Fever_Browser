@@ -1,0 +1,13 @@
+# Everything generated from the user's disc image. Never commit these.
+/build/
+/dist/
+/local/
+/.toolchain/
+*.iso
+*.wbfs
+*.rvz
+*.dol
+*.elf
+*.wasm
+__pycache__/
+.DS_Store
