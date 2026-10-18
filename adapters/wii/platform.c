@@ -309,6 +309,9 @@ EMSCRIPTEN_KEEPALIVE void finish_frame(void){
   for(int i=0;i<10;i++)for(int a=0;a<2;a++){uint32_t t=canvas_timing[i][a];if(t&&rd8(t+37)){r[3]=t;r[4]=0;call(0x801e9de8);wrf32(canvas[i]+0x8c+a*4,rdf32(t+40));}}
   invoke1(GAME_SCENE_UPDATE,scene);
   for(uint32_t i=0;i<actor_count;i++)if(actor_active[i]){invoke1(0x801dc314,actors[i]);if(r[3])actor_active[i]=0;}
+  // The scene's draw hook (vtable +0x1C), which sets what is visible before drawing; the drawing
+  // itself (CExScene::_1C) is the browser renderer's job.
+  invoke1(rd32(rd32(scene)+0x1c),scene);
   GAME_AFTER_UPDATE
   frame_number++;
 }
