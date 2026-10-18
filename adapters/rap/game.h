@@ -6,7 +6,27 @@
 #define GAME_WRONG_INPUT 0x80050284   // reaction to a press with no cue
 #define GAME_FLOW_CREATE 0x8004f7a8   // MyFlow::create(chart, rest)
 #define GAME_END_CHECKER_ON_HIT 0
+// Lyric captions (Rap::CMyLayout, src/Game/Rap/MyLayout.cpp) become layout events (11) for the
+// browser's layout renderer (web/engine/layout.mjs). The animation, text box and pane numbers
+// index the "layout" lists in games/rap/game.json, in the order CMyLayout::_10 sets them up.
+// The message id string is seven digits (CMessageManager::fn_80087708); 0xffffffff if not.
+#define MESSAGE_ID(s) ({uint32_t v=0;for(int i=0;i<7&&v!=0xffffffff;i++){uint8_t c=rd8((s)+i);v=c<'0'||c>'9'?0xffffffff:v*10+c-'0';}v;})
+#define LAYOUT_PLAY(a) emit(11,0x100|(a),0)
+#define LAYOUT_STOP(a) emit(11,0x200|(a),0)
+#define LAYOUT_TEXT(t,s) emit(11,0x300|(t),MESSAGE_ID(s))
+static uint8_t rap_message00_shown; // CMyLayout::mUnk48: message 00 (not the miss message) is up
 #define GAME_CALLS \
-  /* Lyric captions (Rap::CMyLayout): message layouts are not ported yet. */ \
-  case 0x80072e94:case 0x80072f74:case 0x80072ff8:case 0x8007307c:case 0x80073100:case 0x8007314c:case 0x80073198:break;
+  case 0x80072e94: /* show message 00, or the miss message */ \
+    if(r[5]&0xff){LAYOUT_TEXT(1,r[4]);LAYOUT_STOP(5);LAYOUT_PLAY(1);rap_message00_shown=0;} \
+    else{LAYOUT_TEXT(0,r[4]);LAYOUT_STOP(4);LAYOUT_PLAY(0);rap_message00_shown=1;} \
+    break; \
+  case 0x80072f74:LAYOUT_TEXT(2,r[4]);LAYOUT_STOP(6);LAYOUT_PLAY(2);break; /* message 01 */ \
+  case 0x80072ff8:LAYOUT_TEXT(3,r[4]);LAYOUT_STOP(7);LAYOUT_PLAY(3);break; /* message 02 */ \
+  case 0x8007307c: /* hide whichever of message 00 and the miss message is up */ \
+    if(rap_message00_shown){LAYOUT_STOP(0);LAYOUT_PLAY(4);}else{LAYOUT_STOP(1);LAYOUT_PLAY(5);} \
+    break; \
+  case 0x80073100:LAYOUT_STOP(2);LAYOUT_PLAY(6);break; \
+  case 0x8007314c:LAYOUT_STOP(3);LAYOUT_PLAY(7);break; \
+  case 0x80073198:{ /* message 02 follows the car: its layout position plus (x, -y) */ \
+    union{float v;uint32_t u;}x={.v=f[1].d},y={.v=-f[2].d};emit(11,0x400,x.u);emit(11,0x500,y.u);break;}
 #define GAME_AFTER_UPDATE

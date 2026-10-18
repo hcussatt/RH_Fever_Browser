@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 """Decode one game's original samples and trace its short RSEQ sound programs.
+Every extracted bank (the game's and the shared system bank) is merged into one list of
+waves and programs; each sound's notes point at programs of the bank its record names.
 Random RSEQ parameters are retained as ranges for the browser adapter.
 """
 import json,struct
@@ -7,19 +9,18 @@ from nintendo_audio import wave_files,decode_wave,write_wav,u32
 from paths import assets,game
 out=assets(game())
 assets=json.loads((out/'original-assets.json').read_text())
-bankid=next(k for k,v in assets['audio']['files'].items() if v['magic']=='RBNK')
-seqid=next(k for k,v in assets['audio']['files'].items() if v['magic']=='RSEQ')
-waves=[]
-for i,b in enumerate(wave_files((out/f'wave-{bankid}.bin').read_bytes())):
- pcm,m=decode_wave(b);m['file']=f'sfx-{i}.wav';write_wav(out/m['file'],pcm,m['rate']);waves.append(m)
-bank=(out/f'file-{bankid}.bin').read_bytes();base=u32(bank,16)+8
-programs=[]
-for i in range(u32(bank,base)):
- p=base+u32(bank,base+8+i*8)
- programs.append({'wave':u32(bank,p),'attack':bank[p+4],'decay':bank[p+5],'sustain':bank[p+6],'release':bank[p+7],'hold':bank[p+8],'key':bank[p+12],'volume':bank[p+13],'pan':bank[p+14],'pitch':struct.unpack_from('>f',bank,p+16)[0]})
-b=(out/f'file-{seqid}.bin').read_bytes();seq=b[u32(b,16)+u32(b,u32(b,16)+8):]
+files=assets['audio']['files']
+waves=[];programs=[];first_program={}
+for bankid in [k for k,v in files.items() if v['magic']=='RBNK']:
+ first_wave=len(waves);first_program[int(bankid)]=len(programs)
+ for b in wave_files((out/f'wave-{bankid}.bin').read_bytes()):
+  pcm,m=decode_wave(b);m['file']=f'sfx-{len(waves)}.wav';write_wav(out/m['file'],pcm,m['rate']);waves.append(m)
+ bank=(out/f'file-{bankid}.bin').read_bytes();base=u32(bank,16)+8
+ for i in range(u32(bank,base)):
+  p=base+u32(bank,base+8+i*8)
+  programs.append({'wave':first_wave+u32(bank,p),'attack':bank[p+4],'decay':bank[p+5],'sustain':bank[p+6],'release':bank[p+7],'hold':bank[p+8],'key':bank[p+12],'volume':bank[p+13],'pan':bank[p+14],'pitch':struct.unpack_from('>f',bank,p+16)[0]})
 used=set()
-def trace(start):
+def trace(seq,start,bank_programs):
  notes=[];queue=[(start,0)];tracks=0;variables={}
  while queue:
   pc,t=queue.pop(0);state={'program':0,'volume':127,'volume2':127,'pan':64,'transpose':0,'bend':0,'bendRange':2,'noteWait':1,'tempo':120,'timebase':48};stack=[];loops=[];pending={};steps=0
@@ -48,9 +49,9 @@ def trace(start):
     if argkind==0xa1:return variables.get(byte(),0)
     return vlq() if kind=='vlq' else ((byte()<<8)|byte()) if kind=='short' else byte()
    if op<0x80:
-    velocity=byte();length=arg('vlq');p=programs[state['program']];rate=2**((op+state['transpose']-p['key']+state['bend']/128*state['bendRange'])/12)*p['pitch']
+    velocity=byte();length=arg('vlq');p=programs[bank_programs+state['program']];rate=2**((op+state['transpose']-p['key']+state['bend']/128*state['bendRange'])/12)*p['pitch']
     duration=length*60/state['tempo']/state['timebase'] if length else waves[p['wave']]['samples']/waves[p['wave']]['rate']/rate
-    notes.append(dict(state,time=t,note=op,velocity=velocity,length=length,duration=duration,random=pending.copy()))
+    notes.append(dict(state,program=bank_programs+state['program'],time=t,note=op,velocity=velocity,length=length,duration=duration,random=pending.copy()))
     if state['noteWait']:t+=duration
    elif op==0xf0:
     sub=byte();v=byte();x=arg('short');old=variables.get(v,0)
@@ -95,8 +96,11 @@ def trace(start):
   tracks+=1
  return notes
 sounds={}
-for sid,s in assets['audio']['sounds'].items():
- if s['type']!=1 or s['fileId']!=int(seqid):continue
- sounds[sid]={'name':s['name'],'volume':s['volume'],'notes':trace(s['data'][0])}
+for seqid in [k for k,v in files.items() if v['magic']=='RSEQ']:
+ b=(out/f'file-{seqid}.bin').read_bytes();seq=b[u32(b,16)+u32(b,u32(b,16)+8):]
+ for sid,s in assets['audio']['sounds'].items():
+  if s['type']!=1 or s['fileId']!=int(seqid):continue
+  if s['bankFile'] not in first_program:raise SystemExit(f"{s['name']}: its bank (file {s['bankFile']}) was not extracted")
+  sounds[sid]={'name':s['name'],'volume':s['volume'],'notes':trace(seq,s['data'][0],first_program[s['bankFile']])}
 (out/'sfx.json').write_text(json.dumps({'waves':waves,'programs':programs,'sounds':sounds},indent=2)+'\n')
 print(json.dumps({'samples':len(waves),'programs':len(programs),'sounds':len(sounds),'commands':sorted(used),'notes':sum(len(s['notes']) for s in sounds.values())}))

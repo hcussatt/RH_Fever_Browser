@@ -8,10 +8,27 @@ import hashlib
 import json
 import sys
 from paths import DISC, DOL, BRSAR, DOL_SHA1, GAMES, manifest
-from wii_files import WiiFiles, u8_files
+from wii_files import WiiFiles, u8_files, yaz0
 
 # Unpacked cellanim archive for each game, from its manifest.
 CELLANIM = {game: manifest(game)['wii']['cellanim'] for game in GAMES}
+# 2D layout archive for games that draw one (Love Rap's lyric captions).
+LAYOUT = {game: manifest(game)['wii']['layout'] for game in GAMES if 'layout' in manifest(game)['wii']}
+MESSAGES = 'EN/content2/message/riq_E.szs'
+
+
+def layout_fonts(brlyt):
+    """Font file names a layout's fnl1 section lists."""
+    pos, names = int.from_bytes(brlyt[12:14], 'big'), []
+    while pos < len(brlyt):
+        size = int.from_bytes(brlyt[pos+4:pos+8], 'big')
+        if brlyt[pos:pos+4] == b'fnl1':
+            table = pos+12
+            for i in range(int.from_bytes(brlyt[pos+8:pos+10], 'big')):
+                start = table+int.from_bytes(brlyt[table+i*8:table+i*8+4], 'big')
+                names.append(brlyt[start:brlyt.index(0, start)].decode('ascii'))
+        pos += size
+    return names
 
 
 def main(iso):
@@ -30,10 +47,29 @@ def main(iso):
             out.parent.mkdir(parents=True, exist_ok=True)
             out.write_bytes(data)
             report['files'][f'{game}/{name}'] = hashlib.sha256(data).hexdigest()
+    for game, layout in LAYOUT.items():
+        files = u8_files(disc.get(layout['archive']))
+        for name, data in files.items():
+            out = DISC/game/'layout'/name
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_bytes(data)
+            report['files'][f'{game}/layout/{name}'] = hashlib.sha256(data).hexdigest()
+        # Fonts not in the archive are stand-alone compressed files next to the layouts.
+        for font in layout_fonts(files['blyt/'+layout['file']]):
+            if 'font/'+font not in files:
+                data = yaz0(disc.get('EN/content2/'+font.rsplit('.', 1)[0]+'.szs'))
+                (DISC/'font').mkdir(exist_ok=True)
+                (DISC/'font'/font).write_bytes(data)
+                report['files'][f'font/{font}'] = hashlib.sha256(data).hexdigest()
+    if LAYOUT:
+        for name, data in u8_files(disc.get(MESSAGES)).items():
+            (DISC/'message').mkdir(exist_ok=True)
+            (DISC/'message'/name).write_bytes(data)
+            report['files'][f'message/{name}'] = hashlib.sha256(data).hexdigest()
     if not BRSAR.exists() or BRSAR.stat().st_size != disc.files['EN/content2/rev_tengoku.brsar'][1]:
         BRSAR.write_bytes(disc.get('EN/content2/rev_tengoku.brsar'))
     (DISC/'extract-report.json').write_text(json.dumps(report, indent=2)+'\n')
-    print(f'Read main.dol, {len(report["files"])} cellanim files and the sound archive into {DISC}')
+    print(f'Read main.dol, {len(report["files"])} cellanim, layout and message files and the sound archive into {DISC}')
 
 
 if __name__ == '__main__':

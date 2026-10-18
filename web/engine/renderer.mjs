@@ -3,9 +3,12 @@
 // down, and an animation attached to an object of its base only moves while the base's
 // current cell has that object; otherwise it keeps its last matrix. An attached animation
 // drawn with its base (mBaseAnimDraw) is drawn right after that object, not by layer.
+// A game's 2D layout (layout.mjs) is drawn over the cell animations.
+import {createLayout} from './layout.mjs';
 export async function createRenderer(g,canvas){
  const images=await Promise.all(g.assets.textures.map(async n=>{const i=new Image();i.src=new URL('assets/'+n,g.base);await i.decode();return i;}));
  const ctx=canvas.getContext('2d',{alpha:false});
+ const layout=await createLayout(g);
  const {u8,u16,u32,f32,core,banks}=g;
  const mul=(a,b)=>[a[0]*b[0]+a[2]*b[1],a[1]*b[0]+a[3]*b[1],a[0]*b[2]+a[2]*b[3],a[1]*b[2]+a[3]*b[3],a[0]*b[4]+a[2]*b[5]+a[4],a[1]*b[4]+a[3]*b[5]+a[5]];
  const trs=(x,y,deg,sx,sy)=>{const a=deg*Math.PI/180,c=Math.cos(a),s=Math.sin(a);return [c*sx,s*sx,-s*sy,c*sy,x,y];};
@@ -61,7 +64,8 @@ export async function createRenderer(g,canvas){
   const [w,h]=g.manifest.wii.projection,origin=[canvas.width/w,0,0,canvas.height/h,canvas.width/2,canvas.height/2];
   const drawn=actors.filter(a=>u8(a+12)!==255&&u8(a+0xa7)&&!(u32(a+0xb0)&&u8(a+0xc2))).sort((a,b)=>(u32(b+0x98)|0)-(u32(a+0x98)|0));
   for(const a of drawn)drawActor(a,origin);
+  layout?.draw(ctx,canvas);
   ctx.globalAlpha=1;
  }
- return {draw};
+ return {draw,layout};
 }

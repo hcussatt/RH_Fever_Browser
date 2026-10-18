@@ -57,6 +57,16 @@ export async function loadGame(gameUrl,load=fetchBytes,{timeline:withTimeline=tr
  // Perfect campaign mode is chosen by the menus in the original, not by the chart.
  if(profile.perfectActive)core._set_perfect_active(1);
  // Events carry the issuing flow's rest; the command ran at the frame's end tick plus that rest.
+ // A chart sound the browser already scheduled from the silent run. Flows that only start in
+ // play (a hit or a miss starts one, for example) are not in it, so their sounds play live.
+ // Layout events (11): the game's 2D layouts (Love Rap's lyric captions), drawn by layout.mjs.
+ const layoutEvents=[];let steps=0;
+ const consumed=new Set();
+ function prescheduled(sound,at){
+  const list=timeline?.sounds||[];
+  for(let i=0;i<list.length;i++)if(!consumed.has(i)&&list[i].sound===sound&&Math.abs(list[i].tick-at)<0.5){consumed.add(i);return true;}
+  return false;
+ }
  function step(nextTick,press=false){
   const events=frame(nextTick-tick,press);tick=nextTick;
   // A new checker's perfect tick: its target (mTickJust, +0x58) less the ticks it has counted (mTickPass, +0x54).
@@ -66,11 +76,13 @@ export async function loadGame(gameUrl,load=fetchBytes,{timeline:withTimeline=tr
    // Tuning (10) applies to the sound played just before it.
    if(e[0]===10){if(last)last[['volume','pitch','pan'][e[1]]]=rest(e[2]);continue;}
    last=null;
-   if(e[0]===1||e[0]===5){last={sound:e[1]};if(e[0]===1||!options.chartAudioScheduled)sounds.push(last);}
+   if(e[0]===1||e[0]===5){last={sound:e[1]};if(e[0]===1||!options.chartAudioScheduled||!prescheduled(e[1],tick+rest(e[2])))sounds.push(last);}
    if(e[0]===5)chartSounds.push(Object.assign(last,{tick:tick+rest(e[2])}));
    else if(e[0]===8)commands.push({tick:tick+rest(e[2]),op:e[1]});
    else if(e[0]===7){ended=true;endTick=tick+rest(e[2]);}
+   else if(e[0]===11)layoutEvents.push({frame:steps,action:e[1],value:e[2]});
   }
+  steps++;
   return events;
  }
  // Original nw4r note envelope: amplitude at each 3 ms mixer update (see platform.c envelope_curve).
@@ -83,5 +95,5 @@ export async function loadGame(gameUrl,load=fetchBytes,{timeline:withTimeline=tr
  // Judgment counters kept by the platform backend (adapters/wii/platform.c stat()).
  const stats=()=>Array.from({length:9},(_,i)=>core._stat(i));
  function result(){const s=stats();return {hits:s[0],misses:s[1],through:s[2],stray:s[3],perfectFailed:s[4]};}
- return {manifest,base,core,options,assets,chart,clock,secondsAtTick:clock.secondsAtTick,tickAtSeconds:clock.tickAtSeconds,banks,timeline,step,drain,sounds,chartSounds,commands,cues,envelope,stats,result,u8,u16,u32,f32,w8,w16,w32,wf,alloc,offset,get tick(){return tick;},get ended(){return ended;},get endTick(){return endTick;}};
+ return {manifest,base,core,options,assets,chart,clock,secondsAtTick:clock.secondsAtTick,tickAtSeconds:clock.tickAtSeconds,banks,timeline,step,drain,sounds,chartSounds,commands,cues,layoutEvents,get steps(){return steps;},envelope,stats,result,u8,u16,u32,f32,w8,w16,w32,wf,alloc,offset,get tick(){return tick;},get ended(){return ended;},get endTick(){return endTick;}};
 }
