@@ -36,8 +36,10 @@ for game in $games; do
   RHF_GAME=$game python3 tools/extract-assets.py >/dev/null
   RHF_GAME=$game python3 tools/extract-sfx.py >/dev/null
   RHF_GAME=$game python3 tools/decode-music.py
-  python3 "tools/$game-timeline.py" >/dev/null
+  echo "== $game: finding and dry-running the chart"
+  RHF_GAME=$game python3 tools/chart-index.py
   tools/stage-web.sh "$game"
+  node tools/chart-timeline.mjs "$game"
 done
 tools/stage-index.sh
 

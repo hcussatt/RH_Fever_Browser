@@ -4,13 +4,14 @@
   "action": "Swing",
   "platform": "wii",
   "wii": {
+    "scene": "Baseball",
+    "sceneVariant": 1,
     "cellanim": "EN/content2/cellanim/baseball/ver0/cellanim.szs",
     "units": ["Game/Baseball/SceneBaseball.cpp", "Game/Baseball/MyChecker.cpp", "Game/Baseball/MyFlow.cpp", "Game/Pseudo3D.cpp"],
     "banks": ["golfman", "golf_bg", "golf_monkey", "golf_bg_effect"],
     "sounds": [[35, 35], [758, 797]],
     "soundGroups": [98, 19],
     "music": 35,
-    "afterPrelude": [["set_delta", 12], ["finish_frame"], ["drain"]],
     "chartTempo": false,
     "projection": [854, 480],
     "endsWithMusic": false

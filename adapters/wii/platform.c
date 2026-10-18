@@ -19,10 +19,14 @@ static uint32_t trace[256];
 static uint32_t heap=0x80500000,call_depth;
 static uint32_t actors[2048],actor_active[2048],actor_count;
 static uint32_t checkers[128],checker_count,events[4096],event_count,frame_number;
-static uint32_t scene,flow,layout[8],layout_count,canvas[10],base_canvas;
+static uint32_t scene,layout[8],layout_count,canvas[10],base_canvas;
 static uint32_t canvas_timing[10][2];
-static uint32_t hits,misses,through,stray,perfect_failed,input_allowed,score_sum,score_count,wrong_count;
-static float aux_time[128];static uint32_t aux_code[128],aux_count;
+static uint32_t hits,misses,through,stray,perfect_failed,score_sum,score_count,wrong_count;
+// Chart player: the original CTickFlow interpreter (translated with the game)
+// runs every chart script live. These stand in for CTickFlowManager.
+static uint32_t chart_flows[256],chart_flow_count,chart_rerun,chart_instances,current_flow,music_sound=0xffffffff,music_started,song_ended;
+static uint32_t chart_sound,tf_values[16],sound_handle;
+static float frame_ticks; // nominal ticks per 60 Hz frame at the chart's current tempo
 static float delta_ticks,current_tempo=GAME_DEFAULT_TEMPO,wrong_timer;
 typedef struct {uint32_t count,animations,cells;} Bank;
 static Bank banks[256];
@@ -75,9 +79,45 @@ static void checkpoint(uint32_t category,uint32_t type){
   if(type==0)hits++;else if(type==1)misses++;else through++;
   emit(2,type,category);
 }
+// CTickFlowManager::fn_801E1CC0: create a flow with the game's own flow class
+// and push it at the head of the list, as the original does.
+static uint32_t create_flow(uint32_t code,double rest){
+  if(chart_flow_count>=256)panic(code,11);
+  uint32_t block=alloc(512);r[3]=block;r[4]=code;f[1].d=rest;call(GAME_FLOW_CREATE);
+  memmove(chart_flows+1,chart_flows,chart_flow_count*4);chart_flows[0]=block;chart_flow_count++;chart_rerun=1;
+  return block;
+}
+// CTickFlowManager::_18: run every flow once per frame, newest first; rerun
+// while a flow spawned another one this frame.
+static void run_flows(void){
+  for(uint32_t i=0;i<chart_flow_count;i++)wr8(chart_flows[i]+0x20,0);
+  do{
+    uint32_t list[256],n=chart_flow_count;chart_rerun=0;memcpy(list,chart_flows,n*4);
+    for(uint32_t i=0;i<n;i++){
+      current_flow=r[3]=list[i];call(0x801dd9e8);
+      if(r[3]&1)for(uint32_t j=0;j<chart_flow_count;j++)if(chart_flows[j]==list[i]){chart_flow_count--;memmove(chart_flows+j,chart_flows+j+1,(chart_flow_count-j)*4);break;}
+    }
+  }while(chart_rerun);
+}
+// CExFlow::_1C: scene-level chart commands (0x100-0x141). Menus, layouts,
+// grading and scene changes are outside the minigame; only what gameplay
+// needs is kept. Everything below 0x100 is the original CTickFlow::_1C.
+static void exflow_command(void){
+  uint32_t self=r[3],op=r[4],arg0=r[5];
+  if(op<0x100){
+    if(op==0x40||op==0x41){r[3]=0;return;} // Message panes: layout UI is not ported.
+    chart_sound=op==0x22||op==0x23;call(0x801ddb84);chart_sound=0;return;
+  }
+  if(op==0x12a)wr8(0x803201b9,arg0);
+  else if(op==0x118&&music_started&&!song_ended){song_ended=1;emit(7,0,rd32(self+0x1c));} // Grading starts: the song is over.
+  else if(op==0x121||op==0x131)wr32(self+0x24,0); // Scene version / play-mode queries: normal play.
+  r[3]=0;
+}
 static void call(uint32_t address){
   trace[call_depth]=address;
   if(++call_depth>128)panic(address,6);
+  // Game chart commands, with the issuing flow's rest (its tick is the frame's end tick plus that rest).
+  if(address==GAME_FLOW_COMMAND&&music_started&&r[4]>=0x200)emit(8,r[4],rd32(r[3]+0x1c));
   if(dispatch_original(address)){call_depth--;return;}
   // Compiler ABI register save/restore helpers.
   if(address>=0x80104100 && address<=0x801041d0){
@@ -111,7 +151,8 @@ static void call(uint32_t address){
   case 0x801e9488:score_sum+=(r[4]?r[4]:wrong_count*5);score_count++;wrong_count=0;break;
   case 0x801eaf2c:checkpoint(r[4],r[5]);break;
   case 0x801e9d68:r[3]=0;break; // Single-controller statistics channel.
-  case 0x801e4f60:emit(1,r[4],0);break;
+  case 0x801e4f60:if(chart_sound)emit(5,r[4],rd32(current_flow+0x1c));else emit(1,r[4],0);break; // Chart sounds (5, with the flow's rest) are scheduled ahead by the browser.
+  case 0x801e60e0:case 0x801e62b8:case 0x801e65f4:case 0x801e676c:case 0x801e68e0:case 0x801e6a54:case 0x801e6bc8:break; // Sound tuning: not yet modelled.
   case 0x80009abc:case 0x80009e98:{uint32_t reason=address==0x80009abc?1:r[3];
     if(address==0x80009abc)wr8(0x803201a0,1);
     if((rd32(0x803201bc)&reason)&&rd8(0x803201b8)&&rd8(0x803201b9)&&!rd8(0x803201ba)){
@@ -128,8 +169,31 @@ static void call(uint32_t address){
   case 0x8007c000:{uint32_t index=r[4],type=r[5],power=r[6];float duration=f[1].d,x=f[2].d,y=f[3].d;set_canvas_timed(index,type,power,duration,x,y);break;}
   case 0x8007c244:{uint32_t i=r[4];union{float f;uint32_t u;}x={.f=rdf32(canvas[i]+0x8c)},y={.f=rdf32(canvas[i]+0x90)};r[3]=x.u;r[4]=y.u;break;}
   case 0x80008160:case 0x8000818c:case 0x8000835c:case 0x80008830:case 0x80008a20:break;
-  case 0x8008d290:case 0x8008d310:break;
-  case 0x8008d368:panic(r[4],8);break;
+  case 0x8008d290:{uint32_t self=r[3];call(0x801dd6f4);wr32(self,0x802ed598);r[3]=self;break;} // CExFlow ctor
+  case 0x8008d310:break;
+  case 0x8008d368:exflow_command();break;
+  // CTickFlowManager services used by the interpreter.
+  case 0x801e4124:r[3]=++chart_instances;break;
+  case 0x801e2928:f[1].d=(float)(frame_ticks*f[1].d);break;
+  case 0x801e2b9c:case 0x801e2c04:case 0x801e26a8:break; // Tempo and speed follow the backing track (set by the browser clock).
+  case 0x801e3938:music_sound=r[4];break; // prepareWave
+  case 0x801e3960:music_sound=r[4]; // playWave
+  case 0x801e3a5c:if(!music_started){music_started=1;emit(6,music_sound,rd32(current_flow+0x1c));}break; // playPreparedWave: chart tick 0, overshot by -rest
+  case 0x801e3e3c:r[3]=1;break; // wave prepared
+  case 0x801e4134:tf_values[r[4]&15]=r[5]&0xffff;break; // rest-length slots (TF 0x0a)
+  case 0x801e4144:r[3]=tf_values[r[4]&15];break;
+  case 0x801e4154:sound_handle=r[4];break;
+  case 0x801e415c:r[3]=sound_handle;break;
+  case 0x801e7b30:r[3]=0;break; // Handle of a playing sound: tuning is not yet modelled.
+  // Sequence/stream music, music stop and fades: the browser plays the one backing track.
+  case 0x801e2ed8:case 0x801e2f00:case 0x801e300c:case 0x801e3120:case 0x801e334c:case 0x801e33c0:
+  case 0x801e33c8:case 0x801e33f0:case 0x801e34ec:case 0x801e3690:case 0x801e38bc:case 0x801e3c00:case 0x801e3e2c:break;
+  case 0x801e38cc:case 0x801e7334:r[3]=0;break; // stream playing / sound data loading
+  case 0x801e6e08:case 0x801e6e4c:case 0x801e6ecc:case 0x801e7114:case 0x801e71c0:break; // player volumes
+  // Input-check settings (forced inputs, offsets, input recording) and button cooldown: normal play.
+  case 0x801e923c:case 0x801e9c30:case 0x801e9c38:case 0x801e9c40:case 0x801e9d58:case 0x801e9d80:case 0x801e9d84:case 0x801d5500:break;
+  case 0x8010a084:r[3]=0;break; // sprintf (only for input recording file names)
+  case 0x801e73d4:{uint32_t found=0;for(uint32_t i=0;i<162&&!found;i++)if(rd16(0x802e8210+i*8)==(r[4]&0xffff))found=0x802e8210+i*8;r[3]=found;break;} // CSoundManager::find_wave_info over the DOL's wave table
   // Layout transitions (frame decoration); not yet ported.
   case 0x8007263c:case 0x800726ac:case 0x8007271c:case 0x80072794:case 0x8007280c:break;
   // Archive/bank registration is completed by the static browser asset loader.
@@ -142,7 +206,7 @@ static void call(uint32_t address){
   case 0x801d6b2c:if(layout_count>=8)panic(layout_count,9);layout[layout_count++]=r[4];break;
   case 0x801d6c50:r[3]=layout[r[4]];break;
   case 0x801d9a2c:wr32(r[3],0x80430000);break;
-  case 0x801e1cc0:if(aux_count>=128)panic(r[4],11);aux_code[aux_count]=r[4];aux_time[aux_count++]=f[1].d;break;
+  case 0x801e1cc0:r[3]=create_flow(r[4],f[1].d);break;
   case 0x800dc460:case 0x80199b80:break;
   case 0x8000abc4:case 0x8000abcc:case 0x8fff0000:r[3]=0;break; // Explicit platform-only virtual method.
   default:panic(address,10);
@@ -161,8 +225,9 @@ EMSCRIPTEN_KEEPALIVE uint32_t allocate(uint32_t size){return alloc(size);}
 EMSCRIPTEN_KEEPALIVE void install_bank(uint32_t id,uint32_t count,uint32_t animations,uint32_t cells){banks[id]=(Bank){count,animations,cells};}
 EMSCRIPTEN_KEEPALIVE void reset_runtime(void){
   memset(ram,0,sizeof(ram));memset(r,0,sizeof(r));memset(f,0,sizeof(f));memset(cr,0,sizeof(cr));memset(banks,0,sizeof(banks));
-  aux_count=0;heap=0x80500000;call_depth=actor_count=checker_count=event_count=frame_number=layout_count=0;
-  hits=misses=through=stray=perfect_failed=score_sum=score_count=wrong_count=0;wrong_timer=0;input_allowed=0;
+  memset(tf_values,0,sizeof(tf_values));sound_handle=0;
+  chart_flow_count=chart_rerun=chart_instances=current_flow=music_started=song_ended=0;music_sound=0xffffffff;frame_ticks=0;heap=0x80500000;call_depth=actor_count=checker_count=event_count=frame_number=layout_count=0;
+  hits=misses=through=stray=perfect_failed=score_sum=score_count=wrong_count=0;wrong_timer=0;
   memset(canvas_timing,0,sizeof(canvas_timing));base_canvas=0;
   r[1]=0x81800000;r[2]=0x80328fe0;r[13]=0x80326ec0;
 }
@@ -179,9 +244,8 @@ EMSCRIPTEN_KEEPALIVE void initialize_scene(void){
   uint32_t you=create_actor(255,0);wr32(0x80320200,you);wr8(you+0xa7,0);
   uint32_t other=create_actor(255,0);wr32(0x803201f8,other);wr32(0x803201fc,other);
   invoke1(GAME_SCENE_INIT,scene);
-  flow=alloc(512);wr32(flow+0xfc,scene);
   wr32(0x803201bc,7);wr8(0x803201b8,1);
-  emit(4,scene,flow);
+  emit(4,scene,0);
 }
 EMSCRIPTEN_KEEPALIVE uint32_t scene_address(void){return scene;}
 EMSCRIPTEN_KEEPALIVE uint32_t current_key(uint32_t actor){return key(actor);}
@@ -189,36 +253,17 @@ EMSCRIPTEN_KEEPALIVE uint32_t current_key(uint32_t actor){return key(actor);}
 EMSCRIPTEN_KEEPALIVE void set_tempo(float tempo){current_tempo=tempo;}
 #endif
 EMSCRIPTEN_KEEPALIVE void set_delta(float ticks){delta_ticks=ticks;}
-EMSCRIPTEN_KEEPALIVE void original_command(uint32_t opcode,uint32_t arg0,uint32_t args){r[3]=flow;r[4]=opcode;r[5]=arg0;r[6]=args;call(GAME_FLOW_COMMAND);}
 EMSCRIPTEN_KEEPALIVE void set_perfect_active(uint32_t enabled){wr8(0x803201b9,enabled);}
-EMSCRIPTEN_KEEPALIVE void begin_frame(void){
-#if GAME_AUX_SCRIPTS
-  // Auxiliary chart scripts run several commands until a wait or the end.
-  for(int i=(int)aux_count-1;i>=0;i--){
-    aux_time[i]-=delta_ticks;
-    if(aux_time[i]<0){uint32_t p=aux_code[i];int ended=0;
-      for(int n=0;n<32;n++){uint32_t w=rd32(p),op=w&1023,argc=(w>>10)&15,operand=w>>14;
-        if(op==3||op==2){ended=1;break;}
-        if(op==9){aux_time[i]+=operand;p+=4;break;}
-        if(op>=0x200)original_command(op,operand,p+4);
-        // Message-pane commands have no scoring effect; layout UI is not yet ported.
-        else if(op!=0x40&&(op<0x100||op>0x141))panic(op,12);
-        p+=4+argc*4;
-      }
-      aux_code[i]=p;
-      if(ended){aux_count--;memmove(aux_code+i,aux_code+i+1,(aux_count-i)*4);memmove(aux_time+i,aux_time+i+1,(aux_count-i)*4);}
-    }
-  }
-#else
-  for(int i=(int)aux_count-1;i>=0;i--){aux_time[i]-=delta_ticks;if(aux_time[i]<0){uint32_t p=aux_code[i],w=rd32(p);original_command(w&1023,w>>14,p+4);aux_count--;memmove(aux_code+i,aux_code+i+1,(aux_count-i)*4);memmove(aux_time+i,aux_time+i+1,(aux_count-i)*4);}}
-#endif
-}
-EMSCRIPTEN_KEEPALIVE void set_input_allowed(uint32_t value){input_allowed=value;}
+// Start the minigame's chart at its first command.
+EMSCRIPTEN_KEEPALIVE void start_chart(uint32_t code){create_flow(code,0);}
+EMSCRIPTEN_KEEPALIVE void set_frame_ticks(float ticks){frame_ticks=ticks;}
+EMSCRIPTEN_KEEPALIVE uint32_t chart_state(void){return music_started|(song_ended<<1);}
+EMSCRIPTEN_KEEPALIVE void begin_frame(void){run_flows();}
 // Vanilla fixed-frame A sampling: original checker receives inputAge=0.
 // Historical timestamp correction / rollback is FUTURE USE ONLY and inactive.
 // See research/timing/FUTURE-USE.md before any later experiment.
 EMSCRIPTEN_KEEPALIVE void press_a(void){
-  if(!input_allowed)return;
+  if(!rd8(rd32(0x80320170)+0x429))return; // CInputCheckManager::mAllowInput, set by the chart.
   uint32_t consumed=0;
   for(int i=(int)checker_count-1;i>=0;i--){
     uint32_t c=checkers[i];if(rd8(c+0x71))continue;

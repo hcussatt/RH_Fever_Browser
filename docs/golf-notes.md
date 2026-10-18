@@ -10,7 +10,7 @@ This is an experimental static recompilation, **not a completed readable decompi
 
 Reference executable: user-provided USA SOME01 DOL, SHA1 `d96d2c7e50b0c713cb8fcb18835258351ada5576`. Baseline symbols and matching shared source come from the local RHF decomp at commit `4429cbcb000abff644683d98701f6ab8c1671e10`. Source/disassembly remains under `research/rhf-decomp` and `research/original`; regeneration requires these local original files.
 
-Textures, sprites, animation keys, musical chart, DSP-ADPCM samples, and short sound sequences are extracted from that disc. There is no manually authored substitute chart, shot trajectory, or judgment predicate in the playable implementation. `tools/golf-timeline.py` traces the original full-level TickFlow chart: 64 shots, 771 events, music 3,339,131 samples at 32 kHz / 200 beats, 104.34784375 seconds. The original post-music wait ends at tick 9696, about 105.3913 seconds. The prelude sets the original camera, poses, and clouds. Tutorial/prologue and original result UI are skipped.
+Textures, sprites, animation keys, musical chart, DSP-ADPCM samples, and short sound sequences are extracted from that disc. There is no manually authored substitute chart, shot trajectory, or judgment predicate in the playable implementation. The original full-level TickFlow chart, run by the shared chart player: 64 shots, 771 events, music 3,339,131 samples at 32 kHz / 200 beats, 104.34784375 seconds. The original post-music wait ends at tick 9696, about 105.3913 seconds. The prelude sets the original camera, poses, and clouds. Tutorial/prologue and original result UI are skipped.
 
 ## Timing and scoring
 

@@ -27,6 +27,29 @@ built games for the picker page.
   simulation reads only that queue. Original timing windows and Perfect rules
   are untouched: no widened windows, score forcing or rollback.
 
+## Charts
+
+The original chart bytecode (TickFlow) runs live in the original interpreter
+(`CTickFlow`, translated like the game code). `platform.c` stands in for the
+flow manager: it keeps the list of running flows and steps them each frame the
+way the original `CTickFlowManager` does (newest first, again in the same frame
+when a flow starts another), and supplies the sound, tempo and input services
+the interpreter calls.
+
+- `tools/chart-index.py` finds the game's main chart from the executable: the
+  scene change to the manifest's `scene` whose chart starts grading (ExFlow
+  `0x118`), its music (`PREPARE_WAVE`) and that music's tempo table. It writes
+  `assets/original-chart.json`.
+- At load the chart runs silently from its first command to the music start,
+  which is chart tick 0. From then on the browser clock drives it.
+- `tools/chart-timeline.mjs` does one silent run of the whole level at build
+  time and writes `assets/original-timeline.json`: the chart's own sounds with
+  their exact ticks (scheduled ahead on the audio thread so they never depend
+  on frame timing), the game commands with their ticks (input cues for the
+  autoplay tests) and the tick where grading starts (the end of the song).
+- Every event the chart emits during play carries the issuing flow's remaining
+  rest, so its exact tick is the frame's end tick plus that rest.
+
 ## Results and versus mode (planned)
 
 When the song ends the page sets `window.rhf.result` to
@@ -43,14 +66,15 @@ Nothing on the frame loop or audio path ever waits on the network.
 1. `games/<id>/game.json`: copy an existing one. `wii.units` are the decomp
    translation units to translate (see `third_party/rhf-decomp/config/SOME01/splits.txt`);
    `banks` are the cell-animation banks in the order the scene registers them;
-   `sounds`/`soundGroups`/`music` select the BRSAR data; `afterPrelude`,
-   `chartTempo`, `projection` and `endsWithMusic` cover how the game starts and ends.
+   `sounds`/`soundGroups`/`music` select the BRSAR data; `scene` names the
+   decomp's scene (`sceneVariant` picks one main chart when the scene has
+   several); `perfectActive`, `chartTempo`, `projection` and `endsWithMusic`
+   cover how the game plays and ends.
 2. `adapters/<id>/game.h`: the scene constructor, init, update, flow command and
-   wrong-input addresses, plus any extra platform calls the game makes
+   wrong-input addresses and the flow constructor, plus any extra platform calls the game makes
    (`GAME_CALLS`) and per-frame hooks (`GAME_AFTER_UPDATE`). The build fails with
    the address of any call that is still missing.
-3. `tools/<id>-timeline.py`: the chart tracer (until the general chart player lands).
-4. `./build.sh <iso>` builds and tests every game that has a manifest.
+3. `./build.sh <iso>` builds and tests every game that has a manifest.
 
 ## Other consoles (later)
 

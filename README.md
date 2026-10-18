@@ -63,7 +63,7 @@ included here. Provide it in one of these ways:
 | `tools/recompile.py` | Translates each game's original PowerPC functions to C |
 | `tools/build-core.sh` | Compiles that C plus the Wii platform backend to WASM |
 | `tools/extract-assets.py`, `extract-sfx.py`, `decode-music.py` | Textures, cell animations, sound programs, samples and music |
-| `tools/golf-timeline.py`, `tap-timeline.py` | Trace each game's original rhythm chart |
+| `tools/chart-index.py`, `chart-timeline.mjs` | Find each game's chart and tempo in the executable; dry-run it to pre-schedule its sounds |
 | `adapters/wii/platform.c` | Hand-written Wii platform services the translated code calls, shared by every game |
 | `adapters/<game>/game.h` | The original addresses and game-specific calls one game needs |
 | `web/engine/` | Shared page, clock, input, renderer and Web Audio code |
