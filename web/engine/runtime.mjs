@@ -31,7 +31,7 @@ export async function loadGame(gameUrl,load=fetchBytes,{timeline:withTimeline=tr
   b.cells.forEach((objects,i)=>{const p=alloc(objects.length*32);w16(cp+i*8,objects.length);w32(cp+i*8+4,p);objects.forEach((o,j)=>{const a=p+j*32;[o.sx,o.sy,o.w,o.h,o.palette,o.reserved,o.x,o.y].forEach((v,k)=>w16(a+k*2,v));wf(a+16,o.scaleX);wf(a+20,o.scaleY);wf(a+24,o.angle);w8(a+28,o.flipX);w8(a+29,o.flipY);w8(a+30,o.alpha);});});
   core._install_bank(id,b.animations.length,ap,cp);
  });
- core._initialize_scene();
+ core._set_tempo(clock.tempoAtTick(0));core._initialize_scene();
  const f32bits=new DataView(new ArrayBuffer(4));
  const rest=bits=>(f32bits.setUint32(0,bits),f32bits.getFloat32(0));
  let tick=0,ended=false,endTick=null;
@@ -39,7 +39,7 @@ export async function loadGame(gameUrl,load=fetchBytes,{timeline:withTimeline=tr
  function drain(){const n=core._events_count(),p=core._events_ptr();const out=[];for(let i=0;i<n;i++)out.push(Array.from(core.HEAPU32.subarray(p/4+i*4,p/4+i*4+4)));core._events_clear();return out;}
  function frame(ticks,press){
   core._set_delta(ticks);core._set_frame_ticks(ticks);
-  if(profile.chartTempo)core._set_tempo(ticks*60/48);
+  core._set_tempo(clock.tempoAtTick(tick));
   core._begin_frame();
   if(press)core._press_a();
   core._finish_frame();

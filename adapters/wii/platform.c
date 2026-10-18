@@ -27,7 +27,7 @@ static uint32_t hits,misses,through,stray,perfect_failed,score_sum,score_count,w
 static uint32_t chart_flows[256],chart_flow_count,chart_rerun,chart_instances,current_flow,music_sound=0xffffffff,music_started,song_ended;
 static uint32_t chart_sound,tf_values[16],sound_handle,envelope;
 static float frame_ticks; // nominal ticks per 60 Hz frame at the chart's current tempo
-static float delta_ticks,current_tempo=GAME_DEFAULT_TEMPO,wrong_timer;
+static float delta_ticks,current_tempo,wrong_timer;
 typedef struct {uint32_t count,animations,cells;} Bank;
 static Bank banks[256];
 EM_JS(void,panic_js,(uint32_t address,uint32_t kind,uint32_t pc,uint32_t stack,uint32_t depth),{console.error(Array.from(HEAPU32.subarray(stack/4,stack/4+depth)).map(x=>x.toString(16)));throw new Error('Original code '+kind+' at 0x'+address.toString(16)+' after 0x'+pc.toString(16));});
@@ -142,9 +142,7 @@ static void call(uint32_t address){
   case 0x801dbe04:case 0x801dbe14:r[3]=1024;break;
   case 0x801dc0d4:break; // Renderer sorts the original layer values.
   case 0x801e2698:case 0x801e3ea8:f[1].d=delta_ticks;break;
-#if GAME_CHART_TEMPO
   case 0x801e26b4:f[1].d=(float)(f[1].d/((current_tempo*48.0f)/60.0f));break;
-#endif
   case 0x801e2ca8:f[1].d=current_tempo;break;
   case 0x801e4178:r[3]=1;break;
   case 0x801e9158:if(checker_count>=128)panic(checker_count,7);checkers[checker_count++]=r[4];emit(9,r[4],0);break; // new input checker (9): the dry run reads its target tick
@@ -255,9 +253,8 @@ EMSCRIPTEN_KEEPALIVE void initialize_scene(void){
 }
 EMSCRIPTEN_KEEPALIVE uint32_t scene_address(void){return scene;}
 EMSCRIPTEN_KEEPALIVE uint32_t current_key(uint32_t actor){return key(actor);}
-#if GAME_CHART_TEMPO
+// The backing track's tempo at the current tick (the browser clock reads it from the chart's tempo table).
 EMSCRIPTEN_KEEPALIVE void set_tempo(float tempo){current_tempo=tempo;}
-#endif
 EMSCRIPTEN_KEEPALIVE void set_delta(float ticks){delta_ticks=ticks;}
 EMSCRIPTEN_KEEPALIVE void set_perfect_active(uint32_t enabled){wr8(0x803201b9,enabled);}
 // Start the minigame's chart at its first command.

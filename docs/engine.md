@@ -91,7 +91,7 @@ Nothing on the frame loop or audio path ever waits on the network.
    `banks` are the cell-animation banks in the order the scene registers them;
    `scene` names the
    decomp's scene (`sceneVariant` picks one main chart when the scene has
-   several); `perfectActive`, `chartTempo`, `projection` and `endsWithMusic`
+   several); `perfectActive`, `projection` and `endsWithMusic`
    cover how the game plays and ends.
 2. `adapters/<id>/game.h`: the scene constructor, init, update, flow command and
    wrong-input addresses and the flow constructor, plus any extra platform calls the game makes

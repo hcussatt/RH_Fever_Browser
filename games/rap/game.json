@@ -9,7 +9,6 @@
     "cellanim": "EN/content2/cellanim/rap/ver0/cellanim.szs",
     "units": ["Game/Rap/SceneRap.cpp", "Game/Rap/MyChecker.cpp", "Game/Rap/MyFlow.cpp", "Game/Pseudo3D.cpp"],
     "banks": ["rap", "rap_bg", "rap_bg_01", "rap_airplane"],
-    "chartTempo": false,
     "projection": [854, 480],
     "endsWithMusic": false
   }

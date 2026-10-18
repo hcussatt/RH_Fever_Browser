@@ -9,7 +9,6 @@
     "units": ["Game/AgbTap/SceneAgbTap.cpp", "Game/AgbTap/MyChecker.cpp", "Game/AgbTap/MyFlow.cpp"],
     "banks": ["agb_tap", "agb_tap_bg"],
     "perfectActive": true,
-    "chartTempo": true,
     "projection": [832, 456],
     "endsWithMusic": true
   }
