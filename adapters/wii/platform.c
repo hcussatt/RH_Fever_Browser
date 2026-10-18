@@ -25,7 +25,7 @@ static uint32_t hits,misses,through,stray,perfect_failed,score_sum,score_count,w
 // Chart player: the original CTickFlow interpreter (translated with the game)
 // runs every chart script live. These stand in for CTickFlowManager.
 static uint32_t chart_flows[256],chart_flow_count,chart_rerun,chart_instances,current_flow,music_sound=0xffffffff,music_started,song_ended;
-static uint32_t chart_sound,tf_values[16],sound_handle;
+static uint32_t chart_sound,tf_values[16],sound_handle,envelope;
 static float frame_ticks; // nominal ticks per 60 Hz frame at the chart's current tempo
 static float delta_ticks,current_tempo=GAME_DEFAULT_TEMPO,wrong_timer;
 typedef struct {uint32_t count,animations,cells;} Bank;
@@ -152,7 +152,9 @@ static void call(uint32_t address){
   case 0x801eaf2c:checkpoint(r[4],r[5]);break;
   case 0x801e9d68:r[3]=0;break; // Single-controller statistics channel.
   case 0x801e4f60:if(chart_sound)emit(5,r[4],rd32(current_flow+0x1c));else emit(1,r[4],0);break; // Chart sounds (5, with the flow's rest) are scheduled ahead by the browser.
-  case 0x801e60e0:case 0x801e62b8:case 0x801e65f4:case 0x801e676c:case 0x801e68e0:case 0x801e6a54:case 0x801e6bc8:break; // Sound tuning: not yet modelled.
+  // Volume, pitch and pan set on a sound just played (10: 0 volume, 1 pitch, 2 pan, as float bits).
+  case 0x801e65f4:case 0x801e676c:case 0x801e68e0:{union{float v;uint32_t u;}x={.v=f[1].d};emit(10,address==0x801e65f4?0:address==0x801e676c?1:2,x.u);break;}
+  case 0x801e60e0:case 0x801e62b8:case 0x801e6a54:case 0x801e6bc8:break; // Stop and tempo tuning: not yet modelled.
   case 0x80009abc:case 0x80009e98:{uint32_t reason=address==0x80009abc?1:r[3];
     if(address==0x80009abc)wr8(0x803201a0,1);
     if((rd32(0x803201bc)&reason)&&rd8(0x803201b8)&&rd8(0x803201b9)&&!rd8(0x803201ba)){
@@ -229,7 +231,7 @@ EMSCRIPTEN_KEEPALIVE uint32_t allocate(uint32_t size){return alloc(size);}
 EMSCRIPTEN_KEEPALIVE void install_bank(uint32_t id,uint32_t count,uint32_t animations,uint32_t cells){banks[id]=(Bank){count,animations,cells};}
 EMSCRIPTEN_KEEPALIVE void reset_runtime(void){
   memset(ram,0,sizeof(ram));memset(r,0,sizeof(r));memset(f,0,sizeof(f));memset(cr,0,sizeof(cr));memset(banks,0,sizeof(banks));
-  memset(tf_values,0,sizeof(tf_values));sound_handle=0;
+  memset(tf_values,0,sizeof(tf_values));sound_handle=envelope=0;
   chart_flow_count=chart_rerun=chart_instances=current_flow=music_started=song_ended=0;music_sound=0xffffffff;frame_ticks=0;heap=0x80500000;call_depth=actor_count=checker_count=event_count=frame_number=layout_count=0;
   hits=misses=through=stray=perfect_failed=score_sum=score_count=wrong_count=0;wrong_timer=0;
   memset(canvas_timing,0,sizeof(canvas_timing));base_canvas=0;
@@ -263,6 +265,23 @@ EMSCRIPTEN_KEEPALIVE void start_chart(uint32_t code){create_flow(code,0);}
 EMSCRIPTEN_KEEPALIVE void set_frame_ticks(float ticks){frame_ticks=ticks;}
 EMSCRIPTEN_KEEPALIVE uint32_t chart_state(void){return music_started|(song_ended<<1);}
 EMSCRIPTEN_KEEPALIVE void begin_frame(void){run_flows();}
+// One note's volume envelope from the original nw4r EnvGenerator, as the mixer would apply it:
+// amplitude ratios at each 3 ms update, released after release_ms (negative: never). Returns the count.
+EMSCRIPTEN_KEEPALIVE uint32_t envelope_curve(int attack,int hold,int decay,int sustain,int release,int release_ms,uint32_t out,uint32_t max){
+  if(!envelope)envelope=alloc(32);
+  uint32_t env=envelope,n=0;
+  r[3]=env;call(0x801b0940);
+  r[3]=env;f[1].d=rdf32(0x80329310);call(0x801b09d0); // Reset(VOLUME_INIT)
+  r[3]=env;r[4]=attack;call(0x801b0b80);r[3]=env;r[4]=hold;call(0x801b0ba0);r[3]=env;r[4]=decay;call(0x801b0bc0);
+  r[3]=env;r[4]=sustain;call(0x801b0c60);r[3]=env;r[4]=release;call(0x801b0c70);
+  for(;n<max;n++){
+    if(release_ms>=0&&(int)(n*3)>=release_ms)wr32(env,4); // STATUS_RELEASE
+    r[3]=env;call(0x801b09f0);call(0x801c5a50);float ratio=f[1].d;wrf32(out+n*4,ratio);
+    if(rd32(env)==4&&ratio==0.0f){n++;break;}
+    r[3]=env;r[4]=3;call(0x801b0a20);
+  }
+  return n;
+}
 // Vanilla fixed-frame A sampling: original checker receives inputAge=0.
 // Historical timestamp correction / rollback is FUTURE USE ONLY and inactive.
 // See research/timing/FUTURE-USE.md before any later experiment.

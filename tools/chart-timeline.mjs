@@ -18,7 +18,7 @@ const round=x=>Math.round(x*1e4)/1e4;
 const timeline={
  source:'Silent run of the unmodified SOME01 chart',
  endTick:round(g.endTick),
- sounds:g.chartSounds.map(s=>({tick:round(s.tick),sound:s.sound})),
+ sounds:g.chartSounds.map(({tick,...s})=>({tick:round(tick),...s})),
  commands:g.commands.map(c=>({tick:round(c.tick),op:c.op})),
  cues:g.cues.map(round).sort((a,b)=>a-b),
 };

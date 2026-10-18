@@ -61,16 +61,27 @@ export async function loadGame(gameUrl,load=fetchBytes,{timeline:withTimeline=tr
   const events=frame(nextTick-tick,press);tick=nextTick;
   // A new checker's perfect tick: its target (mTickJust, +0x58) less the ticks it has counted (mTickPass, +0x54).
   for(const e of events)if(e[0]===9)cues.push(tick+f32(e[1]+0x58)-f32(e[1]+0x54));
+  let last=null;
   for(const e of events){
-   if(e[0]===1||e[0]===5&&!options.chartAudioScheduled)sounds.push(e[1]);
-   if(e[0]===5)chartSounds.push({tick:tick+rest(e[2]),sound:e[1]});
+   // Tuning (10) applies to the sound played just before it.
+   if(e[0]===10){if(last)last[['volume','pitch','pan'][e[1]]]=rest(e[2]);continue;}
+   last=null;
+   if(e[0]===1||e[0]===5){last={sound:e[1]};if(e[0]===1||!options.chartAudioScheduled)sounds.push(last);}
+   if(e[0]===5)chartSounds.push(Object.assign(last,{tick:tick+rest(e[2])}));
    else if(e[0]===8)commands.push({tick:tick+rest(e[2]),op:e[1]});
    else if(e[0]===7){ended=true;endTick=tick+rest(e[2]);}
   }
   return events;
  }
+ // Original nw4r note envelope: amplitude at each 3 ms mixer update (see platform.c envelope_curve).
+ let envelopeOut=0;
+ function envelope(attack,hold,decay,sustain,release,releaseMs,steps){
+  envelopeOut||=alloc(4096*4);
+  const n=core._envelope_curve(attack,hold,decay,sustain,release,releaseMs,envelopeOut,Math.min(steps,4096));
+  return Float32Array.from({length:n},(_,i)=>f32(envelopeOut+i*4));
+ }
  // Judgment counters kept by the platform backend (adapters/wii/platform.c stat()).
  const stats=()=>Array.from({length:9},(_,i)=>core._stat(i));
  function result(){const s=stats();return {hits:s[0],misses:s[1],through:s[2],stray:s[3],perfectFailed:s[4]};}
- return {manifest,base,core,options,assets,chart,clock,secondsAtTick:clock.secondsAtTick,tickAtSeconds:clock.tickAtSeconds,banks,timeline,step,drain,sounds,chartSounds,commands,cues,stats,result,u8,u16,u32,f32,w8,w16,w32,wf,alloc,offset,get tick(){return tick;},get ended(){return ended;},get endTick(){return endTick;}};
+ return {manifest,base,core,options,assets,chart,clock,secondsAtTick:clock.secondsAtTick,tickAtSeconds:clock.tickAtSeconds,banks,timeline,step,drain,sounds,chartSounds,commands,cues,envelope,stats,result,u8,u16,u32,f32,w8,w16,w32,wf,alloc,offset,get tick(){return tick;},get ended(){return ended;},get endTick(){return endTick;}};
 }

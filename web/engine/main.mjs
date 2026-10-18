@@ -16,11 +16,11 @@ try{
  g=await loadGame(gameUrl);
  const {title,action}=g.manifest;document.title=title;canvas.setAttribute('aria-label',title+' game');
  document.querySelector('h1').textContent=title;for(const e of document.querySelectorAll('.controls'))e.textContent='Space / X / click · '+action;
- renderer=await createRenderer(g,canvas);renderer.draw();music=await musicData;sfx=await createAudio(audio,gameUrl);
+ renderer=await createRenderer(g,canvas);renderer.draw();music=await musicData;sfx=await createAudio(audio,gameUrl,{envelope:g.envelope});
  window.rhf={g,renderer,audio,sfx,inputs:input.presses,metrics,heardTime,stats:g.stats,result:null,get frame(){return frame;}};
  play.disabled=false;play.textContent='Play';
 }catch(e){fail(e);}
-function soundEvents(){for(const sid of g.sounds)sfx.play(sid);g.sounds.length=0;}
+function soundEvents(){for(const s of g.sounds)sfx.play(s.sound,undefined,s);g.sounds.length=0;}
 // Time of the audio the player is hearing now, on the AudioContext clock.
 function heardTime(){
  const t=audio.getOutputTimestamp?.();
@@ -33,9 +33,9 @@ const pollGamepad=bindControls(canvas,{press,
  start(){if(!running&&!play.disabled){play.click();return true;}return false;}});
 // Starts the song. A later versus mode calls this when both players are ready.
 async function start(){
- const source=audio.createBufferSource();source.buffer=music;const gain=audio.createGain();gain.gain.value=.55;source.connect(gain).connect(audio.destination);startTime=audio.currentTime+.1;source.start(startTime);
+ startTime=audio.currentTime+.1;const source=sfx.playMusic(music,startTime);
  // Chart cues are scheduled on the audio thread before playback starts.
- for(const s of g.timeline.sounds)sfx.play(s.sound,startTime+g.secondsAtTick(s.tick));g.options.chartAudioScheduled=true;g.sounds.length=0;running=true;window.rhf.source=source;requestAnimationFrame(loop);
+ for(const s of g.timeline.sounds)sfx.play(s.sound,startTime+g.secondsAtTick(s.tick),s);g.options.chartAudioScheduled=true;g.sounds.length=0;running=true;window.rhf.source=source;requestAnimationFrame(loop);
 }
 play.onclick=async()=>{
  if(play.disabled)return;play.disabled=true;

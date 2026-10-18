@@ -16,10 +16,11 @@ def read(a,n):
         if start<=a and a+n<=start+size:return blob[off+a-start:off+a-start+n]
     raise ValueError(hex(a))
 
-SHARED={'GameUtil/TickFlow.cpp','GameUtil/TimeRatio.cpp','GameUtil/InputChecker.cpp','Game/ExChecker.cpp','GameUtil/CellAnim.cpp','GameUtil/Random.cpp'}
+SHARED={'GameUtil/TickFlow.cpp','nw4r/snd/snd_EnvGenerator.cpp','GameUtil/TimeRatio.cpp','GameUtil/InputChecker.cpp','Game/ExChecker.cpp','GameUtil/CellAnim.cpp','GameUtil/Random.cpp'}
 # Single pure functions outside those units that the chart interpreter needs.
 SHARED_FUNCTIONS={'calc_initial_wave_tempo__13CSoundManagerFP8WaveInfo',
-  'fn_80009950__8CExSceneFll','fn_80009A40__8CExSceneFb'} # the "you" marker's position and visibility
+  'fn_80009950__8CExSceneFll','fn_80009A40__8CExSceneFb', # the "you" marker's position and visibility
+  'CalcVolumeRatio__Q44nw4r3snd6detail4UtilFf'} # decibels to amplitude, for sound envelopes
 # Each game's manifest names the original units whose functions are translated.
 units=set(manifest(GAME)['wii']['units'])|SHARED
 ranges=[];unit=None
@@ -95,9 +96,11 @@ def generate(a,size,name):
         elif m in ['lmw','stmw']:
             start=int(p[0][1:]);address=ea(p[1])
             c='{uint32_t address='+address+';'+''.join((f'r[{j}]=rd32(address+{(j-start)*4});' if m=='lmw' else f'wr32(address+{(j-start)*4},r[{j}]);') for j in range(start,32))+'}'
-        elif m in ['lwzx','lhax','lhzx','lbzx','stwx','stfsx']:
+        elif m in ['lwzx','lhax','lhzx','lbzx','lfsx','lfdx','stwx','sthx','stbx','stfsx','stfdx']:
             addr=f'({q[1]}+{q[2]})'
-            c=f'{q[0]}='+{'lwzx':'rd32','lhax':'rds16','lhzx':'rd16','lbzx':'rd8'}.get(m,'rd32')+f'({addr});' if m in ['lwzx','lhax','lhzx','lbzx'] else f'{"wrf32" if m=="stfsx" else "wr32"}({addr},{q[0]});'
+            loads={'lwzx':'rd32','lhax':'rds16','lhzx':'rd16','lbzx':'rd8','lfsx':'rdf32','lfdx':'rdf64'}
+            stores={'stwx':'wr32','sthx':'wr16','stbx':'wr8','stfsx':'wrf32','stfdx':'wr64'}
+            c=f'{q[0]}={loads[m]}({addr});' if m in loads else f'{stores[m]}({addr},{fpbits(p[0]) if m=="stfdx" else q[0]});'
         elif m=='lwzux':
             c=f'{{uint32_t address={q[1]}+{q[2]};{q[0]}=rd32(address);{q[1]}=address;}}'
         elif m in ['li','lis','mr','fmr']:
@@ -143,8 +146,9 @@ def generate(a,size,name):
         elif m in ['mulhw','mulhwu']:
             cast='int64_t)(int32_t' if m=='mulhw' else 'uint64_t)(uint32_t'
             c=f'{q[0]}=((({cast}){q[1]})*(({cast}){q[2]}))>>32;'
-        elif m in ['addc','adde','subfc','subfe','subfic']:
-            if m in ['addc','adde']:v=f'(uint64_t){q[1]}+{q[2]}' + ('+carry' if m=='adde' else '')
+        elif m in ['addc','adde','addze','subfc','subfe','subfic']:
+            if m=='addze':v=f'(uint64_t){q[1]}+carry'
+            elif m in ['addc','adde']:v=f'(uint64_t){q[1]}+{q[2]}' + ('+carry' if m=='adde' else '')
             elif m=='subfic':v=f'(uint64_t)(uint32_t)({q[2]})+(uint32_t)~{q[1]}+1'
             else:v=f'(uint64_t){q[2]}+(uint32_t)~{q[1]}+'+('carry' if m=='subfe' else '1')
             c=f'{{uint64_t v={v};{q[0]}=(uint32_t)v;carry=v>>32;}}'
@@ -166,6 +170,7 @@ def generate(a,size,name):
             fn='fmaf' if m.endswith('s') else 'fma'
             neg=m.startswith('fn');subtract='msub' in m
             c=f'{q[0]}='+('-' if neg else '')+f'{fn}({q[1]},{q[2]},{"-" if subtract else ""}{q[3]});'
+        elif m=='nop':c=';'
         elif m=='fneg':c=f'{q[0]}=-{q[1]};'
         elif m=='fabs':c=f'{q[0]}=fabs({q[1]});'
         elif m=='fnabs':c=f'{q[0]}=-fabs({q[1]});'

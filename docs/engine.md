@@ -47,10 +47,31 @@ the interpreter calls.
 - `tools/chart-timeline.mjs` does one silent run of the whole level at build
   time and writes `assets/original-timeline.json`: the chart's own sounds with
   their exact ticks (scheduled ahead on the audio thread so they never depend
-  on frame timing), the game commands with their ticks (input cues for the
+  on frame timing), the game commands with their ticks, each input checker's
+  perfect tick (`cues`, from the checker's own pass and just ticks; used by the
   autoplay tests) and the tick where grading starts (the end of the song).
 - Every event the chart emits during play carries the issuing flow's remaining
   rest, so its exact tick is the frame's end tick plus that rest.
+
+## Audio
+
+`web/engine/audio.mjs` plays the original samples with Web Audio, following the
+original nw4r sound code where it matters for how a game sounds:
+
+- Note envelopes (attack, hold, decay, sustain, release) come from the original
+  `EnvGenerator`, translated with the game code and stepped every 3 ms like
+  `Channel::Update` (`envelope()` in `runtime.mjs`). Curves are cached per shape.
+- Volume follows the original rules: the sound record's volume and the
+  instrument's volume are linear, velocity and track volumes squared. The
+  backing track plays at its own record volume through the same output, so
+  music and sounds keep the original balance. The output is the game's master
+  volume (0.7) times a fixed browser headroom.
+- Volume, pitch and pan the chart sets on a sound (TickFlow sound tuning, event
+  kind 10) ride along with that sound, in the live events and in the timeline.
+- Pitch interpolation, LFO and filters are approximated.
+
+`web/engine/qa/audio-check.mjs` renders a whole autoplay run offline and reports
+peak, clipping and RMS.
 
 ## Results and versus mode (planned)
 

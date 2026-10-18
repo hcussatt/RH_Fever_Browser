@@ -75,6 +75,7 @@ included here. Provide it in one of these ways:
 
 This is a proof of concept, not a certified 1:1 port. Original timing windows
 and Perfect rules are kept; nothing widens windows or forces scores. Audio uses
-the original samples through a provisional mixer. Love Rap's lyric captions
+the original samples, note envelopes and volume rules; pitch interpolation, LFO
+and filters are still approximated by Web Audio. Love Rap's lyric captions
 (a message layout) are not drawn yet. See `docs/golf-notes.md`,
 `docs/tap-notes.md` and `docs/handoff-START_HERE.md` for the full list.
