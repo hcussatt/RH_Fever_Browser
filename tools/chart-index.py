@@ -5,7 +5,9 @@ The game reaches a minigame's chart through a TickFlow scene change
 (TF_SET_SCENE, op 0x100) naming the game's scene. The main chart is the
 target that sets up grading (op 0x118, arg0 1), unlike the tutorial. Its
 PREPARE_WAVE command names the backing track, whose tempo table the game's
-CSoundManager keeps in a wave-info table. Nothing here is per-game code.
+CSoundManager keeps in a wave-info table. The sound groups the game loads
+come from the loading charts: group loads (op 0x12c) just before the scene
+is prepared (ops 0x101 and 0x102). Nothing here is per-game code.
 
 Writes dist/<game>/assets/original-chart.json, read by tools/chart-timeline.mjs.
 """
@@ -76,6 +78,28 @@ def scene_changes(scene):
     return sorted(targets)
 
 
+def group_loads(scene):
+    """Sound groups loaded (op 0x12c) by each chart that then prepares the scene (0x101, 0x102).
+    Remixes prepare the same scene with their own loads; tools/extract-assets.py keeps the
+    loads that include the main chart's music."""
+    prepare = (1 << 10) | 0x102
+    loads = []
+    for offset, start, size in SECTIONS:
+        for o in range(offset+12, offset+size-8, 4):
+            if u32o(o) != prepare or u32o(o+4) != scene or u32o(o-12) & 0x3fff != (2 << 10) | 0x101 or u32o(o-8) != scene:
+                continue
+            groups = []
+            for back in range(o-16, max(offset, o-512), -4):
+                word = u32o(back)
+                if word == (1 << 10) | 0x004:  # the loading chart's first command
+                    break
+                if word & 0x3fff == (1 << 10) | 0x12c:
+                    groups.insert(0, u32o(back+4))
+            if groups and groups not in loads:
+                loads.append(groups)
+    return loads
+
+
 def tempo_segments(sound):
     for i in range(WAVE_INFO_COUNT):
         sid, rate, table = struct.unpack('>HHI', read(WAVE_INFO_TABLE+i*8, 8))
@@ -107,7 +131,7 @@ def main():
     segments, table = tempo_segments(music)
     out = {'scene': profile['scene'], 'sceneId': scene, 'start': start, 'musicSound': music, 'tempoAddress': table,
            'beatCount': sum(s['beats'] for s in segments), 'sampleCount': sum(s['samples'] for s in segments),
-           'sampleRate': segments[0]['rate'],
+           'sampleRate': segments[0]['rate'], 'groupLoads': group_loads(scene),
            'secondsPerTick': segments[0]['samples']/segments[0]['rate']/(segments[0]['beats']*48)}
     if len(segments) > 1:
         out['tempoSegments'] = segments

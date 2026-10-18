@@ -38,8 +38,10 @@ the interpreter calls.
 
 - `tools/chart-index.py` finds the game's main chart from the executable: the
   scene change to the manifest's `scene` whose chart starts grading (ExFlow
-  `0x118`), its music (`PREPARE_WAVE`) and that music's tempo table. It writes
-  `assets/original-chart.json`.
+  `0x118`), its music (`PREPARE_WAVE`), that music's tempo table, and the sound
+  groups the loading charts load before preparing the scene. It writes
+  `assets/original-chart.json`. `tools/extract-assets.py` keeps the group loads
+  that include the music and extracts every sound stored in those groups.
 - At load the chart runs silently from its first command to the music start,
   which is chart tick 0. From then on the browser clock drives it.
 - `tools/chart-timeline.mjs` does one silent run of the whole level at build
@@ -66,7 +68,7 @@ Nothing on the frame loop or audio path ever waits on the network.
 1. `games/<id>/game.json`: copy an existing one. `wii.units` are the decomp
    translation units to translate (see `third_party/rhf-decomp/config/SOME01/splits.txt`);
    `banks` are the cell-animation banks in the order the scene registers them;
-   `sounds`/`soundGroups`/`music` select the BRSAR data; `scene` names the
+   `scene` names the
    decomp's scene (`sceneVariant` picks one main chart when the scene has
    several); `perfectActive`, `chartTempo`, `projection` and `endsWithMusic`
    cover how the game plays and ends.

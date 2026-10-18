@@ -32,12 +32,12 @@ for game in $games; do
   echo "== $game: translating original code"
   RHF_GAME=$game python3 tools/recompile.py
   tools/build-core.sh "$game"
+  echo "== $game: finding the chart"
+  RHF_GAME=$game python3 tools/chart-index.py
   echo "== $game: converting assets"
   RHF_GAME=$game python3 tools/extract-assets.py >/dev/null
   RHF_GAME=$game python3 tools/extract-sfx.py >/dev/null
   RHF_GAME=$game python3 tools/decode-music.py
-  echo "== $game: finding and dry-running the chart"
-  RHF_GAME=$game python3 tools/chart-index.py
   tools/stage-web.sh "$game"
   node tools/chart-timeline.mjs "$game"
 done
