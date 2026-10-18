@@ -26,7 +26,9 @@ git submodule update --init third_party/rhf-decomp
 echo "== Reading files from your ISO"
 python3 tools/extract-disc.py "$iso"
 
-for game in golf tap; do
+# Every game with a manifest in games/<id>/game.json.
+games=$(python3 -c 'import sys; sys.path.insert(0, "tools"); from paths import GAMES; print(*GAMES)')
+for game in $games; do
   echo "== $game: translating original code"
   RHF_GAME=$game python3 tools/recompile.py
   tools/build-core.sh "$game"
@@ -37,15 +39,15 @@ for game in golf tap; do
   python3 "tools/$game-timeline.py" >/dev/null
   tools/stage-web.sh "$game"
 done
-cp web/index.html dist/
+tools/stage-index.sh
 
 if [ "$skip_tests" != "--skip-tests" ]; then
   echo "== Running tests"
-  for t in golf-timing golf-runtime tap-timing tap-runtime; do
-    node "tests/test-$t.mjs" >/dev/null
+  for game in $games; do
+    node "tests/test-$game-timing.mjs" >/dev/null
+    node tests/test-runtime.mjs "$game" >/dev/null
+    node tests/test-runtime.mjs "$game" --auto >/dev/null
   done
-  node tests/test-golf-runtime.mjs --auto >/dev/null
-  node tests/test-tap-runtime.mjs --auto >/dev/null
   echo "All tests passed."
 fi
 echo "Done. Start the games with ./serve.sh --open"

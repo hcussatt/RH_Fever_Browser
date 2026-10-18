@@ -4,14 +4,12 @@ Pass --verify to cross-check the DSP-ADPCM layout against FFmpeg (must be instal
 import json
 import sys
 from nintendo_audio import wave_files, decode_wave, write_wav
-from paths import assets, game, require
-
-# BRSAR file whose wave archive holds each game's music stream.
-MUSIC = {'golf': 35, 'tap': 131}
+from paths import assets, game, manifest, require
 
 name = game()
 out = assets(name)
-data = require(out/f'wave-{MUSIC[name]}.bin').read_bytes()
+# BRSAR file whose wave archive holds the game's music stream.
+data = require(out/f'wave-{manifest(name)["wii"]["music"]}.bin').read_bytes()
 (wave,) = list(wave_files(data))
 pcm, meta = decode_wave(wave, verify='--verify' in sys.argv)
 write_wav(out/'music.wav', pcm, meta['rate'])

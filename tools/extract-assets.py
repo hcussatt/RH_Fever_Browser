@@ -10,17 +10,15 @@ import sys
 import numpy as np
 from PIL import Image
 
-from paths import BRSAR, DECOMP, DOL_SHA1, assets, game, require, source
+from paths import BRSAR, DECOMP, DOL_SHA1, assets, game, manifest, require, source
 
 GAME = game()
 SOURCE = require(source(GAME))
 OUT = assets(GAME)
 
-# Per-game banks, sound IDs and BRSAR groups chosen by the original scene.
-PROFILES = {
-    'golf': {'banks': ['golfman', 'golf_bg', 'golf_bg_effect', 'golf_monkey'], 'sounds': [35]+list(range(758, 798)), 'groups': [98, 19]},
-    'tap': {'banks': ['agb_tap', 'agb_tap_bg'], 'sounds': [157]+list(range(1250, 1262)), 'groups': [192, 57]},
-}
+# Banks, sound IDs and BRSAR groups chosen by the original scene, from the manifest.
+PROFILE = manifest(GAME)['wii']
+SOUND_IDS = [i for first, last in PROFILE['sounds'] for i in range(first, last+1)]
 u16 = lambda b,o=0: struct.unpack_from('>H', b,o)[0]
 u32 = lambda b,o=0: struct.unpack_from('>I', b,o)[0]
 
@@ -98,8 +96,7 @@ def audio_groups(sound_ids=None,group_ids=None):
     return {'sounds':records,'files':files}
 
 if __name__=='__main__':
-    profile=PROFILES[GAME]
-    manifest={'textures':textures(),'banks':{n:bank(n) for n in profile['banks']},'audio':audio_groups(profile['sounds'],profile['groups'])}
-    manifest['provenance']={'game':'Rhythm Heaven Fever SOME01','dolSha1':DOL_SHA1}
-    (OUT/'original-assets.json').write_text(json.dumps(manifest,separators=(',',':'))+'\n')
-    print(json.dumps({'banks':{n:{'cells':len(b['cells']),'animations':len(b['animations'])} for n,b in manifest['banks'].items()},'textures':manifest['textures'],'audioFiles':manifest['audio']['files']},indent=2))
+    out={'textures':textures(),'banks':{n:bank(n) for n in PROFILE['banks']},'audio':audio_groups(SOUND_IDS,PROFILE['soundGroups'])}
+    out['provenance']={'game':'Rhythm Heaven Fever SOME01','dolSha1':DOL_SHA1}
+    (OUT/'original-assets.json').write_text(json.dumps(out,separators=(',',':'))+'\n')
+    print(json.dumps({'banks':{n:{'cells':len(b['cells']),'animations':len(b['animations'])} for n,b in out['banks'].items()},'textures':out['textures'],'audioFiles':out['audio']['files']},indent=2))

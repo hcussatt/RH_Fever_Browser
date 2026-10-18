@@ -1,16 +1,27 @@
-import createCore from './tap-core.mjs';
-export async function loadTap(read=async name=>new Uint8Array(await (await fetch(new URL('assets/'+name,import.meta.url))).arrayBuffer())) {
- const json=async n=>JSON.parse(new TextDecoder().decode(await read(n)));
- const [assets,segments,timeline,core]=await Promise.all([json('original-assets.json'),json('original-segments.json'),json('original-timeline.json'),createCore()]);
+// Loads one game's translated original code (WASM) and data into a session.
+// Everything game-specific comes from the game's manifest (games/<id>/game.json);
+// everything else is read from files the build extracted from the user's ISO.
+import {createClock} from './clock.mjs';
+const fetchBytes=async url=>new Uint8Array(await (await fetch(url)).arrayBuffer());
+// gameUrl: the game's folder (dist/<id>/). load: url -> bytes (Node tests pass readFile).
+export async function loadGame(gameUrl,load=fetchBytes) {
+ const base=new URL(gameUrl);
+ const json=async url=>JSON.parse(new TextDecoder().decode(await load(url)));
+ const manifest=await json(new URL('game.json',base)),profile=manifest.wii;
+ const read=name=>load(new URL('assets/'+name,base));
+ const {default:createCore}=await import(new URL(`${manifest.id}-core.mjs`,base));
+ const [assets,segments,timeline,core]=await Promise.all([json(new URL('assets/original-assets.json',base)),json(new URL('assets/original-segments.json',base)),json(new URL('assets/original-timeline.json',base)),createCore()]);
+ const clock=createClock(timeline);
  core._reset_runtime();
- const base=core._ram_ptr()-0x80000000;
+ const ramBase=core._ram_ptr()-0x80000000;
  const view=new DataView(core.HEAPU8.buffer);
- const offset=a=>a+base;
+ const offset=a=>a+ramBase;
  const u8=a=>view.getUint8(offset(a)),u16=a=>view.getUint16(offset(a)),u32=a=>view.getUint32(offset(a)),f32=a=>view.getFloat32(offset(a));
  const w8=(a,x)=>view.setUint8(offset(a),x),w16=(a,x)=>view.setUint16(offset(a),x),w32=(a,x)=>view.setUint32(offset(a),x),wf=(a,x)=>view.setFloat32(offset(a),x);
  const alloc=n=>core._allocate(n)>>>0;
  await Promise.all(segments.map(async s=>core.HEAPU8.set(await read(s.file),offset(s.address))));
- const banks=[assets.banks.agb_tap,assets.banks.agb_tap_bg];
+ // Bank ids are the order the original scene registers them in.
+ const banks=profile.banks.map(n=>assets.banks[n]);
  banks[255]={texture:0,cells:[[]],animations:Array.from({length:256},()=>[{cell:0,frames:1,x:0,y:0,scaleX:1,scaleY:1,angle:0,alpha:255}])};
  banks.forEach((b,id)=>{
   const ap=alloc(b.animations.length*8),cp=alloc(b.cells.length*8);
@@ -29,12 +40,10 @@ export async function loadTap(read=async name=>new Uint8Array(await (await fetch
   else if(e.op===0x23&&!options.chartAudioScheduled)sounds.push(e.args[0]);
  }
  for(const e of timeline.prelude)command(e);
- drain();core._set_perfect_active(1);
- function secondsAtTick(tick){let time=0;for(const s of timeline.tempoSegments){const ticks=s.beats*48;if(tick<=ticks)return time+tick/ticks*s.samples/s.rate;time+=s.samples/s.rate;tick-=ticks;}const s=timeline.tempoSegments.at(-1);return time+tick/(s.beats*48)*s.samples/s.rate;}
- function tickAtSeconds(time){let ticks=0;for(const s of timeline.tempoSegments){const seconds=s.samples/s.rate;if(time<=seconds)return ticks+time/seconds*s.beats*48;ticks+=s.beats*48;time-=seconds;}const s=timeline.tempoSegments.at(-1);return ticks+time/(s.samples/s.rate)*s.beats*48;}
+ for(const [fn,...args] of profile.afterPrelude)fn==='drain'?drain():core['_'+fn](...args);
  function step(nextTick,press=false){
   core._set_delta(nextTick-tick);
-  core._set_tempo((nextTick-tick)*60/48);
+  if(profile.chartTempo)core._set_tempo((nextTick-tick)*60/48);
   core._begin_frame();
   while(eventIndex<timeline.events.length&&timeline.events[eventIndex].tick<nextTick)command(timeline.events[eventIndex++]);
   if(press)core._press_a();
@@ -42,5 +51,8 @@ export async function loadTap(read=async name=>new Uint8Array(await (await fetch
   const events=drain();for(const e of events)if(e[0]===1)sounds.push(e[1]);
   return events;
  }
- return {core,options,assets,secondsAtTick,tickAtSeconds,banks,timeline,step,drain,sounds,u8,u16,u32,f32,w8,w16,w32,wf,alloc,offset,get tick(){return tick;},get eventIndex(){return eventIndex;}};
+ // Judgment counters kept by the platform backend (adapters/wii/platform.c stat()).
+ const stats=()=>Array.from({length:9},(_,i)=>core._stat(i));
+ function result(){const s=stats();return {hits:s[0],misses:s[1],through:s[2],stray:s[3],perfectFailed:s[4]};}
+ return {manifest,base,core,options,assets,clock,secondsAtTick:clock.secondsAtTick,tickAtSeconds:clock.tickAtSeconds,banks,timeline,step,drain,sounds,stats,result,u8,u16,u32,f32,w8,w16,w32,wf,alloc,offset,get tick(){return tick;},get eventIndex(){return eventIndex;}};
 }

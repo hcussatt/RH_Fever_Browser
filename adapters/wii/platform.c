@@ -3,10 +3,13 @@
 #include <string.h>
 #include <math.h>
 #include <emscripten.h>
+#include "game.h"
 
-// This PoC supplies the platform services used by the statically recompiled
-// original tap functions. There is no instruction-fetch interpreter or Wii
-// hardware emulator. See research/tap/RECOMPILATION.md for unqualified adapter behavior.
+// Wii platform backend shared by every minigame. It supplies the platform
+// services used by the statically recompiled original functions. There is no
+// instruction-fetch interpreter or Wii hardware emulator. Each game's
+// adapters/<game>/game.h names the original addresses it needs and any calls
+// or behaviour specific to that game. See docs/engine.md.
 static uint8_t ram[32*1024*1024];
 static uint32_t r[32],lr,ctr,carry;
 static uint8_t cr[32];
@@ -20,10 +23,10 @@ static uint32_t scene,flow,layout[8],layout_count,canvas[10],base_canvas;
 static uint32_t canvas_timing[10][2];
 static uint32_t hits,misses,through,stray,perfect_failed,input_allowed,score_sum,score_count,wrong_count;
 static float aux_time[128];static uint32_t aux_code[128],aux_count;
-static float delta_ticks,current_tempo=126.0f,wrong_timer;
+static float delta_ticks,current_tempo=GAME_DEFAULT_TEMPO,wrong_timer;
 typedef struct {uint32_t count,animations,cells;} Bank;
 static Bank banks[256];
-EM_JS(void,panic_js,(uint32_t address,uint32_t kind,uint32_t pc,uint32_t stack,uint32_t depth),{console.error(Array.from(HEAPU32.subarray(stack/4,stack/4+depth)).map(x=>x.toString(16)));throw new Error('Tap runtime '+kind+' at 0x'+address.toString(16)+' after 0x'+pc.toString(16));});
+EM_JS(void,panic_js,(uint32_t address,uint32_t kind,uint32_t pc,uint32_t stack,uint32_t depth),{console.error(Array.from(HEAPU32.subarray(stack/4,stack/4+depth)).map(x=>x.toString(16)));throw new Error('Original code '+kind+' at 0x'+address.toString(16)+' after 0x'+pc.toString(16));});
 #define panic(a,k) panic_js(a,k,lr,(uint32_t)(uintptr_t)trace,call_depth)
 static uint32_t idx(uint32_t a){if(a<0x80000000u||a>=0x82000000u)panic(a,1);return a-0x80000000u;}
 static uint8_t rd8(uint32_t a){return ram[idx(a)];}
@@ -83,10 +86,7 @@ static void call(uint32_t address){
     call_depth--;return;
   }
   switch(address){
-  case 0x801d5500:break; // Browser adapter supplies the original A-trigger channel.
-  case 0x80039e00:case 0x8003a1d0:break; // Balloon text placement is presentation-only.
-  case 0x80124550:r[3]=1;break; // Widescreen presentation.
-
+  GAME_CALLS
   case 0x80103b48:{uint32_t a=r[3],ctor=r[4],size=r[6],n=r[7];for(uint32_t i=0;i<n;i++)invoke1(ctor,a+i*size);r[3]=a;break;}
   case 0x801d3284:r[3]=alloc(r[3]);break;
   case 0x801e9144:r[3]=alloc(r[4]);break;
@@ -102,7 +102,9 @@ static void call(uint32_t address){
   case 0x801dbe04:case 0x801dbe14:r[3]=1024;break;
   case 0x801dc0d4:break; // Renderer sorts the original layer values.
   case 0x801e2698:case 0x801e3ea8:f[1].d=delta_ticks;break;
+#if GAME_CHART_TEMPO
   case 0x801e26b4:f[1].d=(float)(f[1].d/((current_tempo*48.0f)/60.0f));break;
+#endif
   case 0x801e2ca8:f[1].d=current_tempo;break;
   case 0x801e4178:r[3]=1;break;
   case 0x801e9158:if(checker_count>=128)panic(checker_count,7);checkers[checker_count++]=r[4];break;
@@ -128,7 +130,7 @@ static void call(uint32_t address){
   case 0x80008160:case 0x8000818c:case 0x8000835c:case 0x80008830:case 0x80008a20:break;
   case 0x8008d290:case 0x8008d310:break;
   case 0x8008d368:panic(r[4],8);break;
-  // Golf layout transitions (frame decoration); not yet ported.
+  // Layout transitions (frame decoration); not yet ported.
   case 0x8007263c:case 0x800726ac:case 0x8007271c:case 0x80072794:case 0x8007280c:break;
   // Archive/bank registration is completed by the static browser asset loader.
   case 0x801d3644:case 0x801d369c:case 0x801d3f94:case 0x801d41cc:case 0x801db568:case 0x801ed7d4:case 0x800db700:break;
@@ -165,29 +167,33 @@ EMSCRIPTEN_KEEPALIVE void reset_runtime(void){
   r[1]=0x81800000;r[2]=0x80328fe0;r[13]=0x80326ec0;
 }
 EMSCRIPTEN_KEEPALIVE void initialize_scene(void){
-  // Instantiate only the service objects used by the tap component.
+  // Instantiate only the service objects used by the minigame component.
   uint32_t globals[]={0x80320148,0x8032016c,0x80320170,0x80320174,0x80320178,0x80320180,0x80320184,0x80320188,0x8032018c,0x80320194};
   uint32_t vtable=alloc(256);for(int i=0;i<64;i++)wr32(vtable+i*4,0x8fff0000);
   for(int i=0;i<10;i++){uint32_t obj=alloc(4096);wr32(globals[i],obj);wr32(obj,vtable);}
-  r[3]=2;call(0x800a8fb8);scene=r[3];wr32(rd32(0x80320180)+4,scene);wr32(0x80320380,1);
+  r[3]=2;call(GAME_SCENE_CREATE);scene=r[3];wr32(rd32(0x80320180)+4,scene);wr32(0x80320380,1);
   for(int i=0;i<10;i++){
     canvas[i]=create_actor(255,0);
     if(i){r[3]=canvas[i];r[4]=canvas[i-1];r[5]=0;r[6]=0;call(0x801dcfa4);}
   }
   uint32_t you=create_actor(255,0);wr32(0x80320200,you);wr8(you+0xa7,0);
   uint32_t other=create_actor(255,0);wr32(0x803201f8,other);wr32(0x803201fc,other);
-  invoke1(0x800a90f0,scene);
+  invoke1(GAME_SCENE_INIT,scene);
   flow=alloc(512);wr32(flow+0xfc,scene);
   wr32(0x803201bc,7);wr8(0x803201b8,1);
   emit(4,scene,flow);
 }
 EMSCRIPTEN_KEEPALIVE uint32_t scene_address(void){return scene;}
 EMSCRIPTEN_KEEPALIVE uint32_t current_key(uint32_t actor){return key(actor);}
+#if GAME_CHART_TEMPO
 EMSCRIPTEN_KEEPALIVE void set_tempo(float tempo){current_tempo=tempo;}
+#endif
 EMSCRIPTEN_KEEPALIVE void set_delta(float ticks){delta_ticks=ticks;}
-EMSCRIPTEN_KEEPALIVE void original_command(uint32_t opcode,uint32_t arg0,uint32_t args){r[3]=flow;r[4]=opcode;r[5]=arg0;r[6]=args;call(0x800a8df8);}
+EMSCRIPTEN_KEEPALIVE void original_command(uint32_t opcode,uint32_t arg0,uint32_t args){r[3]=flow;r[4]=opcode;r[5]=arg0;r[6]=args;call(GAME_FLOW_COMMAND);}
 EMSCRIPTEN_KEEPALIVE void set_perfect_active(uint32_t enabled){wr8(0x803201b9,enabled);}
 EMSCRIPTEN_KEEPALIVE void begin_frame(void){
+#if GAME_AUX_SCRIPTS
+  // Auxiliary chart scripts run several commands until a wait or the end.
   for(int i=(int)aux_count-1;i>=0;i--){
     aux_time[i]-=delta_ticks;
     if(aux_time[i]<0){uint32_t p=aux_code[i];int ended=0;
@@ -203,6 +209,9 @@ EMSCRIPTEN_KEEPALIVE void begin_frame(void){
       if(ended){aux_count--;memmove(aux_code+i,aux_code+i+1,(aux_count-i)*4);memmove(aux_time+i,aux_time+i+1,(aux_count-i)*4);}
     }
   }
+#else
+  for(int i=(int)aux_count-1;i>=0;i--){aux_time[i]-=delta_ticks;if(aux_time[i]<0){uint32_t p=aux_code[i],w=rd32(p);original_command(w&1023,w>>14,p+4);aux_count--;memmove(aux_code+i,aux_code+i+1,(aux_count-i)*4);memmove(aux_time+i,aux_time+i+1,(aux_count-i)*4);}}
+#endif
 }
 EMSCRIPTEN_KEEPALIVE void set_input_allowed(uint32_t value){input_allowed=value;}
 // Vanilla fixed-frame A sampling: original checker receives inputAge=0.
@@ -218,11 +227,13 @@ EMSCRIPTEN_KEEPALIVE void press_a(void){
     if(judgment<=1){
       consumed=1;r[3]=c;r[4]=4;call(rd32(rd32(c)+(judgment==0?0x24:0x28)));
       if(r[3]){uint32_t grade=rd8(quality);score_sum+=grade;score_count++;wrong_count=0;checkpoint(rd8(c+0x78),judgment);
+#if GAME_END_CHECKER_ON_HIT
         if(rd8(c+0x70)){invoke1(rd32(rd32(c)+0x14),c);checker_count--;memmove(checkers+i,checkers+i+1,(checker_count-i)*4);}
+#endif
       }
     }
   }
-  if(!consumed){r[3]=4;call(0x800a8fa4);stray++;wrong_timer=48;wrong_count=wrong_count<6?wrong_count+1:6;}
+  if(!consumed){r[3]=4;call(GAME_WRONG_INPUT);stray++;wrong_timer=48;wrong_count=wrong_count<6?wrong_count+1:6;}
 }
 EMSCRIPTEN_KEEPALIVE void finish_frame(void){
   for(int i=(int)checker_count-1;i>=0;i--){
@@ -231,8 +242,9 @@ EMSCRIPTEN_KEEPALIVE void finish_frame(void){
   }
   if(wrong_timer>0){wrong_timer-=delta_ticks;if(wrong_timer<0)wrong_timer=0;}
   for(int i=0;i<10;i++)for(int a=0;a<2;a++){uint32_t t=canvas_timing[i][a];if(t&&rd8(t+37)){r[3]=t;r[4]=0;call(0x801e9de8);wrf32(canvas[i]+0x8c+a*4,rdf32(t+40));}}
-  invoke1(0x800a9504,scene);
+  invoke1(GAME_SCENE_UPDATE,scene);
   for(uint32_t i=0;i<actor_count;i++)if(actor_active[i]){invoke1(0x801dc314,actors[i]);if(r[3])actor_active[i]=0;}
+  GAME_AFTER_UPDATE
   frame_number++;
 }
 EMSCRIPTEN_KEEPALIVE uint32_t stat(uint32_t id){switch(id){case 0:return hits;case 1:return misses;case 2:return through;case 3:return stray;case 4:return perfect_failed;case 5:return frame_number;case 6:return checker_count;case 7:return score_sum;case 8:return score_count;}return 0;}

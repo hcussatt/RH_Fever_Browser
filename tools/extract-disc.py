@@ -7,14 +7,11 @@ The ISO is opened read-only. Output goes to build/disc/, which is git-ignored.
 import hashlib
 import json
 import sys
-from paths import DISC, DOL, BRSAR, DOL_SHA1
+from paths import DISC, DOL, BRSAR, DOL_SHA1, GAMES, manifest
 from wii_files import WiiFiles, u8_files
 
-# Unpacked cellanim archive for each game profile.
-CELLANIM = {
-    'golf': 'EN/content2/cellanim/baseball/ver0/cellanim.szs',
-    'tap': 'EN/content2/cellanim/agbTap/ver0/cellanim.szs',
-}
+# Unpacked cellanim archive for each game, from its manifest.
+CELLANIM = {game: manifest(game)['wii']['cellanim'] for game in GAMES}
 
 
 def main(iso):

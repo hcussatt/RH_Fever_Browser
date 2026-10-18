@@ -6,7 +6,7 @@ continues. This is static recompilation, not a claim of completed decompilation.
 Unsupported instructions fail the build; unsupported external calls trap.
 """
 import re,struct,json,subprocess,os,tempfile
-from paths import BUILD,DECOMP,DOL,assets,game,require
+from paths import BUILD,DECOMP,DOL,assets,game,manifest,require
 GAME=game()
 blob=require(DOL).read_bytes()
 u32=lambda o:struct.unpack_from('>I',blob,o)[0]
@@ -17,12 +17,8 @@ def read(a,n):
     raise ValueError(hex(a))
 
 SHARED={'GameUtil/TimeRatio.cpp','GameUtil/InputChecker.cpp','Game/ExChecker.cpp','GameUtil/CellAnim.cpp','GameUtil/Random.cpp'}
-# Each profile names the original units whose functions are translated.
-PROFILES={
-    'golf':{'Game/Baseball/SceneBaseball.cpp','Game/Baseball/MyChecker.cpp','Game/Baseball/MyFlow.cpp','Game/Pseudo3D.cpp'}|SHARED,
-    'tap':{'Game/AgbTap/SceneAgbTap.cpp','Game/AgbTap/MyChecker.cpp','Game/AgbTap/MyFlow.cpp'}|SHARED,
-}
-units=PROFILES[GAME]
+# Each game's manifest names the original units whose functions are translated.
+units=set(manifest(GAME)['wii']['units'])|SHARED
 ranges=[];unit=None
 for line in (DECOMP/'config/SOME01/splits.txt').read_text().splitlines():
     if line and not line[0].isspace() and line.endswith(':'):unit=line[:-1]
