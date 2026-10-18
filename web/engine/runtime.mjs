@@ -35,7 +35,7 @@ export async function loadGame(gameUrl,load=fetchBytes,{timeline:withTimeline=tr
  const f32bits=new DataView(new ArrayBuffer(4));
  const rest=bits=>(f32bits.setUint32(0,bits),f32bits.getFloat32(0));
  let tick=0,ended=false,endTick=null;
- const sounds=[],chartSounds=[],commands=[];const options={chartAudioScheduled:false};
+ const sounds=[],chartSounds=[],commands=[],cues=[];const options={chartAudioScheduled:false};
  function drain(){const n=core._events_count(),p=core._events_ptr();const out=[];for(let i=0;i<n;i++)out.push(Array.from(core.HEAPU32.subarray(p/4+i*4,p/4+i*4+4)));core._events_clear();return out;}
  function frame(ticks,press){
   core._set_delta(ticks);core._set_frame_ticks(ticks);
@@ -59,6 +59,8 @@ export async function loadGame(gameUrl,load=fetchBytes,{timeline:withTimeline=tr
  // Events carry the issuing flow's rest; the command ran at the frame's end tick plus that rest.
  function step(nextTick,press=false){
   const events=frame(nextTick-tick,press);tick=nextTick;
+  // A new checker's perfect tick: its target (mTickJust, +0x58) less the ticks it has counted (mTickPass, +0x54).
+  for(const e of events)if(e[0]===9)cues.push(tick+f32(e[1]+0x58)-f32(e[1]+0x54));
   for(const e of events){
    if(e[0]===1||e[0]===5&&!options.chartAudioScheduled)sounds.push(e[1]);
    if(e[0]===5)chartSounds.push({tick:tick+rest(e[2]),sound:e[1]});
@@ -70,5 +72,5 @@ export async function loadGame(gameUrl,load=fetchBytes,{timeline:withTimeline=tr
  // Judgment counters kept by the platform backend (adapters/wii/platform.c stat()).
  const stats=()=>Array.from({length:9},(_,i)=>core._stat(i));
  function result(){const s=stats();return {hits:s[0],misses:s[1],through:s[2],stray:s[3],perfectFailed:s[4]};}
- return {manifest,base,core,options,assets,chart,clock,secondsAtTick:clock.secondsAtTick,tickAtSeconds:clock.tickAtSeconds,banks,timeline,step,drain,sounds,chartSounds,commands,stats,result,u8,u16,u32,f32,w8,w16,w32,wf,alloc,offset,get tick(){return tick;},get ended(){return ended;},get endTick(){return endTick;}};
+ return {manifest,base,core,options,assets,chart,clock,secondsAtTick:clock.secondsAtTick,tickAtSeconds:clock.tickAtSeconds,banks,timeline,step,drain,sounds,chartSounds,commands,cues,stats,result,u8,u16,u32,f32,w8,w16,w32,wf,alloc,offset,get tick(){return tick;},get ended(){return ended;},get endTick(){return endTick;}};
 }

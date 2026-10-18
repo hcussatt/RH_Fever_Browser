@@ -29,7 +29,18 @@ def textures():
     for i in range(u32(data,4)):
         header = u32(data,u32(data,8)+i*8)
         h,w,fmt,start = struct.unpack_from('>HHII',data,header)
-        assert fmt == 5, 'Expected RGB5A3 textures'
+        assert fmt in (5,6), f'Unsupported texture format {fmt}'
+        name=f'texture-{i}.png'
+        if fmt == 6:
+            # RGBA8: 4x4 tiles of 64 bytes, alpha/red pairs then green/blue pairs.
+            tiles = np.frombuffer(data,dtype=np.uint8,count=w*h*4,offset=start).reshape(h//4,w//4,2,16,2)
+            rgba = np.empty((h//4,w//4,16,4),dtype=np.uint8)
+            rgba[...,3],rgba[...,0] = tiles[:,:,0,:,0],tiles[:,:,0,:,1]
+            rgba[...,1],rgba[...,2] = tiles[:,:,1,:,0],tiles[:,:,1,:,1]
+            rgba = rgba.reshape(h//4,w//4,4,4,4).transpose(0,2,1,3,4).reshape(h,w,4)
+            Image.fromarray(rgba,'RGBA').save(OUT/name)
+            paths.append(name)
+            continue
         words = np.frombuffer(data,dtype='>u2',count=w*h,offset=start).astype(np.uint16)
         words = words.reshape(h//4,w//4,4,4).transpose(0,2,1,3).reshape(h,w)
         opaque = (words&0x8000)!=0
@@ -39,7 +50,6 @@ def textures():
             rgba[:,:,ch] = np.where(opaque,(v<<3)|(v>>2),((words>>[8,4,0][ch])&15)*17)
         a=(words>>12)&7
         rgba[:,:,3] = np.where(opaque,255,(a<<5)|(a<<2)|(a>>1))
-        name=f'texture-{i}.png'
         Image.fromarray(rgba,'RGBA').save(OUT/name)
         paths.append(name)
     return paths

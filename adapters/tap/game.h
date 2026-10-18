@@ -9,6 +9,5 @@
 #define GAME_END_CHECKER_ON_HIT 1     // checkers flagged at +0x70 end on a hit
 #define GAME_CHART_TEMPO 1            // tempo follows the chart's segments
 #define GAME_CALLS \
-  case 0x80039e00:case 0x8003a1d0:break; /* Balloon text placement is presentation-only. */ \
   case 0x80124550:r[3]=1;break; /* Widescreen presentation. */
 #define GAME_AFTER_UPDATE

@@ -147,7 +147,7 @@ static void call(uint32_t address){
 #endif
   case 0x801e2ca8:f[1].d=current_tempo;break;
   case 0x801e4178:r[3]=1;break;
-  case 0x801e9158:if(checker_count>=128)panic(checker_count,7);checkers[checker_count++]=r[4];break;
+  case 0x801e9158:if(checker_count>=128)panic(checker_count,7);checkers[checker_count++]=r[4];emit(9,r[4],0);break; // new input checker (9): the dry run reads its target tick
   case 0x801e9488:score_sum+=(r[4]?r[4]:wrong_count*5);score_count++;wrong_count=0;break;
   case 0x801eaf2c:checkpoint(r[4],r[5]);break;
   case 0x801e9d68:r[3]=0;break; // Single-controller statistics channel.
@@ -159,6 +159,9 @@ static void call(uint32_t address){
       wr8(0x803201ba,1);perfect_failed=reason;emit(3,reason,0);
     }break;}
   case 0x80009a9c:case 0x80009e58:break; // Input visualizer / Perfect hit icon.
+  case 0x801a7a20:case 0x801a7a90:{ // nw4r::math::SinFIdx / CosFIdx: 256-step table at 0x802dfe70 with deltas
+    float x=f[1].d,a=fabsf(x);while(a>65536.0f)a-=65536.0f;uint32_t i=(uint32_t)a&0xffff;float frac=a-(float)i;uint32_t e=0x802dfe70+(i&0xff)*16;
+    if(address==0x801a7a20){float v=rdf32(e)+frac*rdf32(e+8);f[1].d=x<0.0f?-v:v;}else f[1].d=rdf32(e+4)+frac*rdf32(e+12);break;}
   case 0x801a7990:f[1].d=(float)(1.0/sqrt(f[1].d));break; // TODO: qualify original FrSqrt approximation.
   case 0x801a7850:f[1].d=expf(f[1].d);break;
   case 0x801a78f0:f[1].d=logf(f[1].d);break;
@@ -193,6 +196,7 @@ static void call(uint32_t address){
   // Input-check settings (forced inputs, offsets, input recording) and button cooldown: normal play.
   case 0x801e923c:case 0x801e9c30:case 0x801e9c38:case 0x801e9c40:case 0x801e9d58:case 0x801e9d80:case 0x801e9d84:case 0x801d5500:break;
   case 0x8010a084:r[3]=0;break; // sprintf (only for input recording file names)
+  case 0x80039e00:case 0x8003a1d0:break; // Balloon text placement is presentation-only.
   case 0x801e73d4:{uint32_t found=0;for(uint32_t i=0;i<162&&!found;i++)if(rd16(0x802e8210+i*8)==(r[4]&0xffff))found=0x802e8210+i*8;r[3]=found;break;} // CSoundManager::find_wave_info over the DOL's wave table
   // Layout transitions (frame decoration); not yet ported.
   case 0x8007263c:case 0x800726ac:case 0x8007271c:case 0x80072794:case 0x8007280c:break;

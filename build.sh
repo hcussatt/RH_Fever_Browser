@@ -46,7 +46,7 @@ tools/stage-index.sh
 if [ "$skip_tests" != "--skip-tests" ]; then
   echo "== Running tests"
   for game in $games; do
-    node "tests/test-$game-timing.mjs" >/dev/null
+    if [ -f "tests/test-$game-timing.mjs" ]; then node "tests/test-$game-timing.mjs" >/dev/null; fi
     node tests/test-runtime.mjs "$game" >/dev/null
     node tests/test-runtime.mjs "$game" --auto >/dev/null
   done

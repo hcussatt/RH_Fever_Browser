@@ -18,7 +18,8 @@ def read(a,n):
 
 SHARED={'GameUtil/TickFlow.cpp','GameUtil/TimeRatio.cpp','GameUtil/InputChecker.cpp','Game/ExChecker.cpp','GameUtil/CellAnim.cpp','GameUtil/Random.cpp'}
 # Single pure functions outside those units that the chart interpreter needs.
-SHARED_FUNCTIONS={'calc_initial_wave_tempo__13CSoundManagerFP8WaveInfo'}
+SHARED_FUNCTIONS={'calc_initial_wave_tempo__13CSoundManagerFP8WaveInfo',
+  'fn_80009950__8CExSceneFll','fn_80009A40__8CExSceneFb'} # the "you" marker's position and visibility
 # Each game's manifest names the original units whose functions are translated.
 units=set(manifest(GAME)['wii']['units'])|SHARED
 ranges=[];unit=None
@@ -166,6 +167,8 @@ def generate(a,size,name):
             neg=m.startswith('fn');subtract='msub' in m
             c=f'{q[0]}='+('-' if neg else '')+f'{fn}({q[1]},{q[2]},{"-" if subtract else ""}{q[3]});'
         elif m=='fneg':c=f'{q[0]}=-{q[1]};'
+        elif m=='fabs':c=f'{q[0]}=fabs({q[1]});'
+        elif m=='fnabs':c=f'{q[0]}=-fabs({q[1]});'
         elif m=='frsp':c=f'{q[0]}=(float){q[1]};'
         elif m=='fctiwz':c=f'{fpbits(p[0])}=0xfff8000000000000ull|(uint32_t)(int32_t){q[1]};'
         elif m in ['psq_st','psq_l']:
