@@ -23,6 +23,8 @@
     "endsWithMusic": true
   },
   "web": {
-    "enabled": false
+    "enabled": true,
+    "order": 80,
+    "expectedCues": 12
   }
 }

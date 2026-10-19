@@ -15,7 +15,7 @@ from game_registry import web_games
 ROOT = Path(__file__).resolve().parents[1]
 TOOLS = ['paths.py', 'wii_files.py', 'extract-disc.py', 'prepare-data.py',
          'chart-index.py', 'extract-assets.py', 'extract-sfx.py',
-         'extract-layout.py', 'extract-results.py', 'decode-music.py', 'nintendo_audio.py']
+         'extract-layout.py', 'extract-results.py', 'extract-menu.py', 'decode-music.py', 'nintendo_audio.py']
 
 
 def stage(snapshot=False, output='site'):
@@ -26,6 +26,8 @@ def stage(snapshot=False, output='site'):
             target = ROOT/'runtime-src'/game
             target.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(ROOT/'build'/game/'original-functions.inc', target/'original-functions.inc')
+            if 'scenes' in next(m for m in registered if m['id'] == game)['wii']:
+                shutil.copyfile(ROOT/'build'/game/'scenes.h', target/'scenes.h')
     out = ROOT/output
     if out.resolve() != ROOT/'site':
         raise SystemExit('Public output must be site/ (avoids deleting source directories).')
@@ -42,16 +44,25 @@ def stage(snapshot=False, output='site'):
     names = re.findall(r'eScene_(\w+)', text.split('enum ESceneID', 1)[1].split('};', 1)[0])
     scenes = {name: i for i, name in enumerate(names) if name not in ('Count', 'Null')}
     labels = (ROOT/'third_party/rhf-decomp/build_default/SOME01/include/rev_tengoku.rsid').read_text()
+    sound_ids = {name: int(number) for name, number in re.findall(r'unsigned int (\w+) = (\d+);', labels)}
     result_sounds = {i: n for n, i in re.findall(r'unsigned int (\w+) = (\d+);', labels)
                      if n.startswith(('WSD_RESULT_', 'WSD_EPILOGUE_'))}
     for game in games:
         d = out/game
         d.mkdir()
         manifest = next(m for m in registered if m['id'] == game)
-        if manifest['wii']['scene'] not in scenes:
-            raise ValueError(f'{game}: unknown Wii scene {manifest["wii"]["scene"]}')
         manifest.pop('$schema', None)
-        manifest['wii']['sceneId'] = scenes[manifest['wii']['scene']]
+        profile = manifest['wii']
+        if 'scenes' in profile:
+            # Numeric IDs are public metadata; discover all chart/data addresses
+            # later from the user's ISO, without a browser decomp checkout.
+            profiles = {m['id']: m['wii'] for m in registered}
+            profile['sceneIds'] = {profiles[s['game']]['scene']: scenes[profiles[s['game']]['scene']] for s in profile['scenes']}
+            profile['musicSound'] = sound_ids[profile['music']]
+        else:
+            if profile['scene'] not in scenes:
+                raise ValueError(f'{game}: unknown Wii scene {profile["scene"]}')
+            profile['sceneId'] = scenes[profile['scene']]
         manifest['wii']['soundNames'] = result_sounds
         (d/'game.json').write_text(json.dumps(manifest)+'\n')
         shutil.copyfile(ROOT/'web/engine/index.html', d/'index.html')

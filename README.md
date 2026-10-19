@@ -23,7 +23,7 @@ The ISO is read in slices, never uploaded or copied wholesale into browser stora
 
 `scripts/check-clean.py` blocks commits that contain disc images, executables,
 Nintendo formats, decoded media, the Wii common key, and original binary data.
-Only the three named `runtime-src/<game>/original-functions.inc` code snapshots
+Only registered web games’ `runtime-src/<game>/original-functions.inc` code snapshots
 are exempt from the generated-code rule. A separate deployment audit checks the
 public output, allowing only the compiled per-game WASM artifacts. Turn the hook on once per clone:
 
