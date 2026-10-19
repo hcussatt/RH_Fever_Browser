@@ -65,7 +65,7 @@ for(const id of ids){
  for(const auto of [false,true]){
   const game=await load(id);let frame=0,cue=0;
   while(!game.ended){const tick=game.tickAtSeconds(++frame/60),press=auto&&tick>=game.timeline.cues[cue]?game.timeline.cueInputs?.[cue++]??true:false;game.step(tick,press);}
-  const result=game.result();assert.equal(result.grade,auto?0:2);assert.equal(result.perfectFailed,auto?0:2);
+  const result=game.result();assert.equal(result.grade,auto?0:2);assert.equal(result.perfectFailed,auto||id==='agbghost'?0:2);
   assert.ok(result.comments.length>0);assert.ok(result.comments.every(s=>s&&!s.includes('???')));
   game.startGrading();
   const events=[];

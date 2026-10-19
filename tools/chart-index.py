@@ -15,7 +15,7 @@ import json
 import re
 import struct
 
-from paths import DECOMP, DOL, assets, game, manifest, require
+from paths import DECOMP, DOL, GAMES, assets, game, manifest, require
 
 data = require(DOL).read_bytes()
 u32o = lambda o: struct.unpack_from('>I', data, o)[0]
@@ -58,7 +58,11 @@ def commands(start, depth=0, limit=4096):
 
 
 def scene_ids():
-    text = (DECOMP/'src/Game/SceneManager.hpp').read_text()
+    header = DECOMP/'src/Game/SceneManager.hpp'
+    if not header.exists():
+        # Pages bundles scene IDs as manifest metadata; no decomp checkout.
+        return {p['scene']: p['sceneId'] for name in GAMES for p in [manifest(name)['wii']] if 'sceneId' in p}
+    text = header.read_text()
     names = re.findall(r'eScene_(\w+)', text.split('enum ESceneID', 1)[1].split('};', 1)[0])
     return {n: i for i, n in enumerate(names) if n not in ('Count', 'Null')}
 
@@ -131,6 +135,10 @@ def tempo_segments(sound):
 
 def music_sound(music):
     """The wave sound whose tempo table is the decomp's waveTempo_<music> symbol."""
+    for name in GAMES:
+        for sid, label in manifest(name)['wii'].get('soundNames', {}).items():
+            if label == music:
+                return int(sid)
     symbols = (DECOMP/'config/SOME01/symbols.txt').read_text()
     found = re.search(rf'^waveTempo_{music} = \.data:0x([0-9A-Fa-f]+);', symbols, re.M)
     if not found:

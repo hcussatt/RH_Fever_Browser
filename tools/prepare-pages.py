@@ -26,6 +26,8 @@ def stage(snapshot=False, output='site'):
             target = ROOT/'runtime-src'/game
             target.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(ROOT/'build'/game/'original-functions.inc', target/'original-functions.inc')
+            if 'scenes' in next(m for m in registered if m['id'] == game)['wii']:
+                shutil.copyfile(ROOT/'build'/game/'scenes.h', target/'scenes.h')
     out = ROOT/output
     if out.resolve() != ROOT/'site':
         raise SystemExit('Public output must be site/ (avoids deleting source directories).')
@@ -42,16 +44,18 @@ def stage(snapshot=False, output='site'):
     names = re.findall(r'eScene_(\w+)', text.split('enum ESceneID', 1)[1].split('};', 1)[0])
     scenes = {name: i for i, name in enumerate(names) if name not in ('Count', 'Null')}
     labels = (ROOT/'third_party/rhf-decomp/build_default/SOME01/include/rev_tengoku.rsid').read_text()
+    remix_music = {m['wii']['music'] for m in registered if 'music' in m['wii']}
     result_sounds = {i: n for n, i in re.findall(r'unsigned int (\w+) = (\d+);', labels)
-                     if n.startswith(('WSD_RESULT_', 'WSD_EPILOGUE_'))}
+                     if n.startswith(('WSD_RESULT_', 'WSD_EPILOGUE_')) or n in remix_music}
     for game in games:
         d = out/game
         d.mkdir()
         manifest = next(m for m in registered if m['id'] == game)
-        if manifest['wii']['scene'] not in scenes:
-            raise ValueError(f'{game}: unknown Wii scene {manifest["wii"]["scene"]}')
+        if 'scene' in manifest['wii']:
+            if manifest['wii']['scene'] not in scenes:
+                raise ValueError(f'{game}: unknown Wii scene {manifest["wii"]["scene"]}')
+            manifest['wii']['sceneId'] = scenes[manifest['wii']['scene']]
         manifest.pop('$schema', None)
-        manifest['wii']['sceneId'] = scenes[manifest['wii']['scene']]
         manifest['wii']['soundNames'] = result_sounds
         (d/'game.json').write_text(json.dumps(manifest)+'\n')
         shutil.copyfile(ROOT/'web/engine/index.html', d/'index.html')
