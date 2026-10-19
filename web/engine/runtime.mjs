@@ -136,11 +136,11 @@ export async function loadGame(gameUrl,load=fetchBytes,{timeline:withTimeline=tr
   // A checker's perfect tick: its target (mTickJust, +0x58) less the ticks it has counted (mTickPass,
   // +0x54), read when it is created. A hit can re-arm a checker for a later target (Screwbot
   // Factory's release after its press), which is a new cue; the input it waits for is its first
-  // input type (+0x0c).
-  for(const e of events)if(e[0]===9){const c=e[1];live.set(c,f32(c+0x58));cues.push(tick+f32(c+0x58)-f32(c+0x54));cueInputs.push(u32(c+0x0c));}
-  for(let i=0,c;(c=core._checker_at(i)>>>0);i++)if(live.has(c)&&live.get(c)!==f32(c+0x58)){
-   live.set(c,f32(c+0x58));cues.push(tick+f32(c+0x58)-f32(c+0x54));cueInputs.push(u32(c+0x0c));
-  }
+  // input type (+0x0c). A checker waiting for input type -1 takes no press and hits itself on its
+  // target tick (See-Saw's partner, who plays itself in one-player mode), so it is not a cue.
+  const arm=c=>{live.set(c,f32(c+0x58));if(u32(c+0x0c)!==0xffffffff){cues.push(tick+f32(c+0x58)-f32(c+0x54));cueInputs.push(u32(c+0x0c));}};
+  for(const e of events)if(e[0]===9)arm(e[1]);
+  for(let i=0,c;(c=core._checker_at(i)>>>0);i++)if(live.has(c)&&live.get(c)!==f32(c+0x58))arm(c);
   handle(events,tick);
   steps++;
   return events;

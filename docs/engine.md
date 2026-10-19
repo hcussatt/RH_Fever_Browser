@@ -48,6 +48,8 @@ built games for the picker page.
   Factory: press A+B, let go two beats later), so cues are re-read whenever a
   checker's target moves, and the timeline keeps each cue's input
   (`cueInputs`).
+- A checker listing input type -1 takes no press and hits itself on its beat
+  (See-Saw's partner, who plays itself in one-player mode), so it is not a cue.
 
 ## Charts
 
