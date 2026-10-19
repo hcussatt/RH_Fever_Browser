@@ -93,6 +93,15 @@ static int is_flow_command(uint32_t address){for(int i=0;i<GAME_SCENE_COUNT;i++)
 // sound handle address for sound events (0: the sound played last, as in CSoundManager::tune).
 static void emit_handle(uint32_t kind,uint32_t value,uint32_t extra,uint32_t handle){if(event_count>=1024)panic(event_count,3);uint32_t*e=events+event_count*5;e[0]=kind;e[1]=value;e[2]=extra;e[3]=frame_number;e[4]=handle;event_count++;}
 static void emit(uint32_t kind,uint32_t value,uint32_t extra){emit_handle(kind,value,extra,0);}
+// Message events (15) for web/engine/message.mjs: value = field<<8 | message pane (the chart's
+// access index), extra = the field's value. A layout that owns text boxes (CBalloonLayout,
+// Hole in One's CMyLayout) is announced when the scene adds it; MESG_CLEAR drops them all when
+// the scene ends. MESG_REGISTER gives a pane a text box (CTickFlow::fn_801DEF58): 0 none,
+// 0x10 the balloon (with its window), 0x11 the balloon's text alone, 0x12 the overlay strip,
+// 0x20+i Hole in One's message i.
+enum{MESG_VISIBLE,MESG_TEXT,MESG_STRING,MESG_REGISTER,MESG_LAYOUT,MESG_CLEAR,MESG_TAIL,
+  MESG_BOX_X,MESG_BOX_Y,MESG_BOX_W,MESG_BOX_H,MESG_TAIL_X,MESG_TAIL_Y,MESG_OVERLAY_Y,MESG_OVERLAY_H};
+enum{MESG_LAYOUT_BALLOON=1,MESG_LAYOUT_GOLF=2};
 static uint32_t fbits(float x){union{float v;uint32_t u;}b={.v=x};return b.u;}
 // The rest of the flow running now; 0 outside the chart (a press, a scene update).
 static uint32_t flow_rest(void){return current_flow?rd32(current_flow+0x1c):0;}
@@ -149,6 +158,9 @@ static uint32_t message(uint32_t id){
   panic(id,12);return 0;
 }
 static uint32_t message_id(uint32_t p){uint32_t id=0;for(;rd8(p);p++){uint32_t c=rd8(p);if(c<'0'||c>'9')panic(p,12);id=id*10+c-'0';}return id;}
+// CMessageManager::fn_80087708: a message id string is seven digits (Tap Trial's has a trailing
+// space); 0xffffffff if not.
+static uint32_t bmg_id(uint32_t s){uint32_t v=0;for(int i=0;i<7;i++){uint8_t c=rd8(s+i);if(c<'0'||c>'9')return 0xffffffff;v=v*10+c-'0';}return v;}
 static void enter_grading(void){
   uint32_t cp=rd32(0x8032016c),gs=alloc(256);grading_scene=gs;grading=1;grading_ready=grading_pressed=0;
   wr32(rd32(0x80320180)+4,gs);wr32(gs+0x34,alloc(256));wr32(gs+0x38,rd32(cp+0x2fc));wr8(gs+0x3c,rd8(cp+0xdf));
@@ -195,7 +207,7 @@ static void canvas_default(uint32_t i){
 static void ex_scene_unload(void){
   base_canvas=canvas[2];for(uint32_t i=2;i<=9;i++)canvas_default(i);
   checker_count=0;for(int i=0;i<256;i++)input_map[i]=i;
-  layout_count=0; // CLayoutManager::fn_801D6BB0
+  layout_count=0;emit(15,MESG_CLEAR<<8,0); // CLayoutManager::fn_801D6BB0
   end_flows_above(0);register_flow(0x8008d2cc);
 }
 // CTickFlowManager::_18: run every flow once per frame, newest first; rerun
@@ -218,7 +230,10 @@ static void exflow_command(void){
   uint32_t self=r[3],op=r[4],arg0=r[5],args=r[6],cp=rd32(0x8032016c);
   if(op<0x100){
     if(grading&&op==0x46){if(arg0==1){grading_ready=1;grading_pressed=0;prompt_press=rd32(args+4);prompt_release=rd32(args+8);emit(20,5,rd32(self+0x1c));}else if(arg0==2)wr32(self+0x24,grading_pressed==2?0:1);r[3]=0;return;}
-    if(op==0x40||op==0x41){r[3]=0;return;} // Message panes: layout UI is not ported.
+    // Message panes (CTickFlow's lbl_803D5D38 text boxes): shown or hidden with their container,
+    // or given a string from the chart. Message events (15) for web/engine/message.mjs.
+    if(op==0x40){emit(15,(MESG_VISIBLE<<8)|(arg0&255),rd32(args)!=0);r[3]=0;return;}
+    if(op==0x41){emit(15,(MESG_STRING<<8)|(arg0&255),rd32(args));r[3]=0;return;}
     chart_sound=op==0x22||op==0x23;call(0x801ddb84);chart_sound=0;return;
   }
   if(op==0x118&&arg0<=1){
@@ -264,7 +279,7 @@ static void exflow_command(void){
   else if(op==0x12f&&arg0==0)wr8(0x80326ec0-27264,rd32(args)!=0);
   // CExScene::updatePerfectStatus returns at once outside the Perfect campaign, which is not ported.
   else if(op==0x129&&!rd8(0x80326ec0-27912)){}
-  else if(op==0x124){} // Message pane text (with 0x40/0x41): layout UI is not ported.
+  else if(op==0x124)emit(15,(MESG_TEXT<<8)|(arg0&255),bmg_id(rd32(args))); // CMessageManager::fn_80088FEC(pane, fn_80087708(id))
   else if(grading&&op==0x123){
     if(arg0==0)emit(16,0,rd32(args));
     else if(arg0==1){prompt_exit_remaining=prompt_exit_frames;emit(16,1,prompt_exit_frames);}
@@ -391,7 +406,18 @@ static void call(uint32_t address){
   // Input-check settings (forced inputs, offsets, input recording) and button cooldown: normal play.
   case 0x801e923c:case 0x801e9c30:case 0x801e9c38:case 0x801e9d7c:case 0x801e9d80:case 0x801e9d84:case 0x801d5500:break;
   case 0x8010a084:r[3]=0;break; // sprintf (only for input recording file names)
-  case 0x80039e00:case 0x8003a1d0:break; // Balloon text placement is presentation-only.
+  // CBalloonLayout (message.brlyt): every scene places its speech balloon and the overlay strip
+  // across the screen, and gives their text boxes to the message panes (CTickFlow::fn_801DEF58).
+  case 0x8003a1d0:{ // fn_8003A1D0(pane, x, y, width, height, tail, tail x, tail y, flip tail)
+    float v[]={f[1].d,f[2].d,f[3].d,f[4].d,f[5].d,f[6].d};uint32_t pane=r[4]&255;
+    emit(15,(MESG_REGISTER<<8)|pane,0x10);emit(15,(MESG_TAIL<<8)|pane,(r[5]&255?1:0)|(r[6]&255?2:0));
+    for(int i=0;i<6;i++)emit(15,((MESG_BOX_X+i)<<8)|pane,fbits(v[i]));
+    break;
+  }
+  case 0x80039e00:emit(15,(MESG_REGISTER<<8)|(r[4]&255),r[5]?0x10:0x11);break;
+  case 0x8003a418: // fn_8003A418(pane, y, height)
+    emit(15,(MESG_REGISTER<<8)|(r[4]&255),0x12);
+    emit(15,(MESG_OVERLAY_Y<<8)|(r[4]&255),fbits(f[1].d));emit(15,(MESG_OVERLAY_H<<8)|(r[4]&255),fbits(f[2].d));break;
   case 0x801e73d4:{uint32_t found=0;for(uint32_t i=0;i<162&&!found;i++)if(rd16(0x802e8210+i*8)==(r[4]&0xffff))found=0x802e8210+i*8;r[3]=found;break;} // CSoundManager::find_wave_info over the DOL's wave table
   // Layout transitions (frame decoration); not yet ported.
   case 0x8007263c:case 0x800726ac:case 0x8007271c:case 0x80072794:case 0x8007280c:break;
@@ -405,7 +431,14 @@ static void call(uint32_t address){
   case 0x801d42e0:case 0x801d42fc:r[3]=1;break;
   case 0x801d5ff0:r[3]=0x80420000;break;
   case 0x801d6aec:break;
-  case 0x801d6b2c:if(layout_count>=8)panic(layout_count,9);layout[layout_count++]=r[4];break;
+  case 0x801d6b2c:{ // CLayoutManager adds a layout and sets it up (_10)
+    if(layout_count>=8)panic(layout_count,9);layout[layout_count++]=r[4];
+    uint32_t setup=rd32(rd32(r[4])+0x10);
+    if(setup==0x800399e4)emit(15,MESG_LAYOUT<<8,MESG_LAYOUT_BALLOON); // CBalloonLayout
+    // Hole in One's CMyLayout gives its four messages to panes 0-3, hidden (fn_80072428).
+    else if(setup==0x80072428){emit(15,MESG_LAYOUT<<8,MESG_LAYOUT_GOLF);for(uint32_t i=0;i<4;i++){emit(15,(MESG_REGISTER<<8)|i,0x20+i);emit(15,(MESG_VISIBLE<<8)|i,0);}}
+    break;
+  }
   case 0x801d6c50:r[3]=layout[r[4]];break;
   case 0x801d9a2c:wr32(r[3],0x80430000);break;
   case 0x801e1cc0:r[3]=create_flow(r[4],f[1].d);break;
@@ -436,7 +469,8 @@ EMSCRIPTEN_KEEPALIVE void reset_runtime(void){
   combo_state=combo_frames=combo_down=combo_was_down=held_a=held_b=release_a=release_b=0;
   for(int i=0;i<256;i++)input_map[i]=i;
   memset(ram,0,sizeof(ram));memset(r,0,sizeof(r));memset(f,0,sizeof(f));memset(cr,0,sizeof(cr));memset(banks,0,sizeof(banks));
-  memset(tf_values,0,sizeof(tf_values));sound_handle=envelope=0;speed=1;anim_tempo_update=anim_tempo=handle_count=0;
+  memset(tf_values,0,sizeof(tf_values));tf_values[0]=32;tf_values[1]=16;tf_values[2]=16;tf_values[3]=8; // CTickFlowManager::_10's defaults
+  sound_handle=envelope=0;speed=1;anim_tempo_update=anim_tempo=handle_count=0;
   chart_flow_count=chart_rerun=chart_instances=current_flow=music_started=song_ended=0;
   profile_index=next_profile=next_chart=fader_wait=flow_create_fn=persistent_count=named_bank_count=file_count=0;scene_state=SCENE_ACTIVE;fader_state=FADER_IDLE;grading=grading_scene=grading_ready=grading_pressed=grading_done=prompt_press=prompt_release=prompt_exit_remaining=message_table=message_count=0;prompt_exit_frames=5;music_sound=0xffffffff;frame_ticks=0;heap=0x80500000;call_depth=actor_count=checker_count=event_count=frame_number=layout_count=0;
   hits=misses=through=stray=perfect_failed=score_sum=score_count=wrong_count=0;wrong_timer=0;
@@ -495,7 +529,9 @@ EMSCRIPTEN_KEEPALIVE void set_frame_ticks(float ticks){frame_ticks=ticks;}
 EMSCRIPTEN_KEEPALIVE uint32_t chart_state(void){return music_started|(song_ended<<1);}
 EMSCRIPTEN_KEEPALIVE uint32_t chart_flow_count_value(void){return chart_flow_count;}
 EMSCRIPTEN_KEEPALIVE uint32_t chart_flow_at(uint32_t i){return i<chart_flow_count?chart_flows[i]:0;}
-EMSCRIPTEN_KEEPALIVE void begin_frame(void){run_flows();}
+// Once the chart has switched to grading, its flows wait for the results screen (grading_frame):
+// a game that plays on to the end of its music would otherwise reach the result prompt early.
+EMSCRIPTEN_KEEPALIVE void begin_frame(void){if(!grading)run_flows();}
 // One note's volume envelope from the original nw4r EnvGenerator, as the mixer would apply it:
 // amplitude ratios at each 3 ms update, released after release_ms (negative: never). Returns the count.
 EMSCRIPTEN_KEEPALIVE uint32_t envelope_curve(int attack,int hold,int decay,int sustain,int release,int release_ms,uint32_t out,uint32_t max){

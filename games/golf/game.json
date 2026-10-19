@@ -9,6 +9,10 @@
     "scene": "Baseball",
     "sceneVariant": 1,
     "cellanim": "EN/content2/cellanim/baseball/ver0/cellanim.szs",
+    "messageLayout": {
+      "archive": "EN/content2/layout/layout_baseball.szs",
+      "file": "baseball.brlyt"
+    },
     "units": [
       "Game/Baseball/SceneBaseball.cpp",
       "Game/Baseball/MyChecker.cpp",

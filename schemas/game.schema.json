@@ -49,6 +49,14 @@
         "epilogue": {"description": "The epilogue cell animation archive, when not beside the game's cellanim.", "$ref": "#/$defs/discPath"},
         "perfectActive": {"type": "boolean"},
         "endsWithMusic": {"type": "boolean"},
+        "messageLayout": {
+          "description": "The game's own layout whose text boxes the chart's message panes use (Hole in One's CMyLayout); the shared speech balloon needs no entry.",
+          "type": "object", "additionalProperties": false, "required": ["archive", "file"],
+          "properties": {
+            "archive": {"$ref": "#/$defs/discPath"},
+            "file": {"type": "string", "pattern": "^[A-Za-z0-9_-]+\\.brlyt$"}
+          }
+        },
         "layout": {
           "type": "object", "additionalProperties": false,
           "required": ["archive", "file", "animations", "startAtEnd", "texts", "panes"],

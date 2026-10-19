@@ -26,6 +26,14 @@ EPILOGUE = {game: manifest(game)['wii'].get('epilogue') or manifest(game)['wii']
 LAYOUT = {game: manifest(game)['wii']['layout'] for game in GAMES if 'layout' in manifest(game)['wii']}
 LAYOUT['results'] = {'archive': 'EN/content2/layout/layout_grading.szs', 'file': 'grading.brlyt'}
 LAYOUT['epilogue'] = {'archive': 'EN/content2/layout/layout_epilogue.szs', 'file': 'epilogue.brlyt'}
+# Layouts whose text boxes show the charts' messages: the shared speech balloon (CBalloonLayout,
+# message.brlyt) and a game's own (Hole in One's), including those of a remix's scenes.
+MESSAGE_LAYOUTS = {'balloon': {'archive': 'EN/content2/layout/layout_common.szs', 'file': 'message.brlyt'}}
+for game in GAMES:
+    profile = manifest(game)['wii']
+    for name in [game]+[s['game'] for s in profile.get('scenes', [])]:
+        if 'messageLayout' in manifest(name)['wii']:
+            MESSAGE_LAYOUTS[name] = manifest(name)['wii']['messageLayout']
 MESSAGES = 'EN/content2/message/riq_E.szs'
 
 
@@ -70,13 +78,15 @@ def main(iso, *, sound_archive=True):
             out.parent.mkdir(parents=True,exist_ok=True)
             out.write_bytes(data)
             report['files'][f'{game}/epilogue/{name}']=hashlib.sha256(data).hexdigest()
-    for game, layout in LAYOUT.items():
+    layouts = [(f'{game}/layout', layout) for game, layout in LAYOUT.items()]
+    layouts += [(f'message-layout/{key}', layout) for key, layout in MESSAGE_LAYOUTS.items()]
+    for folder, layout in layouts:
         files = u8_files(disc.get(layout['archive']))
         for name, data in files.items():
-            out = DISC/game/'layout'/name
+            out = DISC/folder/name
             out.parent.mkdir(parents=True, exist_ok=True)
             out.write_bytes(data)
-            report['files'][f'{game}/layout/{name}'] = hashlib.sha256(data).hexdigest()
+            report['files'][f'{folder}/{name}'] = hashlib.sha256(data).hexdigest()
         # Fonts not in the archive are stand-alone compressed files next to the layouts.
         for font in layout_fonts(files['blyt/'+layout['file']]):
             if 'font/'+font not in files:
@@ -84,11 +94,10 @@ def main(iso, *, sound_archive=True):
                 (DISC/'font').mkdir(exist_ok=True)
                 (DISC/'font'/font).write_bytes(data)
                 report['files'][f'font/{font}'] = hashlib.sha256(data).hexdigest()
-    if LAYOUT:
-        for name, data in u8_files(disc.get(MESSAGES)).items():
-            (DISC/'message').mkdir(exist_ok=True)
-            (DISC/'message'/name).write_bytes(data)
-            report['files'][f'message/{name}'] = hashlib.sha256(data).hexdigest()
+    for name, data in u8_files(disc.get(MESSAGES)).items():
+        (DISC/'message').mkdir(exist_ok=True)
+        (DISC/'message'/name).write_bytes(data)
+        report['files'][f'message/{name}'] = hashlib.sha256(data).hexdigest()
     if sound_archive and (not BRSAR.exists() or BRSAR.stat().st_size != disc.files['EN/content2/rev_tengoku.brsar'][1]):
         BRSAR.write_bytes(disc.get('EN/content2/rev_tengoku.brsar'))
     (DISC/'extract-report.json').write_text(json.dumps(report, indent=2)+'\n')

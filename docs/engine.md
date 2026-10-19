@@ -126,6 +126,20 @@ The game's layout class is replaced in `adapters/<id>/game.h` by layout events
 (kind 11: play or stop an animation, set a text box's message, offset a pane),
 indexing the manifest's `animations`, `texts` and `panes` lists.
 
+### Message panes
+
+Charts also show text in message panes: TickFlow `0x40` shows or hides pane *n*,
+`0x41` gives it a string and ExFlow `0x124` a message by id (`riq_E.bmg`). A pane
+is a text box some layout handed to the chart (`CTickFlow::fn_801DEF58`): the
+shared speech balloon (`CBalloonLayout`, `message.brlyt` in `layout_common.szs`),
+which each scene places and sizes, or a game's own (Hole in One's `CMyLayout`,
+named by the manifest's `wii.messageLayout`). Remix 1's opening lines use Hole in
+One's; Tap Trial's giraffe uses the balloon. `platform.c` reports the layouts the
+scene adds, the panes they register, the balloon's placement and the chart's
+commands as message events (kind 15); `web/engine/message.mjs` draws them with
+`layout.mjs`. `tools/extract-layout.py` writes `message-layouts.json` for every
+game.
+
 ## Audio
 
 `web/engine/audio.mjs` plays the original samples with Web Audio, following the
@@ -155,7 +169,7 @@ original nw4r sound code where it matters for how a game sounds:
 - Sounds played before the chart starts (scene setup and pre-roll) are kept.
 - Event kinds: 1 game sound, 3 perfect failed, 5 chart sound, 7 end, 8 chart
   command, 10 tune, 11 layout, 12 game sound from a chart command, 13 music
-  volume, 14 speed. Each event is 5 words: kind, value, extra, frame, handle.
+  volume, 14 speed, 15 message pane. Each event is 5 words: kind, value, extra, frame, handle.
 - Pitch interpolation, LFO and filters are approximated.
 
 `web/engine/qa/audio-check.mjs` renders a whole autoplay run offline and reports
