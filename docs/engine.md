@@ -111,16 +111,17 @@ original nw4r sound code where it matters for how a game sounds:
 `web/engine/qa/audio-check.mjs` renders a whole autoplay run offline and reports
 peak, clipping and RMS.
 
-## Results and versus mode (planned)
+## Results and versus mode
 
-When the song ends the page sets `window.rhf.result` to
-`{hits, misses, through, stray, perfectFailed}` and fires an `rhf-result` event.
-Starting the song is one function, `start()` in `main.mjs`.
+The page exposes its original result in `window.rhf.result` and emits `rhf-result`.
+`main.mjs` accepts a future monotonic deadline in `start(at)`; solo play still starts
+shortly ahead. The multiplayer path maps the deadline to the local heard-audio
+clock. No remote inputs, frame waits, timing changes, or scoring corrections occur.
 
-The planned versus mode keeps every player's game local: each player enters a
-username, plays in their own browser, and only a start signal and the final
-result (username, misses) cross the network. The winner has the fewest misses.
-Nothing on the frame loop or audio path ever waits on the network.
+`multiplayer.mjs` mounts the persistent host-controlled lobby in the main Pages arcade.
+It owns the connection while same-origin game iframes expose prepare/start/stop APIs.
+`peer-match.mjs` owns WebRTC, compatibility, clock estimates, rounds and summaries.
+See [multiplayer.md](multiplayer.md) for use, protocol, limits and validation.
 
 ## Adding a game
 

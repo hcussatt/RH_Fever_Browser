@@ -1,4 +1,5 @@
 import {siteRoot,readLibrary,writeLibrary,deployment} from '../engine/assets.mjs';
+import {mountMultiplayer} from '../engine/multiplayer.mjs';
 const $=s=>document.querySelector(s);
 let worker,build,games,selected='golf';
 const status=(message,error=false)=>{$('#progress').textContent=message;$('#progress').classList.toggle('error',error);};
@@ -8,7 +9,7 @@ async function render(){
  for(const [index,{id,title}] of games.entries()){
   const entry=library.games[id],ready=entry?.version===(build.assetVersion||build.version);
   // Verify that storage eviction has not left just the library pointer.
-  const stored=ready&&await (await caches.open(entry.cache)).match(new URL(id+'/assets/original-timeline.json',siteRoot));
+  const stored=build.local?(await fetch(new URL(id+'/assets/original-timeline.json',siteRoot),{method:'HEAD'})).ok:ready&&await (await caches.open(entry.cache)).match(new URL(id+'/assets/original-timeline.json',siteRoot));
   const card=document.createElement('button');card.type='button';card.className='game';card.setAttribute('aria-pressed',String(id===selected));card.onclick=()=>{selected=id;render();};
   const number=document.createElement('span');number.className='game-index';number.textContent=String(index+1).padStart(2,'0');card.append(number);
   const h=document.createElement('h3');h.textContent=title;
@@ -33,9 +34,11 @@ $('#help').onclick=()=>$('#help-dialog').showModal();
 $('#close-help').onclick=()=>$('#help-dialog').close();
 try{
  if(!isSecureContext||!globalThis.caches)throw new Error('Use HTTPS or localhost in a browser with site storage enabled.');
- [build,games]=await Promise.all([deployment(),fetch(new URL('games.json',siteRoot)).then(r=>r.json())]);
+ const deploymentResponse=await fetch(new URL('deployment.json',siteRoot));
+ [build,games]=await Promise.all([deploymentResponse.status===404?Promise.resolve({version:'local',local:true}):deployment(),fetch(new URL('games.json',siteRoot)).then(r=>r.json())]);
  $('#version').textContent=build.version;await render();
- if('serviceWorker' in navigator)navigator.serviceWorker.register(new URL('sw.js',siteRoot),{scope:siteRoot.pathname}).catch(console.warn);
+ mountMultiplayer({games,version:build.version,openImport});
+ if(!build.local&&'serviceWorker' in navigator)navigator.serviceWorker.register(new URL('sw.js',siteRoot),{scope:siteRoot.pathname}).catch(console.warn);
 }catch(e){status(e.message,true);$('#import').disabled=true;}
 $('#import-form').onsubmit=async e=>{
  e.preventDefault();if(worker||!build)return;

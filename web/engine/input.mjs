@@ -13,9 +13,9 @@ export function createInputQueue(player=0){
 
 // Space / X / click / gamepad A press; Escape pauses. Space or X also starts.
 export function bindControls(canvas,{press,pause,start,release=()=>{}}){
- window.addEventListener('keydown',e=>{if(e.code==='Escape'&&!e.repeat){e.preventDefault();pause();return;}if(['Space','KeyX'].includes(e.code)){e.preventDefault();if(!e.repeat)start()||press();}});
+ window.addEventListener('keydown',e=>{if(e.target.closest?.('input,textarea,dialog'))return;if(e.code==='Escape'&&!e.repeat){e.preventDefault();pause();return;}if(['Space','KeyX'].includes(e.code)){e.preventDefault();if(!e.repeat)start()||press();}});
  canvas.addEventListener('pointerdown',e=>{e.preventDefault();press();});
- window.addEventListener('keyup',e=>{if(['Space','KeyX'].includes(e.code)){e.preventDefault();release();}});
+ window.addEventListener('keyup',e=>{if(e.target.closest?.('input,textarea,dialog'))return;if(['Space','KeyX'].includes(e.code)){e.preventDefault();release();}});
  window.addEventListener('pointerup',release);window.addEventListener('pointercancel',release);
  let lastPad=false;
  // Called once per animation frame; gamepads have no press events.
