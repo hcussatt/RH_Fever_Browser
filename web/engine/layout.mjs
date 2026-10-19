@@ -48,6 +48,7 @@ export async function createLayout(g,{spec=g.manifest.wii.layout,file='layout.js
    if(tags.RLVC?.[16])p.alpha=Math.min(Math.max(hermite(tags.RLVC[16],f)+.5,0),255)|0;
    if(tags.RLVI?.[0])p.visible=!!step(tags.RLVI[0],f);
    if(tags.RLTP?.[0]){const m=data.materials.findIndex(m=>m.name===name);if(m>=0)materialImage[m]=a.anim.timg[step(tags.RLTP[0],f)];}
+   if(tags.RLTS){const m=data.materials.find(m=>m.name===name);if(m)for(const [key,keys] of Object.entries(tags.RLTS)){const [i,t]=key.split(':').map(Number);m.textureSRT[i][t]=hermite(keys,f);}}
   }
  }
  const f32=u=>new Float32Array(new Uint32Array([u]).buffer)[0];
@@ -95,9 +96,22 @@ export async function createLayout(g,{spec=g.manifest.wii.layout,file='layout.js
  }
  const mul=(a,b)=>[a[0]*b[0]+a[2]*b[1],a[1]*b[0]+a[3]*b[1],a[0]*b[2]+a[2]*b[3],a[1]*b[2]+a[3]*b[3],a[0]*b[4]+a[2]*b[5]+a[4],a[1]*b[4]+a[3]*b[5]+a[5]];
  const rect=p=>{const [w,h]=p.size,hx=p.origin%3,vy=Math.floor(p.origin/3);return {left:-w*hx/2,top:h*vy/2,w,h};};
+ const composites=new Map();
+ function pictureImage(name,m){
+  if(!m.textures||m.textures.length<2)return images[name];
+  // The grading stars use a fixed RGB565 colour ramp and an independently
+  // rotating I4 alpha mask (the original two-texture TEV material).
+  if(m.name!=='P_starL_01'&&m.name!=='P_starR_01')return images[name];
+  const mask=images[data.textures[m.textures[1].texture]],srt=m.textureSRT[1],key=name+'|'+srt;
+  if(composites.has(key))return composites.get(key);
+  const c=document.createElement('canvas'),a=document.createElement('canvas');c.width=a.width=images[name].width;c.height=a.height=images[name].height;
+  const cx=c.getContext('2d'),ax=a.getContext('2d');cx.drawImage(images[name],0,0);
+  ax.translate(c.width/2,c.height/2);ax.rotate(-srt[2]*Math.PI/180);ax.scale(1/srt[3],1/srt[4]);ax.drawImage(mask,-c.width/2,-c.height/2,c.width,c.height);
+  cx.globalCompositeOperation='destination-in';cx.drawImage(a,0,0);c.src=key;composites.set(key,c);return c;
+ }
  function drawPicture(ctx,p,m,alpha){
   const name=materialImage[p.material];if(!name)return;
-  const img=tint(images[name],data.materials[p.material],p.vertexColors?.[0]),r=rect(p),W=img.width,H=img.height;
+  const mat=data.materials[p.material],img=tint(pictureImage(name,mat),mat,p.vertexColors?.[0]),r=rect(p),W=img.width,H=img.height;
   // Map texture coordinates of the top-left, top-right and bottom-left corners onto the pane.
   const [t0,t1,t2]=p.texcoords||[[0,0],[1,0],[0,1]];
   const ux=(t1[0]-t0[0])*W,uy=(t1[1]-t0[1])*H,vx=(t2[0]-t0[0])*W,vy=(t2[1]-t0[1])*H,det=ux*vy-uy*vx;if(!det)return;
@@ -112,17 +126,23 @@ export async function createLayout(g,{spec=g.manifest.wii.layout,file='layout.js
   else ctx.drawImage(img,0,0);
   ctx.restore();
  }
+ const windows=new Map();
  function drawWindow(ctx,p,m,alpha){
   if(p.frames.length!==1)throw new Error('Unsupported original window frame count');
   const material=data.materials[p.frames[0].material],img=tint(images[data.textures[material.texture]],material),r=rect(p);
-  const w=img.width,h=img.height;
-  ctx.setTransform(...m);ctx.globalAlpha=alpha;ctx.fillStyle='#fff';ctx.fillRect(r.left+w,-r.top,r.w-2*w,r.h);if(r.h>2*h)ctx.fillRect(r.left,-r.top+h,r.w,r.h-2*h);
-  // NW4R's one-frame window mirrors its single corner into all four corners.
-  for(const [right,bottom] of [[0,0],[1,0],[0,1],[1,1]]){
-   ctx.save();ctx.translate(r.left+(right?r.w:0),-r.top+(bottom?r.h:0));ctx.scale(right?-1:1,bottom?-1:1);ctx.drawImage(img,0,0);ctx.restore();
+  const key=p.material+'|'+p.size;let c=windows.get(key);
+  if(!c){
+   // Bake the mirrored/clamped corner into one surface. Adjacent Canvas
+   // geometry otherwise leaves antialias seams between the original quads.
+   c=document.createElement('canvas');c.width=Math.ceil(r.w);c.height=Math.ceil(r.h);
+   const x=c.getContext('2d'),dst=x.createImageData(c.width,c.height),src=img.getContext('2d').getImageData(0,0,img.width,img.height).data;
+   for(let y=0;y<c.height;y++)for(let x=0;x<c.width;x++){
+    const sx=Math.min(x,c.width-1-x,img.width-1),sy=Math.min(y,c.height-1-y,img.height-1),a=(sy*img.width+sx)*4,b=(y*c.width+x)*4;
+    dst.data.set(src.subarray(a,a+4),b);
+   }
+   x.putImageData(dst,0,0);windows.set(key,c);
   }
-  ctx.drawImage(img,w-1,0,1,h,r.left+w,-r.top,r.w-2*w,h);
-  ctx.save();ctx.translate(0,-r.top*2+r.h);ctx.scale(1,-1);ctx.drawImage(img,w-1,0,1,h,r.left+w,-r.top,r.w-2*w,h);ctx.restore();
+  ctx.setTransform(...m);ctx.globalAlpha=alpha;ctx.drawImage(c,r.left,-r.top,r.w,r.h);
  }
  function drawText(ctx,p,m,alpha){
   if(!p.text)return;
@@ -137,7 +157,7 @@ export async function createLayout(g,{spec=g.manifest.wii.layout,file='layout.js
   for(const l of lines){
    let x=left+(width-l.width)*align/2;
    for(const g of l.gs){
-    const cx=(g.cell%font.columns)*font.cellWidth,cy=Math.floor(g.cell/font.columns)*font.cellHeight;
+    const cx=(g.cell%font.columns)*(font.atlasStrideX||font.cellWidth)+(font.atlasPadding||0),cy=Math.floor(g.cell/font.columns)*(font.atlasStrideY||font.cellHeight)+(font.atlasPadding||0);
     // The glyph hangs from the line's top. This transform's y axis points down, the layout's up.
     if(g.glyphWidth)ctx.drawImage(img,cx,cy,g.glyphWidth,font.cellHeight,x+g.left*sx,-y,g.glyphWidth*sx,font.cellHeight*sy);
     x+=g.charWidth*sx+p.charSpace;

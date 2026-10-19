@@ -82,10 +82,10 @@ play.onclick=async()=>{
  try{await audio.resume();play.disabled=false;overlay.hidden=true;if(paused){paused=false;running=true;requestAnimationFrame(loop);return;}await start();}catch(e){fail(e);}
 };
 document.querySelector('#restart').onclick=()=>location.reload();
-// The song ends at this second of the backing track.
-const endSeconds=()=>g.manifest.wii.endsWithMusic?Math.max(music.duration,g.secondsAtTick(g.timeline.endTick)):g.secondsAtTick(g.timeline.endTick);
+// The original chart owns the outro; a longer backing wave must not delay grading.
+const endSeconds=()=>g.secondsAtTick(g.timeline.endTick);
 function finish(){
- phase='results';sfx.stop();resultsStart=audio.currentTime+.06;
+ phase='results';resultsStart=atTick(g.timeline.endTick);
  const result=results.begin(sfx,resultsStart);window.rhf.result=result;status.textContent='';
  window.dispatchEvent(new CustomEvent('rhf-result',{detail:result}));
 }
@@ -98,7 +98,7 @@ function loop(){if(!running)return;try{
  }
  const began=performance.now();const elapsed=Math.max(0,heardTime()-startTime);
  const target=Math.floor(elapsed*60);
- while(frame<target){frame++;
+ while(frame<target&&!g.ended){frame++;
   const pressed=input.take(frame);
   g.step(g.tickAtSeconds(track.posAt(frame/60)),pressed);
   liveEvents();

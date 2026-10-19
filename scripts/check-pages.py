@@ -3,6 +3,7 @@
 import hashlib
 import importlib.util
 import json
+import re
 from pathlib import Path
 import sys
 import zipfile
@@ -42,6 +43,10 @@ def audit(site):
                     assert item.filename.startswith(('tools/', 'games/')) and item.filename.endswith(('.py', '/game.json'))
                     assert not clean.check(item.filename, archive.read(item), blocks), item.filename
             continue
+        if name.endswith(('.mjs', '.js')):
+            for dependency in re.findall(r"(?:from\s*|import\s*\(?\s*)['\"](\.[^'\"]+)['\"]", data.decode()):
+                target = (path.parent/dependency).resolve()
+                assert target.is_relative_to(site.resolve()) and target.is_file(), f'{name}: missing module {dependency}'
         problems = clean.check(name, data, blocks)
         assert not problems, f'{name}: {problems}'
     expected = hashlib.sha256(json.dumps(build['files'], sort_keys=True).encode()).hexdigest()[:20]

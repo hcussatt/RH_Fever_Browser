@@ -145,7 +145,7 @@ for seqid in [k for k,v in files.items() if v['magic']=='RSEQ']:
  for sid,s in assets['audio']['sounds'].items():
   if s['type']!=1 or s['fileId']!=int(seqid):continue
   if s['bankFile'] not in first_program:raise SystemExit(f"{s['name']}: its bank (file {s['bankFile']}) was not extracted")
-  sounds[sid]={'name':s['name'],'volume':s['volume'],'tempo':seq_tempo(int(sid)),'notes':trace(seq,s['data'][0],first_program[s['bankFile']])}
+  sounds[sid]={'name':s['name'],'volume':s['volume'],'tempo':seq_tempo(int(sid)),'persistent':s.get('persistent',False),'notes':trace(seq,s['data'][0],first_program[s['bankFile']])}
 (out/'sfx.json').write_text(json.dumps({'waves':waves,'programs':programs,'sounds':sounds},indent=2)+'\n')
 if late_tempo:raise SystemExit(f'Tempo changes mid-sequence are not modelled (sequence offsets {sorted(late_tempo)})')
 print(json.dumps({'samples':len(waves),'programs':len(programs),'sounds':len(sounds),'commands':sorted(used),'notes':sum(len(s['notes']) for s in sounds.values())}))

@@ -30,8 +30,8 @@ def stage(snapshot=False, output='site'):
     if out.exists():
         shutil.rmtree(out)
     out.mkdir()
-    shutil.copytree(ROOT/'web/engine', out/'engine', ignore=shutil.ignore_patterns('qa', 'index.html'))
-    shutil.copytree(ROOT/'web/import', out/'import')
+    shutil.copytree(ROOT/'web/engine', out/'engine', ignore=shutil.ignore_patterns('qa', 'index.html', '.DS_Store'))
+    shutil.copytree(ROOT/'web/import', out/'import', ignore=shutil.ignore_patterns('.DS_Store'))
     shutil.copyfile(ROOT/'web/library.html', out/'index.html')
     (out/'.nojekyll').touch()
     manifests = []

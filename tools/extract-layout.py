@@ -42,7 +42,7 @@ def tpl(data):
     if fmt in (0,1,4,5,6):
         tw, th, bs = {0:(8,8,32),1:(8,4,32),4:(4,4,32),5:(4,4,32),6:(4,4,64)}[fmt]
         pixels = np.zeros((h,w,4),np.uint8)
-        expand = lambda v, bits: (v*255)//((1<<bits)-1)
+        expand = lambda v, bits: ((v<<3)|(v>>2)) if bits==5 else ((v<<2)|(v>>4))
         for y in range(h):
             for x in range(w):
                 tile = ((y//th)*((w+tw-1)//tw)+x//tw)*bs+start
@@ -57,8 +57,10 @@ def tpl(data):
                 else:
                     v=u16(data,tile+j*2)
                     if fmt == 4:rgba=(expand(v>>11,5),expand((v>>5)&63,6),expand(v&31,5),255)
-                    elif v&0x8000:rgba=tuple(((v>>s)&31)*255//31 for s in (10,5,0))+(255,)
-                    else:rgba=tuple(((v>>s)&15)*17 for s in (8,4,0))+(((v>>12)&7)*255//7,)
+                    elif v&0x8000:rgba=tuple(expand((v>>s)&31,5) for s in (10,5,0))+(255,)
+                    else:
+                        a=(v>>12)&7
+                        rgba=tuple(((v>>s)&15)*17 for s in (8,4,0))+((a<<5)|(a<<2)|(a>>1),)
                 pixels[y,x]=rgba
         return Image.fromarray(pixels,'RGBA')
     if fmt == 2:  # IA4: 8x4 tiles, alpha in the high nibble.
@@ -83,8 +85,11 @@ def material(b, o):
     cols = struct.unpack_from('>8h', b, o+20)
     flags = u32(b, o+60)
     clamp = lambda v: max(0, min(255, v))
+    ntex,nsrt=flags&15,(flags>>4)&15
     return {'name': cstr(b, o, 20), 'color0': [clamp(c) for c in cols[:4]], 'color1': [clamp(c) for c in cols[4:8]],
-            'texture': u16(b, o+64) if flags & 15 else None}
+            'texture': u16(b, o+64) if ntex else None,
+            'textures':[{'texture':u16(b,o+64+i*4),'wrapS':b[o+66+i*4],'wrapT':b[o+67+i*4]} for i in range(ntex)],
+            'textureSRT':[list(struct.unpack_from('>5f',b,o+64+ntex*4+i*20)) for i in range(nsrt)]}
 
 
 def pane(b, o):
@@ -162,7 +167,9 @@ def animation(b):
                     a = tag+u32(b, tag+8+k*4)
                     target, curve, nkeys, keys = b[a+1], b[a+2], u16(b, a+4), a+u32(b, a+8)
                     # Hermite keys are (frame, value, slope); step keys are (frame, value).
-                    tags.setdefault(cstr(b, tag, 4), {})[target] = [list(struct.unpack_from('>3f', b, keys+j*12)) for j in range(nkeys)] if curve == 2 else \
+                    tag_name=cstr(b,tag,4)
+                    target=f'{b[a]}:{target}' if tag_name=='RLTS' else target
+                    tags.setdefault(tag_name, {})[target] = [list(struct.unpack_from('>3f', b, keys+j*12)) for j in range(nkeys)] if curve == 2 else \
                         [[f32(b, keys+j*8), u16(b, keys+j*8+4)] for j in range(nkeys)]
     return out
 
@@ -227,15 +234,16 @@ def font(b, chars):
         left, glyph_width, char_width = widths.get(g, struct.unpack_from('>bBb', b, finf+12))
         glyphs[c] = {'cell': len(cells)-1, 'left': left, 'glyphWidth': glyph_width, 'charWidth': char_width}
     columns = 16
-    atlas = np.zeros((((len(cells)+columns-1)//columns)*ch, columns*cw), np.uint8)
+    pad=2;stride_x,stride_y=cw+pad*2,ch+pad*2
+    atlas = np.zeros((((len(cells)+columns-1)//columns)*stride_y, columns*stride_x), np.uint8)
     sheets = {}
     for k, (sheet, x, y) in enumerate(cells):
         if sheet not in sheets:
             sheets[sheet] = i4(b, image+sheet*sheet_size, sw, sh)
         r, c = divmod(k, columns)
-        atlas[r*ch:(r+1)*ch, c*cw:(c+1)*cw] = sheets[sheet][y:y+ch, x:x+cw]
+        atlas[r*stride_y+pad:r*stride_y+pad+ch,c*stride_x+pad:c*stride_x+pad+cw] = sheets[sheet][y:y+ch, x:x+cw]
     return {'height': height, 'width': width, 'ascent': ascent, 'lineFeed': line_feed, 'cellWidth': cw,
-            'cellHeight': ch, 'columns': columns, 'glyphs': glyphs}, Image.fromarray(np.dstack([atlas]*4), 'RGBA')
+            'cellHeight': ch, 'columns': columns, 'glyphs': glyphs,'atlasStrideX':stride_x,'atlasStrideY':stride_y,'atlasPadding':pad}, Image.fromarray(np.dstack([atlas]*4), 'RGBA')
 
 
 def main():

@@ -7,7 +7,7 @@ otherwise all tracked files) for:
   * disc images, executables, Nintendo archive/sound/graphics formats,
     compiled WASM, and decoded media, by extension and by file signature
   * translated original code outside the explicitly approved runtime-src snapshots
-  * the Wii common key, by hash
+  * the Wii common key outside its explicitly authorized public importer module
   * any 64-byte run copied from main.dol or the cellanim files, when a local
     build/disc/ exists to compare against
 Exit status 1 lists every problem found.
@@ -23,6 +23,7 @@ BLOCKED_DIRS = ('build/', 'dist/', 'local/', '.toolchain/')
 # Runtime code publication is authorized; assets and original data are not.
 # Keep the allowance exact, not a blanket exception for generated files.
 RUNTIME_SOURCES = {f'runtime-src/{game}/original-functions.inc' for game in ('golf', 'tap', 'rap')}
+PUBLIC_KEY_MODULES = {'web/import/common-key.mjs', 'import/common-key.mjs'}
 BLOCKED_EXT = {
     '.iso', '.wbfs', '.rvz', '.ciso', '.gcz', '.wia', '.nkit', '.wad', '.tik', '.tmd',
     '.dol', '.elf', '.rel', '.o', '.a', '.map',
@@ -89,11 +90,13 @@ def check(name, data, blocks):
     if len(data) > MAX_BYTES:
         problems.append(f'larger than {MAX_BYTES} bytes')
     text = data.decode('latin-1')
+    public_key_module = name in PUBLIC_KEY_MODULES and re.fullmatch(
+        rb"// Public Wii common key bundled for the USA disc importer, explicitly authorized by the user\.\nexport const WII_COMMON_KEY = '[0-9a-f]{32}';\n", data)
     if re.search(r'static void p_8[0-9a-f]{7}\(void\)', text) and name not in RUNTIME_SOURCES:
         problems.append('translated original code')
     for candidate in re.findall(r'(?:0x)?[0-9a-fA-F]{2}(?:[\s,]*(?:0x)?[0-9a-fA-F]{2}){15}', text):
         digits = re.sub(r'0x|[^0-9a-fA-F]', '', candidate)
-        if len(digits) == 32 and hashlib.sha256(bytes.fromhex(digits)).hexdigest() == COMMON_KEY_SHA256:
+        if len(digits) == 32 and hashlib.sha256(bytes.fromhex(digits)).hexdigest() == COMMON_KEY_SHA256 and not public_key_module:
             problems.append('Wii common key')
     if blocks:
         for i in range(0, max(0, len(data)-WINDOW+1)):
@@ -112,9 +115,9 @@ def main():
             print(f'BLOCKED {name}: {problem}')
             failed = True
     if failed:
-        print('\nNothing from the game may be committed. Generated files belong in build/ or dist/.')
+        print('\nGame material remains blocked outside the exact approved runtime/key modules. Generated files belong in build/ or dist/.')
         sys.exit(1)
-    print('Clean: no game or Wii material found' + ('' if blocks else ' (no local disc files to compare against)'))
+    print('Clean: no unapproved game or Wii material found' + ('' if blocks else ' (no local disc files to compare against)'))
 
 
 if __name__ == '__main__':

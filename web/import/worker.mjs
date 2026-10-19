@@ -1,12 +1,13 @@
 // A File is mounted read-only; the multi-GB ISO is never loaded into RAM wholesale.
 import {traceTimeline} from '../engine/timeline.mjs';
 import {readLibrary,writeLibrary,siteRoot} from '../engine/assets.mjs';
+import {WII_COMMON_KEY} from './common-key.mjs';
 const PYODIDE='https://cdn.jsdelivr.net/pyodide/v0.27.7/full/';
 let busy=false;
 const progress=message=>postMessage({type:'progress',message});
 const mime=name=>name.endsWith('.json')?'application/json':name.endsWith('.png')?'image/png':name.endsWith('.wav')?'audio/wav':'application/octet-stream';
 
-async function importISO({file,key,version,games}){
+async function importISO({file,key=WII_COMMON_KEY,version,games}){
  if(file.size!==4699979776)throw new Error('Select a raw USA Wii ISO (4,699,979,776 bytes). RVZ and WBFS need conversion first.');
  if(new TextDecoder().decode(await file.slice(0,6).arrayBuffer())!=='SOME01')throw new Error('This runtime requires Rhythm Heaven Fever USA (SOME01).');
  if(!/^[0-9a-f]{32}$/i.test(key))throw new Error('The Wii common key must contain 32 hexadecimal digits.');

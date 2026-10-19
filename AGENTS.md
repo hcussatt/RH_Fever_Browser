@@ -25,7 +25,7 @@ Preserve original timing windows, float operation order, scoring, and Perfect ru
 
 ## Build and run
 
-Requires Python 3.10+ with `requirements.txt`, Node.js 18+, Git, Emscripten 5.0.7, and PowerPC binutils. `tools/setup-toolchain.sh` installs toolchain components into `.toolchain/`. The user supplies a USA SOME01 raw ISO and a Wii common key through the mechanisms documented in `README.md`. Do not print or commit the key.
+Requires Python 3.10+ with `requirements.txt`, Node.js 18+, Git, Emscripten 5.0.7, and PowerPC binutils. `tools/setup-toolchain.sh` installs toolchain components into `.toolchain/`. The user supplies a USA SOME01 raw ISO and a Wii common key through the mechanisms documented in `README.md`. Only the explicitly authorized public common-key module may contain the key.
 
 Run from the repository root:
 
@@ -61,8 +61,8 @@ Use `web/engine/qa/audio-check.mjs` for relevant offline audio checks, and inspe
 
 ## Git and game material
 
-The user authorizes publishing the compiled game runtime, including statically translated game code/WASM, for GitHub Pages. The hosted player should import assets and required original data locally from the user's ISO. This overrides the earlier blanket prohibition on publishing generated runtime code. Never publish disc images, original executables, Nintendo archives, extracted charts/media, original data segments, or the Wii common key. Do not import the outer workspace's reference material into tracked paths.
+The user authorizes publishing the compiled game runtime, including statically translated game code/WASM, for GitHub Pages. The hosted player should import assets and required original data locally from the user's ISO. This overrides the earlier blanket prohibition on publishing generated runtime code. Never publish disc images, original executables, Nintendo archives, extracted charts/media, original data segments, or unrelated key material. The user explicitly authorized bundling the public Wii common key in `web/import/common-key.mjs` and its generated Pages copy `import/common-key.mjs`; this is the only key-publication exception. Do not import the outer workspace's reference material into tracked paths.
 
-The clean-material checker allows only `runtime-src/{golf,tap,rap}/original-functions.inc` translated-code snapshots. WASM remains excluded from tracked source; CI compiles it into the ignored `site/` artifact, which `scripts/check-pages.py` audits. See `docs/pages.md` for the importer, cache compatibility, and Pages workflow. Retain asset, original-data, and key protections.
+The clean-material checker allows only `runtime-src/{golf,tap,rap}/original-functions.inc` translated-code snapshots. WASM remains excluded from tracked source; CI compiles it into the ignored `site/` artifact, which `scripts/check-pages.py` audits. See `docs/pages.md` for the importer, cache compatibility, and Pages workflow. Retain asset and original-data protections and the key check outside that exact public module.
 
 Keep `hooks/pre-commit`, `.gitignore`, and `scripts/check-clean.py` effective. Before committing, inspect the diff and run `python3 scripts/check-clean.py --staged` after staging the intended files. The tracked-file check also runs in GitHub Actions on pushes and pull requests; passing it without local disc references does not perform the optional comparison against extracted disc bytes.

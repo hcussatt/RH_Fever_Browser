@@ -109,7 +109,8 @@ def audio_groups():
         if gi not in (162,163) and music_file not in found and not any(m[:4] in (b'RBNK',b'RSEQ') for m,_ in found.values()):
             continue
         for fid,(metadata,wave_data) in found.items():
-            files[fid]={'magic':metadata[:4].decode('ascii'),'metadata':f'file-{fid}.bin','waves':f'wave-{fid}.bin' if wave_data else None}
+            persistent=gi==0 or files.get(fid,{}).get('persistent',False)
+            files[fid]={'magic':metadata[:4].decode('ascii'),'metadata':f'file-{fid}.bin','waves':f'wave-{fid}.bin' if wave_data else None,'persistent':persistent}
             (OUT/f'file-{fid}.bin').write_bytes(metadata)
             if wave_data:(OUT/f'wave-{fid}.bin').write_bytes(wave_data)
     labels=DECOMP/'build_default/SOME01/include/rev_tengoku.rsid'
@@ -118,9 +119,11 @@ def audio_groups():
     for sid in range(u32(b,sounds)):
         if file_of(sid) not in files:continue
         s=ref(sounds,sid);sub=base+u32(b,s+0x1c)
-        records[sid]={'name':names.get(sid),'fileId':file_of(sid),'type':b[s+22],'volume':b[s+20],'player':u32(b,s+8),'data':list(struct.unpack_from('>4I',b,sub))}
+        records[sid]={'name':names.get(sid),'fileId':file_of(sid),'type':b[s+22],'volume':b[s+20],'player':u32(b,s+8),'data':list(struct.unpack_from('>4I',b,sub)),'persistent':files[file_of(sid)]['persistent']}
         # A sequence sound plays its notes with the instruments of one bank (SeqSoundInfo bankId).
-        if records[sid]['type']==1:records[sid]['bankFile']=u32(b,ref(banks,records[sid]['data'][1])+4)
+        if records[sid]['type']==1:
+            records[sid]['bankFile']=u32(b,ref(banks,records[sid]['data'][1])+4)
+            records[sid]['persistent'] &= files.get(records[sid]['bankFile'],{}).get('persistent',False)
     return {'sounds':records,'files':files,'musicFile':music_file}
 
 if __name__=='__main__':

@@ -136,9 +136,11 @@ static void run_flows(void){
   }while(chart_rerun);
   current_flow=0;
 }
-// CExFlow::_1C: scene-level chart commands (0x100-0x141). Menus, layouts,
-// grading and scene changes are outside the minigame; only what gameplay
-// needs is kept. Everything below 0x100 is the original CTickFlow::_1C.
+// CExFlow::_1C: platform services for the original scene-level chart commands.
+// Gameplay checkpoint commands drive the translated CCheckPointManager. The
+// original parent chart continues into grading and epilogue in free-play mode.
+// Generic opcodes below 0x100 use the original CTickFlow::_1C, except the input
+// prompt whose browser press/release state is supplied here.
 static void exflow_command(void){
   uint32_t self=r[3],op=r[4],arg0=r[5],args=r[6],cp=rd32(0x8032016c);
   if(op<0x100){
@@ -166,9 +168,12 @@ static void exflow_command(void){
   else if(grading==2&&op==0x100&&arg0==1){grading_done=1;emit(20,11,rd32(self+0x1c));}
   else if(grading&&op==0x104)wr32(self+0x24,1);
   else if(grading&&op==0x12f&&arg0==1)wr32(self+0x24,0);
+  else if(song_ended&&op==0x12e&&arg0==1)emit(18,0,rd32(self+0x1c)); // Original heap-1 sound reset.
   else if(grading&&op==0x123){
     if(arg0==0)emit(16,0,rd32(args));
-    else if(arg0==1){prompt_exit_remaining=prompt_exit_frames;emit(16,1,prompt_exit_frames);}
+    // setAnimDisable starts at frame -1; the same frame's actor update
+    // initializes it to 0 before the five animation frames elapse.
+    else if(arg0==1){prompt_exit_remaining=prompt_exit_frames+1;emit(16,1,prompt_exit_frames);}
     else if(arg0==2)wr32(self+0x24,prompt_exit_remaining==0);
   }
   else if(song_ended&&op==0x10a){emit(20,arg0?6:7,rd32(self+0x1c));emit(22,arg0,rd32(args)?rd32(args+4):(uint32_t)((float)rd32(args+4)*60/(current_tempo*.8f)));}
@@ -411,11 +416,13 @@ EMSCRIPTEN_KEEPALIVE void press_a(void){
   if(!consumed){r[3]=4;call(GAME_WRONG_INPUT);stray++;wrong_timer=48;wrong_count=wrong_count<6?wrong_count+1:6;}
 }
 EMSCRIPTEN_KEEPALIVE void finish_frame(void){
-  invoke1(0x801eae20,rd32(0x8032016c));
   for(int i=(int)checker_count-1;i>=0;i--){
     uint32_t c=checkers[i];invoke1(rd32(rd32(c)+0x18),c);
     if(r[3]){invoke1(rd32(rd32(c)+0x14),c);checker_count--;memmove(checkers+i,checkers+i+1,(checker_count-i)*4);}
   }
+  // CGameManager::_1C updates checkpoint grouping after the input manager,
+  // including this frame's newly finalized throughs.
+  invoke1(0x801eae20,rd32(0x8032016c));
   if(wrong_timer>0){wrong_timer-=delta_ticks;if(wrong_timer<0)wrong_timer=0;}
   for(int i=0;i<10;i++)for(int a=0;a<2;a++){uint32_t t=canvas_timing[i][a];if(t&&rd8(t+37)){r[3]=t;r[4]=0;call(0x801e9de8);wrf32(canvas[i]+0x8c+a*4,rdf32(t+40));}}
   invoke1(GAME_SCENE_UPDATE,scene);

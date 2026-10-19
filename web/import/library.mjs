@@ -1,8 +1,9 @@
 import {siteRoot,readLibrary,writeLibrary,deployment} from '../engine/assets.mjs';
+import {WII_COMMON_KEY} from './common-key.mjs';
 const $=s=>document.querySelector(s);
 let worker,build,games,selected='golf';
 const status=(message,error=false)=>{$('#progress').textContent=message;$('#progress').classList.toggle('error',error);};
-function busy(value){$('#import').disabled=value;$('#iso').disabled=value;$('#key').disabled=value;$('#key-file').disabled=value;$('#remove').disabled=value;$('#cancel').hidden=!value;$('#busy').hidden=!value;}
+function busy(value){$('#import').disabled=value;$('#iso').disabled=value;$('#remove').disabled=value;$('#cancel').hidden=!value;$('#busy').hidden=!value;}
 async function render(){
  const library=await readLibrary();$('#games').replaceChildren();
  for(const [index,{id,title}] of games.entries()){
@@ -39,12 +40,12 @@ try{
 }catch(e){status(e.message,true);$('#import').disabled=true;}
 $('#import-form').onsubmit=async e=>{
  e.preventDefault();if(worker||!build)return;
- const file=$('#iso').files[0],key=($('#key').value||await $('#key-file').files[0]?.text()||'').trim();
+ const file=$('#iso').files[0],key=WII_COMMON_KEY;
  if(!file)return;
  if(file.size!==4699979776){status('Select the raw USA ISO (4,699,979,776 bytes).',true);return;}
  if(new TextDecoder().decode(await file.slice(0,6).arrayBuffer())!=='SOME01'){status('This disc is not Rhythm Heaven Fever USA (SOME01).',true);return;}
  if(!/^[a-f0-9]{32}$/i.test(key)){status('Enter the 32 hexadecimal digits of your Wii common key.',true);return;}
- busy(true);$('#key').value='';$('#key-file').value='';
+ busy(true);
  try{
   const persistent=await navigator.storage?.persist?.();
   status(persistent?'Preparing games. Local storage persistence granted.':'Preparing games. Your browser may reclaim storage when space is low.');
