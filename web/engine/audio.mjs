@@ -5,13 +5,15 @@
 // Music and sounds share one output gain, as on the Wii, so their balance is the original's:
 // the game's master volume (CSoundManager sets AxManager::SetMasterVolume(0.7)) times a fixed
 // headroom for the browser, whose output clips at full scale; .55 keeps every built level under it.
+import {assetResponse} from './assets.mjs';
 const OUTPUT=.7*.55;
 export async function createAudio(context,gameUrl,{envelope}={}){
  const asset=name=>new URL('assets/'+name,gameUrl);
- const [data,musicInfo]=await Promise.all(['sfx.json','music.json'].map(async f=>(await fetch(asset(f))).json()));
- const buffers=await Promise.all(data.waves.map(async w=>context.decodeAudioData(await (await fetch(asset(w.file))).arrayBuffer())));
+ const [data,musicInfo,resultData]=await Promise.all(['sfx.json','music.json','results.json'].map(async f=>(await assetResponse(asset(f))).json()));
+ const buffers=await Promise.all(data.waves.map(async w=>context.decodeAudioData(await (await assetResponse(asset(w.file))).arrayBuffer())));
  const master=context.createGain();master.gain.value=OUTPUT;master.connect(context.destination);
- const active=new Set(),telemetry={played:0,unknown:[],late:0,maxLateMs:0};
+ const resultWaves=Object.fromEntries(await Promise.all(Object.entries(resultData.waves).map(async([sid,w])=>[sid,{...w,buffer:await context.decodeAudioData(await (await assetResponse(asset(w.file))).arrayBuffer())}])));
+ const active=new Set(),musicGains=new WeakMap(),telemetry={played:0,unknown:[],late:0,maxLateMs:0};
  const clamp=(x,a,b)=>Math.min(b,Math.max(a,x));
  const curves=new Map();
  function envelopeCurve(adsr,releaseMs,steps){
@@ -67,10 +69,14 @@ export async function createAudio(context,gameUrl,{envelope}={}){
   }
  }
  // The backing track: an original wave sound, at its record volume (linear, like every sound record).
- function playMusic(buffer,when){
+ function playMusic(buffer,when,info=musicInfo){
   const source=context.createBufferSource(),gain=context.createGain();
-  source.buffer=buffer;gain.gain.value=(musicInfo.volume??127)/127;source.connect(gain).connect(master);source.start(when);
+  source.buffer=buffer;gain.gain.value=(info.volume??127)/127;source.loop=!!info.loop;source.loopStart=(info.loopStart||0)/(info.rate||buffer.sampleRate);source.loopEnd=buffer.duration;source.connect(gain).connect(master);source.start(when);
+  active.add(source);source.onended=()=>{active.delete(source);source.disconnect();gain.disconnect();};
+  musicGains.set(source,gain);
   return source;
  }
- return {play,playMusic,master,data,buffers,telemetry,stop(){for(const s of active){try{s.stop();}catch{}}active.clear();}};
+ function playWave(sid,when){const w=resultWaves[sid];if(!w)throw new Error('Missing original result wave '+sid);return playMusic(w.buffer,when,w);}
+ function stopWave(source,when,frames){if(!source)return;const gain=musicGains.get(source),t=Math.max(context.currentTime,when);if(gain&&frames){gain.gain.setValueAtTime(gain.gain.value,t);gain.gain.linearRampToValueAtTime(0,t+frames/60);}try{source.stop(t+frames/60);}catch{}}
+ return {play,playMusic,playWave,stopWave,master,data,buffers,telemetry,stop(){for(const s of active){try{s.stop();}catch{}}active.clear();}};
 }

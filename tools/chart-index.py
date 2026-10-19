@@ -118,7 +118,7 @@ def tempo_segments(sound):
 def main():
     name = game()
     profile = manifest(name)['wii']
-    scene = scene_ids()[profile['scene']]
+    scene = profile['sceneId'] if 'sceneId' in profile else scene_ids()[profile['scene']]
     mains = [(t, v) for t, v in scene_changes(scene) if any(op == 0x118 and arg0 == 1 for _, op, arg0, _ in commands(t))]
     if 'sceneVariant' in profile:
         mains = [(t, v) for t, v in mains if v == profile['sceneVariant']]

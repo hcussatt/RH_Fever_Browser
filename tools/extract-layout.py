@@ -39,6 +39,28 @@ def tpl(data):
     the material's colours are applied in the browser, like the original's TEV setup."""
     header = u32(data, u32(data, 8))
     h, w, fmt, start = struct.unpack_from('>HHII', data, header)
+    if fmt in (0,1,4,5,6):
+        tw, th, bs = {0:(8,8,32),1:(8,4,32),4:(4,4,32),5:(4,4,32),6:(4,4,64)}[fmt]
+        pixels = np.zeros((h,w,4),np.uint8)
+        expand = lambda v, bits: (v*255)//((1<<bits)-1)
+        for y in range(h):
+            for x in range(w):
+                tile = ((y//th)*((w+tw-1)//tw)+x//tw)*bs+start
+                j = (y%th)*tw+x%tw
+                if fmt == 0:
+                    v = ((data[tile+j//2] >> (0 if j%2 else 4))&15)*17
+                    rgba = (v,v,v,v)
+                elif fmt == 1:
+                    v=data[tile+j];rgba=(v,v,v,v)
+                elif fmt == 6:
+                    a,r = data[tile+j*2:tile+j*2+2];g,b=data[tile+32+j*2:tile+34+j*2];rgba=(r,g,b,a)
+                else:
+                    v=u16(data,tile+j*2)
+                    if fmt == 4:rgba=(expand(v>>11,5),expand((v>>5)&63,6),expand(v&31,5),255)
+                    elif v&0x8000:rgba=tuple(((v>>s)&31)*255//31 for s in (10,5,0))+(255,)
+                    else:rgba=tuple(((v>>s)&15)*17 for s in (8,4,0))+(((v>>12)&7)*255//7,)
+                pixels[y,x]=rgba
+        return Image.fromarray(pixels,'RGBA')
     if fmt == 2:  # IA4: 8x4 tiles, alpha in the high nibble.
         px = np.frombuffer(data, np.uint8, w*h, start).reshape(h//4, w//8, 4, 8).transpose(0, 2, 1, 3).reshape(h, w)
         i, a = (px & 15)*17, (px >> 4)*17
@@ -87,9 +109,9 @@ def layout(b):
         elif kind == 'mat1':
             n = u16(b, pos+8)
             out['materials'] = [material(b, pos+u32(b, pos+12+i*4)) for i in range(n)]
-        elif kind in ('pan1', 'pic1', 'txt1'):
+        elif kind in ('pan1', 'pic1', 'txt1', 'wnd1'):
             p = pane(b, pos)
-            p['kind'] = {'pan1': 'pane', 'pic1': 'picture', 'txt1': 'text'}[kind]
+            p['kind'] = {'pan1': 'pane', 'pic1': 'picture', 'txt1': 'text', 'wnd1':'window'}[kind]
             p['parent'] = stack[-1] if stack else None
             q = pos+0x4c
             if kind == 'pic1':
@@ -102,6 +124,15 @@ def layout(b):
                 p['colors'] = [list(b[q+16:q+20]), list(b[q+20:q+24])]
                 p['fontSize'] = list(struct.unpack_from('>2f', b, q+24))
                 p['charSpace'], p['lineSpace'] = struct.unpack_from('>2f', b, q+32)
+                text=pos+u32(b,q+12)
+                p['text']=b[text:pos+size].decode('utf-16-be').split('\0')[0]
+            elif kind == 'wnd1':
+                p['inflation']=list(struct.unpack_from('>4f',b,q))
+                content=pos+u32(b,q+20)
+                p['vertexColors']=[list(b[content+i*4:content+i*4+4]) for i in range(4)]
+                p['material']=u16(b,content+16)
+                frame_table=pos+u32(b,q+24)
+                p['frames']=[{'material':u16(b,pos+u32(b,frame_table+i*4)), 'flip':b[pos+u32(b,frame_table+i*4)+2]} for i in range(b[q+16])]
             last = len(out['panes'])
             out['panes'].append(p)
         elif kind == 'pas1':
