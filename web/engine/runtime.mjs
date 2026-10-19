@@ -35,8 +35,9 @@ export async function loadGame(gameUrl,load=fetchBytes,{timeline:withTimeline=tr
  const f32bits=new DataView(new ArrayBuffer(4));
  const rest=bits=>(f32bits.setUint32(0,bits),f32bits.getFloat32(0));
  let tick=0,ended=false,endTick=null;
- const sounds=[],chartSounds=[],commands=[],cues=[];const options={chartAudioScheduled:false};
- function drain(){const n=core._events_count(),p=core._events_ptr();const out=[];for(let i=0;i<n;i++)out.push(Array.from(core.HEAPU32.subarray(p/4+i*4,p/4+i*4+4)));core._events_clear();return out;}
+ const sounds=[],chartSounds=[],gameSounds=[],commands=[],cues=[];const options={chartAudioScheduled:false};
+ // Each event: kind, value, extra, frame, sound handle (see platform.c emit_handle).
+ function drain(){const n=core._events_count(),p=core._events_ptr();const out=[];for(let i=0;i<n;i++)out.push(Array.from(core.HEAPU32.subarray(p/4+i*5,p/4+i*5+5)));core._events_clear();return out;}
  function frame(ticks,press){
   core._set_delta(ticks);core._set_frame_ticks(ticks);
   core._set_tempo(clock.tempoAtTick(tick));
@@ -47,43 +48,78 @@ export async function loadGame(gameUrl,load=fetchBytes,{timeline:withTimeline=tr
  }
  // Pre-roll: run the chart from its first command to the music start at the nominal tempo.
  // Music start is chart tick 0; the frame that reaches it ends -rest ticks past it.
- drain();core._start_chart(chart.start);
+ const preroll=[drain()];core._start_chart(chart.start);
  const nominal=1/60/chart.secondsPerTick;
  for(let n=0;!(core._chart_state()&1);n++){
   if(n>=36000)throw new Error('Chart never started its music');
-  const start=frame(nominal).find(e=>e[0]===6);
+  const events=frame(nominal),start=events.find(e=>e[0]===6);
+  preroll.push(events);
   if(start)tick=-rest(start[2]);
  }
  // Perfect campaign mode is chosen by the menus in the original, not by the chart.
  if(profile.perfectActive)core._set_perfect_active(1);
  // Events carry the issuing flow's rest; the command ran at the frame's end tick plus that rest.
- // A chart sound the browser already scheduled from the silent run. Flows that only start in
- // play (a hit or a miss starts one, for example) are not in it, so their sounds play live.
+ // A chart sound (or a game sound a chart command plays the same way whatever the player does)
+ // the browser already scheduled from the build's silent runs. Flows that only start in play
+ // (a hit or a miss starts one, for example) are not in them, so their sounds play live.
  // Layout events (11): the game's 2D layouts (Love Rap's lyric captions), drawn by layout.mjs.
  const layoutEvents=[];let steps=0;
  const consumed=new Set();
  function prescheduled(sound,at){
   const list=timeline?.sounds||[];
-  for(let i=0;i<list.length;i++)if(!consumed.has(i)&&list[i].sound===sound&&Math.abs(list[i].tick-at)<0.5){consumed.add(i);return true;}
-  return false;
+  for(let i=0;i<list.length;i++)if(!consumed.has(i)&&list[i].sound===sound&&Math.abs(list[i].tick-at)<0.5){consumed.add(i);return list[i];}
+  return null;
  }
+ // Sounds the game keeps a handle to (handle address -> the sound last played on it), and tuning
+ // the browser applies to sounds already playing (tunes), song speed changes (speeds) and backing
+ // track volume fades (musicVolumes), each at its chart tick.
+ const handles=new Map(),tunes=[],speeds=[],musicVolumes=[];
+ const TUNE=['volume','pitch','pan'];
+ function handle(events,frameTick){
+  let last=null;
+  for(let i=0;i<events.length;i++){
+   const e=events[i];
+   if(e[0]===1||e[0]===5||e[0]===12){
+    const at=frameTick+rest(e[2]);
+    // The chart tempo when it plays: listed sequences are stretched to it (see audio.mjs).
+    // Its chart tick: a sound started late (a hit's response flow starts in the past) keeps to the beat.
+    let sound={sound:e[1],tick:at,tempo:clock.tempoAtTick(at)};
+    // A start offset follows its sound (CSoundManager::play): below 0 it waits that many ticks.
+    const next=events[i+1];
+    if(next&&next[0]===10&&(next[1]&255)===3&&!next[4]){const start=rest(next[2]);i++;if(start<0){sound.tick-=start;sound.tempo=clock.tempoAtTick(sound.tick);}else sound.offset=start;}
+    if(e[0]===5)chartSounds.push(sound);else if(e[0]===12)gameSounds.push(sound);
+    const scheduled=e[0]!==1&&options.chartAudioScheduled?prescheduled(e[1],sound.tick):null;
+    if(scheduled)sound=scheduled;else sounds.push(sound);
+    if(e[4])handles.set(e[4],sound);
+    last=sound;
+   }
+   else if(e[0]===10){
+    // Tuning on a handle's sound, or on the sound played last this frame.
+    const target=e[4]?handles.get(e[4]):last;if(!target)continue;
+    const type=e[1]&255,frames=e[1]>>8,value=type===5?e[2]:rest(e[2]);
+    // Set together with the sound itself: it plays with it from the start.
+    if(type<3&&!frames&&target===last&&!target.voice){target[TUNE[type]]=value;continue;}
+    const op={type,value,frames,tick:frameTick};
+    tunes.push({target,op});
+   }
+   else if(e[0]===8)commands.push({tick:frameTick+rest(e[2]),op:e[1]});
+   else if(e[0]===7){ended=true;endTick=frameTick+rest(e[2]);}
+   else if(e[0]===11)layoutEvents.push({frame:steps,action:e[1],value:e[2]});
+   else if(e[0]===13)musicVolumes.push({tick:frameTick,frames:e[1],volume:rest(e[2])});
+   else if(e[0]===14)speeds.push({tick:frameTick+rest(e[2]),speed:rest(e[1])});
+  }
+ }
+ // Sounds and tuning from before the music started (the scene's setup and the chart's lead-in):
+ // frame n of the pre-roll ended (frames left) nominal ticks before the music start's frame.
+ // With a timeline its chart sounds are already scheduled (from the build's silent run).
+ options.chartAudioScheduled=!!timeline;
+ preroll.forEach((events,n)=>handle(events,tick-(preroll.length-1-n)*nominal));
+ options.chartAudioScheduled=false;
  function step(nextTick,press=false){
   const events=frame(nextTick-tick,press);tick=nextTick;
   // A new checker's perfect tick: its target (mTickJust, +0x58) less the ticks it has counted (mTickPass, +0x54).
   for(const e of events)if(e[0]===9)cues.push(tick+f32(e[1]+0x58)-f32(e[1]+0x54));
-  let last=null;
-  for(const e of events){
-   // Tuning (10) applies to the sound played just before it.
-   if(e[0]===10){if(last)last[['volume','pitch','pan'][e[1]]]=rest(e[2]);continue;}
-   last=null;
-   // The chart tempo when it plays: listed sequences are stretched to it (see audio.mjs).
-   // Its chart tick: a sound started late (a hit's response flow starts in the past) keeps to the beat.
-   if(e[0]===1||e[0]===5){const at=tick+rest(e[2]);last={sound:e[1],tick:at,tempo:clock.tempoAtTick(at)};if(e[0]===1||!options.chartAudioScheduled||!prescheduled(e[1],at))sounds.push(last);}
-   if(e[0]===5)chartSounds.push(last);
-   else if(e[0]===8)commands.push({tick:tick+rest(e[2]),op:e[1]});
-   else if(e[0]===7){ended=true;endTick=tick+rest(e[2]);}
-   else if(e[0]===11)layoutEvents.push({frame:steps,action:e[1],value:e[2]});
-  }
+  handle(events,tick);
   steps++;
   return events;
  }
@@ -97,5 +133,5 @@ export async function loadGame(gameUrl,load=fetchBytes,{timeline:withTimeline=tr
  // Judgment counters kept by the platform backend (adapters/wii/platform.c stat()).
  const stats=()=>Array.from({length:9},(_,i)=>core._stat(i));
  function result(){const s=stats();return {hits:s[0],misses:s[1],through:s[2],stray:s[3],perfectFailed:s[4]};}
- return {manifest,base,core,options,assets,chart,clock,secondsAtTick:clock.secondsAtTick,tickAtSeconds:clock.tickAtSeconds,banks,timeline,step,drain,sounds,chartSounds,commands,cues,layoutEvents,get steps(){return steps;},envelope,stats,result,u8,u16,u32,f32,w8,w16,w32,wf,alloc,offset,get tick(){return tick;},get ended(){return ended;},get endTick(){return endTick;}};
+ return {manifest,base,core,options,assets,chart,clock,secondsAtTick:clock.secondsAtTick,tickAtSeconds:clock.tickAtSeconds,banks,timeline,step,drain,sounds,chartSounds,gameSounds,commands,cues,layoutEvents,tunes,speeds,musicVolumes,get steps(){return steps;},envelope,stats,result,u8,u16,u32,f32,w8,w16,w32,wf,alloc,offset,get tick(){return tick;},get ended(){return ended;},get endTick(){return endTick;}};
 }
