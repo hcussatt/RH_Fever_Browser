@@ -26,6 +26,8 @@ def stage(snapshot=False, output='site'):
             target = ROOT/'runtime-src'/game
             target.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(ROOT/'build'/game/'original-functions.inc', target/'original-functions.inc')
+            if 'scenes' in next(m for m in registered if m['id'] == game)['wii']:
+                shutil.copyfile(ROOT/'build'/game/'scenes.h', target/'scenes.h')
     out = ROOT/output
     if out.resolve() != ROOT/'site':
         raise SystemExit('Public output must be site/ (avoids deleting source directories).')

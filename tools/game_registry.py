@@ -52,6 +52,8 @@ def web_games(root=ROOT, *, validate=True, require_runtime=True):
             required = [f'adapters/{game["id"]}/game.h']
             if require_runtime:
                 required.append(f'runtime-src/{game["id"]}/original-functions.inc')
+                if 'scenes' in game['wii']:
+                    required.append(f'runtime-src/{game["id"]}/scenes.h')
             for name in required:
                 path = Path(root)/name
                 if not path.is_file() or path.is_symlink():
