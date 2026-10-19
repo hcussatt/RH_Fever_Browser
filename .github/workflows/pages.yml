@@ -1,4 +1,4 @@
-name: Build, test and deploy Pages
+name: Build test and deploy Pages
 
 on:
   push:
