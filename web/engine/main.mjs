@@ -4,7 +4,7 @@ import {loadGame} from './runtime.mjs';
 import {createAudio} from './audio.mjs';
 import {createRenderer} from './renderer.mjs';
 import {createResults} from './results.mjs';
-import {createInputQueue,bindControls} from './input.mjs';
+import {A,createInputQueue,bindControls} from './input.mjs';
 import {createTrack} from './clock.mjs';
 import {assetResponse,requireAssets} from './assets.mjs';
 const gameUrl=new URL('./',location.href);
@@ -19,7 +19,7 @@ try{
  const musicData=assetResponse(new URL('assets/music.wav',gameUrl)).then(r=>r.arrayBuffer()).then(b=>audio.decodeAudioData(b));
  g=await loadGame(gameUrl);
  const {title,action}=g.manifest;document.title=title;canvas.setAttribute('aria-label',title+' game');
- document.querySelector('h1').textContent=title;for(const e of document.querySelectorAll('.controls'))e.textContent='Space / X / click · '+action;
+ document.querySelector('h1').textContent=title;const controls=g.manifest.wii.input===6?`A + B together · ${action} (A: Space / Left Shift / click, B: Right Shift / right click)`:'Space / X / click · '+action;for(const e of document.querySelectorAll('.controls'))e.textContent=controls;
  renderer=await createRenderer(g,canvas);renderer.draw();music=await musicData;sfx=await createAudio(audio,gameUrl,{envelope:g.envelope});
  results=await createResults(g,canvas);
  window.rhf={g,renderer,audio,sfx,results,inputs:input.presses,metrics,heardTime,stats:g.stats,result:null,get track(){return track;},get phase(){return phase;},get frame(){return frame;}};
@@ -65,9 +65,30 @@ function heardTime(){
  if(t&&t.performanceTime>0&&performance.now()-t.performanceTime<100)return Math.min(audio.currentTime,t.contextTime+(performance.now()-t.performanceTime)/1000);
  return audio.currentTime-(audio.outputLatency||0)-(audio.baseLatency||0);
 }
-function press(){if(!running)return;if(phase==='results'){results.input(true);return;}input.push(Math.max(frame+1,Math.floor(Math.max(0,heardTime()-startTime)*60)+1));}
+// An input belongs to the first frame after the audio heard when it happened, as the original
+// reads the controller once a frame. That frame runs as soon as its time is heard, not at the
+// next screen refresh, so the game's answer (a hit sound) is not held back by up to a frame.
+function press(button,down,at=performance.now()){
+ if(!running)return;
+ if(phase==='results'){if(button===A)results.input(down);return;}
+ const heard=heardTime()-Math.max(0,performance.now()-at)/1000;
+ const due=Math.max(frame+1,Math.floor(Math.max(0,heard-startTime)*60)+1);
+ input.push(due,button,down,at);runWhenHeard(due);
+}
+function runWhenHeard(due){
+ if(!running||phase!=='game'||frame>=due)return;
+ const wait=(startTime+due/60-heardTime())*1000;
+ if(wait>0)setTimeout(()=>runWhenHeard(due),wait+.5);else advance(Math.floor((heardTime()-startTime)*60));
+}
+// Runs the game up to this frame.
+function advance(target){
+ while(frame<target){frame++;
+  const pressed=input.take(frame);
+  g.step(g.tickAtSeconds(track.posAt(frame/60)),pressed);
+  liveEvents();
+ }
+}
 const pollGamepad=bindControls(canvas,{press,
- release(){if(running&&phase==='results')results.input(false);},
  pause(){if(running)pause();else if(paused)play.click();},
  start(){if(!running&&!play.disabled){play.click();return true;}return false;}});
 // Starts the song. A later versus mode calls this when both players are ready.
@@ -98,11 +119,7 @@ function loop(){if(!running)return;try{
  }
  const began=performance.now();const elapsed=Math.max(0,heardTime()-startTime);
  const target=Math.floor(elapsed*60);
- while(frame<target){frame++;
-  const pressed=input.take(frame);
-  g.step(g.tickAtSeconds(track.posAt(frame/60)),pressed);
-  liveEvents();
- }
+ advance(target);
  schedule();
  renderer.draw();metrics.push({frame,ms:performance.now()-began,catchUp:Math.max(0,target-frame)});
  if(track.posAt(elapsed)>=endSeconds())finish();

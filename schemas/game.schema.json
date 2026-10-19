@@ -28,6 +28,7 @@
       "properties": {
         "scene": {"$ref": "#/$defs/name"},
         "sceneVariant": {"type": "integer", "minimum": 0},
+        "input": {"description": "Input type the cues wait for (EInputType): 4 A (default), 6 A and B together.", "enum": [4, 6]},
         "cellanim": {"$ref": "#/$defs/discPath"},
         "units": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/sourcePath"}},
         "banks": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/name"}},

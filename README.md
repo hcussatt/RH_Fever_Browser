@@ -8,7 +8,8 @@ is a real-time multiplayer mod.
 > (Anthropic) through Claude Code. A human tests every major build. This project
 > is primarily a work of AI.
 
-Playable today: **Hole in One**, **Tap Trial**, **Love Rap** and **Sneaky Spirits**.
+Playable today: **Hole in One**, **Tap Trial**, **Love Rap**, **Sneaky Spirits** and
+**Screwbot Factory**.
 
 ## Runtime code here; assets stay local
 
@@ -67,8 +68,10 @@ tools/setup-toolchain.sh
 ./serve.sh --open
 ```
 
-Open the printed URL in Chrome and pick a game. Space, X, click or gamepad A
-plays; Escape pauses. Click once first so the browser allows sound.
+Open the printed URL in Chrome and pick a game. A is Space, Left Shift, X, left
+click or gamepad A; B is Right Shift, right click or gamepad B (Screwbot Factory
+wants A and B together). Escape pauses. Click once first so the browser allows
+sound.
 
 The build and installer automatically use `.venv` when present, otherwise they
 look for Python 3.10+ on PATH. `RHF_PYTHON=/path/to/python3` overrides that choice;
