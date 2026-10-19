@@ -10,6 +10,7 @@ from pathlib import Path
 import re
 import shutil
 import zipfile
+from game_registry import web_games
 
 ROOT = Path(__file__).resolve().parents[1]
 TOOLS = ['paths.py', 'wii_files.py', 'extract-disc.py', 'prepare-data.py',
@@ -18,7 +19,8 @@ TOOLS = ['paths.py', 'wii_files.py', 'extract-disc.py', 'prepare-data.py',
 
 
 def stage(snapshot=False, output='site'):
-    games = sorted(p.parent.name for p in (ROOT/'runtime-src').glob('*/original-functions.inc'))
+    registered = web_games(ROOT, require_runtime=not snapshot)
+    games = [m['id'] for m in registered]
     if snapshot:
         for game in games:
             target = ROOT/'runtime-src'/game
@@ -30,8 +32,8 @@ def stage(snapshot=False, output='site'):
     if out.exists():
         shutil.rmtree(out)
     out.mkdir()
-    shutil.copytree(ROOT/'web/engine', out/'engine', ignore=shutil.ignore_patterns('qa', 'index.html'))
-    shutil.copytree(ROOT/'web/import', out/'import')
+    shutil.copytree(ROOT/'web/engine', out/'engine', ignore=shutil.ignore_patterns('qa', 'index.html', '.DS_Store'))
+    shutil.copytree(ROOT/'web/import', out/'import', ignore=shutil.ignore_patterns('.DS_Store'))
     shutil.copyfile(ROOT/'web/library.html', out/'index.html')
     (out/'.nojekyll').touch()
     manifests = []
@@ -45,7 +47,10 @@ def stage(snapshot=False, output='site'):
     for game in games:
         d = out/game
         d.mkdir()
-        manifest = json.loads((ROOT/'games'/game/'game.json').read_text())
+        manifest = next(m for m in registered if m['id'] == game)
+        if manifest['wii']['scene'] not in scenes:
+            raise ValueError(f'{game}: unknown Wii scene {manifest["wii"]["scene"]}')
+        manifest.pop('$schema', None)
         manifest['wii']['sceneId'] = scenes[manifest['wii']['scene']]
         manifest['wii']['soundNames'] = result_sounds
         (d/'game.json').write_text(json.dumps(manifest)+'\n')
@@ -62,7 +67,7 @@ def stage(snapshot=False, output='site'):
             info = zipfile.ZipInfo(f'games/{manifest["id"]}/game.json', date_time=(2020, 1, 1, 0, 0, 0))
             info.compress_type = zipfile.ZIP_DEFLATED
             archive.writestr(info, json.dumps(manifest))
-    (out/'games.json').write_text(json.dumps([{'id': m['id'], 'title': m['title']} for m in manifests])+'\n')
+    (out/'games.json').write_text(json.dumps([{'id': m['id'], 'title': m['title'], 'expectedCues': m['web']['expectedCues']} for m in manifests])+'\n')
     files = sorted(p for p in out.rglob('*') if p.is_file())
     checksums = {str(p.relative_to(out)): hashlib.sha256(p.read_bytes()).hexdigest() for p in files}
     version = hashlib.sha256(json.dumps(checksums, sort_keys=True).encode()).hexdigest()[:20]
