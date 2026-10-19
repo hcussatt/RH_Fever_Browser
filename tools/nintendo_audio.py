@@ -20,6 +20,21 @@ def wave_files(data):
         assert result[:4]==b'RWAV'
         yield result
 
+def decode_dsp(raw, coefs, yn1, yn2, length):
+    """Nintendo DSP rounding and saturated history, also used by the browser bridge."""
+    out=[]
+    for frame in range(0,len(raw),8):
+        ps=raw[frame]; scale=1<<(ps&15);pred=ps>>4
+        assert pred<8
+        c0,c1=coefs[pred*2:pred*2+2]
+        for i in range(14):
+            nibble=(raw[frame+1+i//2]>>(4 if i%2==0 else 0))&15
+            if nibble>=8:nibble-=16
+            value=(c0*yn1+c1*yn2+(nibble*scale<<11)+1024)>>11
+            value=max(-32768,min(32767,value))
+            out.append(value);yn2,yn1=yn1,value
+    return np.array(out[:length],dtype=np.int16)
+
 def decode_wave(data, verify=False):
     assert data[:4]==b'RWAV'
     info=u32(data,16)+8
@@ -45,18 +60,7 @@ def decode_wave(data, verify=False):
             coefs=struct.unpack_from('>16h',data,params)
             yn1,yn2=struct.unpack_from('>2h',data,params+36)
             raw=data[audio:audio+((length+13)//14)*8]
-            out=[]
-            for frame in range(0,len(raw),8):
-                ps=raw[frame]; scale=1<<(ps&15);pred=ps>>4
-                assert pred<8
-                c0,c1=coefs[pred*2:pred*2+2]
-                for i in range(14):
-                    nibble=(raw[frame+1+i//2]>>(4 if i%2==0 else 0))&15
-                    if nibble>=8:nibble-=16
-                    value=(c0*yn1+c1*yn2+(nibble*scale<<11)+1024)>>11
-                    value=max(-32768,min(32767,value))
-                    out.append(value);yn2,yn1=yn1,value
-            decoded=np.array(out[:length],dtype=np.int16)
+            decoded=decode_dsp(raw,coefs,yn1,yn2,length)
             result[:,ch]=decoded
             if verify:
                 # Independent FFmpeg ADPCM_THP decoder via a GENH wrapper.

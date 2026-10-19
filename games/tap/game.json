@@ -1,4 +1,6 @@
 {
+  "$schema": "../../schemas/game.schema.json",
+  "schemaVersion": 1,
   "id": "tap",
   "title": "Tap Trial",
   "action": "Tap",
@@ -6,10 +8,25 @@
   "wii": {
     "scene": "AgbTap",
     "cellanim": "EN/content2/cellanim/agbTap/ver0/cellanim.szs",
-    "units": ["Game/AgbTap/SceneAgbTap.cpp", "Game/AgbTap/MyChecker.cpp", "Game/AgbTap/MyFlow.cpp"],
-    "banks": ["agb_tap", "agb_tap_bg"],
+    "units": [
+      "Game/AgbTap/SceneAgbTap.cpp",
+      "Game/AgbTap/MyChecker.cpp",
+      "Game/AgbTap/MyFlow.cpp"
+    ],
+    "banks": [
+      "agb_tap",
+      "agb_tap_bg"
+    ],
     "perfectActive": true,
-    "projection": [832, 456],
+    "projection": [
+      832,
+      456
+    ],
     "endsWithMusic": true
+  },
+  "web": {
+    "enabled": true,
+    "order": 30,
+    "expectedCues": 102
   }
 }

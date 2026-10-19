@@ -8,6 +8,8 @@ import sys
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT/'tools'))
+from game_registry import web_games
 spec = importlib.util.spec_from_file_location('clean', ROOT/'scripts/check-clean.py')
 clean = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(clean)
@@ -15,7 +17,10 @@ spec.loader.exec_module(clean)
 
 def audit(site):
     build = json.loads((site/'deployment.json').read_text())
-    games = {p.parent.name for p in (ROOT/'runtime-src').glob('*/original-functions.inc')}
+    registered = web_games(ROOT)
+    games = {g['id'] for g in registered}
+    catalog = json.loads((site/'games.json').read_text())
+    assert catalog == [{'id': g['id'], 'title': g['title'], 'expectedCues': g['web']['expectedCues']} for g in registered], 'Catalog differs from registered games'
     allowed = {'index.html', 'games.json', '.nojekyll', 'deployment.json', 'sw.js', 'import/tools.zip'}
     allowed.update(str(p.relative_to(ROOT/'web')) for p in (ROOT/'web/import').iterdir() if p.is_file())
     allowed.update('engine/'+p.name for p in (ROOT/'web/engine').glob('*.mjs'))

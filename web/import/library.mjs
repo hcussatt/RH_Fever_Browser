@@ -1,6 +1,6 @@
 import {siteRoot,readLibrary,writeLibrary,deployment} from '../engine/assets.mjs';
 const $=s=>document.querySelector(s);
-let worker,build,games,selected='golf';
+let worker,build,games,selected;
 const status=(message,error=false)=>{$('#progress').textContent=message;$('#progress').classList.toggle('error',error);};
 function busy(value){$('#import').disabled=value;$('#iso').disabled=value;$('#key').disabled=value;$('#key-file').disabled=value;$('#remove').disabled=value;$('#cancel').hidden=!value;$('#busy').hidden=!value;}
 async function render(){
@@ -34,6 +34,8 @@ $('#close-help').onclick=()=>$('#help-dialog').close();
 try{
  if(!isSecureContext||!globalThis.caches)throw new Error('Use HTTPS or localhost in a browser with site storage enabled.');
  [build,games]=await Promise.all([deployment(),fetch(new URL('games.json',siteRoot)).then(r=>r.json())]);
+ if(!games.length)throw new Error('No web games are available in this deployment.');
+ selected=games[0].id;$('#game-count').textContent=String(games.length).padStart(2,'0');
  $('#version').textContent=build.version;await render();
  if('serviceWorker' in navigator)navigator.serviceWorker.register(new URL('sw.js',siteRoot),{scope:siteRoot.pathname}).catch(console.warn);
 }catch(e){status(e.message,true);$('#import').disabled=true;}
