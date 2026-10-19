@@ -1,0 +1,15 @@
+{
+  "id": "robot",
+  "title": "Screwbot Factory",
+  "action": "Screw",
+  "platform": "wii",
+  "wii": {
+    "scene": "Robot",
+    "sceneVariant": 0,
+    "cellanim": "EN/content2/cellanim/robot/ver0/cellanim.szs",
+    "units": ["Game/Robot/SceneRobot.cpp", "Game/Robot/MyChecker.cpp", "Game/Robot/MyFlow.cpp"],
+    "banks": ["robot"],
+    "projection": [854, 480],
+    "endsWithMusic": true
+  }
+}
