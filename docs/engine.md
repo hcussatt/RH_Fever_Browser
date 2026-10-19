@@ -92,6 +92,10 @@ glyphs its font needs and the game's message text (`riq_E.bmg`).
 `web/engine/layout.mjs` draws it: pictures and text tinted by their material's
 two colour registers, animations stepped once per game frame like
 `CLayoutAnimation`, and wide-screen location adjustment like `CLayoutManager`.
+A material with its own TEV stages (the Superb stamp's stars) is combined per
+texel like GX, with its texture SRT and colour register animations (RLTS,
+RLMC). Each glyph is cut from the font sheet with a clear border, so scaled
+text does not pick up its neighbours' edges.
 The game's layout class is replaced in `adapters/<id>/game.h` by layout events
 (kind 11: play or stop an animation, set a text box's message, offset a pane),
 indexing the manifest's `animations`, `texts` and `panes` lists.
@@ -149,7 +153,8 @@ Nothing on the frame loop or audio path ever waits on the network.
    `banks` are the cell-animation banks in the order the scene registers them;
    `scene` names the
    decomp's scene (`sceneVariant` picks one main chart when the scene has
-   several); `input` is the input the game's cues wait for (4 A, the default,
+   several, and is the scene version the game sets before loading it: Double
+   Date's version 1 is the sunset bench with both couples); `input` is the input the game's cues wait for (4 A, the default,
    or 6 A and B together), for the controls shown on the page;
    `perfectActive`, `projection` and `endsWithMusic`
    cover how the game plays and ends.

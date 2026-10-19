@@ -93,7 +93,10 @@ const pollGamepad=bindControls(canvas,{press,
  start(){if(!running&&!play.disabled){play.click();return true;}return false;}});
 // Starts the song. A later versus mode calls this when both players are ready.
 async function start(){
- startTime=audio.currentTime+.1;track=createTrack();backing=sfx.playMusic(music,startTime);
+ // A scene can sound a lead-in before the music (Double Date's count-in from tick -144), so the
+ // music waits for it.
+ const first=Math.min(0,...g.timeline.sounds.map(s=>s.tick),...g.sounds.map(s=>s.tick));
+ startTime=audio.currentTime+.1-g.secondsAtTick(first);track=createTrack();backing=sfx.playMusic(music,startTime);
  // The chart's own sounds, then the scene's setup and lead-in sounds (before the music start).
  pending.push(...g.timeline.sounds);g.options.chartAudioScheduled=true;liveEvents();
  running=true;window.rhf.source=backing.source;requestAnimationFrame(loop);

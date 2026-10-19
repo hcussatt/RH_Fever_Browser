@@ -79,12 +79,56 @@ def i4(data, start, w, h):
 
 
 def material(b, o):
-    """Name, the two TEV colour registers that tint the texture (or glyphs), and its first texture."""
-    cols = struct.unpack_from('>8h', b, o+20)
+    """Name, the two TEV colour registers that tint the texture (or glyphs), and its first texture.
+    A material with its own TEV stages (the Superb stamp's shining stars) also lists its texture
+    maps, texture SRTs and coordinate generators, all three colour registers, the konstant
+    colours, the stages, the alpha test and the blend mode, read in nw4r's resource order."""
+    cols = struct.unpack_from('>12h', b, o+20)
     flags = u32(b, o+60)
     clamp = lambda v: max(0, min(255, v))
-    return {'name': cstr(b, o, 20), 'color0': [clamp(c) for c in cols[:4]], 'color1': [clamp(c) for c in cols[4:8]],
-            'texture': u16(b, o+64) if flags & 15 else None}
+    out = {'name': cstr(b, o, 20), 'color0': [clamp(c) for c in cols[:4]], 'color1': [clamp(c) for c in cols[4:8]],
+           'texture': u16(b, o+64) if flags & 15 else None}
+    maps, srts, gens = flags & 15, (flags >> 4) & 15, (flags >> 8) & 15
+    swap, ind_srts, ind_stages, stages = (flags >> 12) & 1, (flags >> 13) & 3, (flags >> 15) & 7, (flags >> 18) & 31
+    alpha_compare, blend, chan, mat_color = (flags >> 23) & 1, (flags >> 24) & 1, (flags >> 25) & 1, (flags >> 27) & 1
+    if not stages:
+        return out
+    if ind_srts or ind_stages:
+        raise SystemExit(f'{out["name"]}: indirect texture stages are not supported')
+    q = o+64
+    out['maps'] = [{'texture': u16(b, q+i*4), 'wrapS': b[q+i*4+2], 'wrapT': b[q+i*4+3]} for i in range(maps)]
+    q += maps*4
+    out['srts'] = [list(struct.unpack_from('>5f', b, q+i*20)) for i in range(srts)]
+    q += srts*20
+    out['texCoordGens'] = [list(b[q+i*4:q+i*4+3]) for i in range(gens)]
+    q += gens*4
+    if chan:
+        out['chanCtrl'] = list(b[q:q+2])
+        q += 4
+    if mat_color:
+        out['matColor'] = list(b[q:q+4])
+        q += 4
+    if swap:
+        if b[q:q+4] != bytes.fromhex('e4e4e4e4'):
+            raise SystemExit(f'{out["name"]}: TEV swap tables are not supported')
+        q += 4
+    out['tevColors'] = [[clamp(c) for c in cols[i*4:i*4+4]] for i in range(3)]
+    out['kColors'] = [list(b[o+44+i*4:o+48+i*4]) for i in range(4)]
+    out['stages'] = []
+    for i in range(stages):
+        t = b[q+i*16:q+i*16+16]
+        # Without indirect stages (checked above) a stage's indirect fields have no effect.
+        # Each combiner: a, b, c, d inputs (low nibble first), op/bias/scale, clamp/output/konstant.
+        comb = lambda x: {'in': [x[0] & 15, x[0] >> 4, x[1] & 15, x[1] >> 4], 'op': x[2] & 15, 'bias': (x[2] >> 4) & 3,
+                          'scale': x[2] >> 6, 'clamp': x[3] & 1, 'out': (x[3] >> 1) & 3, 'konst': x[3] >> 3}
+        out['stages'].append({'texCoordGen': t[0], 'channel': t[1], 'map': t[2], 'color': comb(t[4:8]), 'alpha': comb(t[8:12])})
+    q += stages*16
+    if alpha_compare:
+        out['alphaCompare'] = list(b[q:q+4])
+        q += 4
+    if blend:
+        out['blend'] = list(b[q:q+4])
+    return out
 
 
 def pane(b, o):
@@ -144,7 +188,9 @@ def layout(b):
 
 def animation(b):
     """Pane keyframes: RLPA (position 0-2, rotation 3-5, scale 6-7, size 8-9), RLVC (vertex
-    colours 0-15, pane alpha 16), RLTP (texture pattern, an index into the timg names)."""
+    colours 0-15, pane alpha 16), RLTP (texture pattern, an index into the timg names), RLTS
+    (texture SRT: translate 0-1, rotate 2, scale 3-4) and RLMC (material colour 0-3, colour
+    registers 4-15, konstant colours 16-31)."""
     out = {}
     for kind, pos, size in sections(b):
         if kind != 'pai1':
@@ -160,7 +206,10 @@ def animation(b):
                 tag = e+u32(b, e+24+t*4)
                 for k in range(b[tag+4]):
                     a = tag+u32(b, tag+8+k*4)
-                    target, curve, nkeys, keys = b[a+1], b[a+2], u16(b, a+4), a+u32(b, a+8)
+                    index, target, curve, nkeys, keys = b[a], b[a+1], b[a+2], u16(b, a+4), a+u32(b, a+8)
+                    # A texture SRT or register animation names its SRT or register first (index.target).
+                    if index:
+                        target = f'{index}.{target}'
                     # Hermite keys are (frame, value, slope); step keys are (frame, value).
                     tags.setdefault(cstr(b, tag, 4), {})[target] = [list(struct.unpack_from('>3f', b, keys+j*12)) for j in range(nkeys)] if curve == 2 else \
                         [[f32(b, keys+j*8), u16(b, keys+j*8+4)] for j in range(nkeys)]

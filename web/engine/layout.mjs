@@ -16,6 +16,8 @@ export async function createLayout(g,{spec=g.manifest.wii.layout,file='layout.js
  // Live pane values (animations write into them and they keep the last value, as in nw4r).
  const panes=data.panes.map(p=>({...p,translate:[...p.translate],scale:[...p.scale],size:[...p.size],fontSize:p.fontSize&&[...p.fontSize],text:''}));
  const materialImage=data.materials.map(m=>m.texture==null?null:data.textures[m.texture]);
+ // Live material values that RLTS and RLMC animations write into.
+ const live=data.materials.map(m=>({srts:m.srts?.map(s=>[...s]),tevColors:m.tevColors?.map(c=>[...c]),kColors:m.kColors?.map(c=>[...c]),matColor:m.matColor&&[...m.matColor]}));
  const animations=spec.animations.map(([pane,name])=>{
   const anim=data.animations[name],root=byName[pane],inTree=new Set();
   const walk=i=>{inTree.add(data.panes[i].name);children[i].forEach(walk);};walk(root);
@@ -48,6 +50,16 @@ export async function createLayout(g,{spec=g.manifest.wii.layout,file='layout.js
    if(tags.RLVC?.[16])p.alpha=Math.min(Math.max(hermite(tags.RLVC[16],f)+.5,0),255)|0;
    if(tags.RLVI?.[0])p.visible=!!step(tags.RLVI[0],f);
    if(tags.RLTP?.[0]){const m=data.materials.findIndex(m=>m.name===name);if(m>=0)materialImage[m]=a.anim.timg[step(tags.RLTP[0],f)];}
+   if(tags.RLTS||tags.RLMC){
+    const m=live[data.materials.findIndex(m=>m.name===name)];
+    // Texture SRT (index.target): translate S/T, rotate, scale S/T, in the resource's order.
+    for(const [key,keys] of Object.entries(tags.RLTS||{})){const [i,t]=key.includes('.')?key.split('.').map(Number):[0,+key];m.srts[i][t]=hermite(keys,f);}
+    // Material colour 0-3, colour registers 4-15, konstant colours 16-31.
+    for(const [key,keys] of Object.entries(tags.RLMC||{})){
+     const t=+key,v=Math.min(Math.max(Math.round(hermite(keys,f)),0),255);
+     if(t<4)m.matColor[t]=v;else if(t<16)m.tevColors[(t-4)>>2][(t-4)&3]=v;else m.kColors[(t-16)>>2][(t-16)&3]=v;
+    }
+   }
   }
  }
  const f32=u=>new Float32Array(new Uint32Array([u]).buffer)[0];
@@ -93,9 +105,80 @@ export async function createLayout(g,{spec=g.manifest.wii.layout,file='layout.js
    p[k+3]=(m.color0[3]+(m.color1[3]-m.color0[3])*a)*color[3]/255;}
   x.putImageData(d,0,0);tinted.set(key,c);return c;
  }
+ // Each glyph is cut out with a clear border: a scaled drawImage of part of the font sheet
+ // filters in the neighbouring cells' edge pixels, which showed as faint marks above letters.
+ const glyphs=new WeakMap();
+ function glyphImage(img,cx,cy,w,h){
+  if(!glyphs.has(img))glyphs.set(img,new Map());
+  const cache=glyphs.get(img),key=cx+','+cy+','+w;if(cache.has(key))return cache.get(key);
+  const c=document.createElement('canvas');c.width=w+2;c.height=h+2;c.getContext('2d').drawImage(img,cx,cy,w,h,1,1,w,h);
+  cache.set(key,c);return c;
+ }
  const mul=(a,b)=>[a[0]*b[0]+a[2]*b[1],a[1]*b[0]+a[3]*b[1],a[0]*b[2]+a[2]*b[3],a[1]*b[2]+a[3]*b[3],a[0]*b[4]+a[2]*b[5]+a[4],a[1]*b[4]+a[3]*b[5]+a[5]];
  const rect=p=>{const [w,h]=p.size,hx=p.origin%3,vy=Math.floor(p.origin/3);return {left:-w*hx/2,top:h*vy/2,w,h};};
+ // Materials with their own TEV stages (the Superb stamp's stars: a gradient cut to a spinning
+ // star) are combined per texel like GX: each stage samples its map through its coordinate
+ // generator's texture SRT, then a, b, c, d mix as d+((1-c)a+cb), biased, scaled and clamped.
+ const texelCache=new Map();
+ function texels(name){
+  if(!texelCache.has(name)){const img=images[name],c=document.createElement('canvas');c.width=img.width;c.height=img.height;const x=c.getContext('2d');x.drawImage(img,0,0);texelCache.set(name,{w:c.width,h:c.height,d:x.getImageData(0,0,c.width,c.height).data});}
+  return texelCache.get(name);
+ }
+ const wrap=(i,n,mode)=>mode===1?((i%n)+n)%n:mode===2?(((i%(2*n))+2*n)%(2*n)<n?((i%(2*n))+2*n)%(2*n):2*n-1-((i%(2*n))+2*n)%(2*n)):Math.min(Math.max(i,0),n-1);
+ function sample(map,u,v){
+  const t=map.t,x=u*t.w-.5,y=v*t.h-.5,x0=Math.floor(x),y0=Math.floor(y),fx=x-x0,fy=y-y0,out=[0,0,0,0];
+  for(const [dx,dy,w] of [[0,0,(1-fx)*(1-fy)],[1,0,fx*(1-fy)],[0,1,(1-fx)*fy],[1,1,fx*fy]]){
+   const k=(wrap(y0+dy,t.h,map.wrapT)*t.w+wrap(x0+dx,t.w,map.wrapS))*4;for(let c=0;c<4;c++)out[c]+=t.d[k+c]/255*w;
+  }
+  return out;
+ }
+ // nw4r's texture SRT matrix: scale and rotate about the texture's centre, then translate.
+ function srtMatrix(srt){const [tx,ty,r,sx,sy]=srt,a=r*Math.PI/180,c=Math.cos(a),s=Math.sin(a);return [sx*c,-sy*s,sx*s,sy*c,tx,ty];}
+ const KONST=[1,7/8,3/4,5/8,1/2,3/8,1/4,1/8];
+ const tevCache=new Map();
+ function tevImage(p,mi){
+  const src=data.materials[mi],m=live[mi];
+  if(src.blend&&!(src.blend[0]===1&&src.blend[1]===4&&src.blend[2]===5))throw new Error(`${src.name}: unsupported layout blend mode ${src.blend}`);
+  if(src.alphaCompare&&src.alphaCompare[0]!==0x77)throw new Error(`${src.name}: unsupported layout alpha test ${src.alphaCompare}`);
+  const key=p.name+JSON.stringify([m,p.vertexColors]);if(tevCache.has(key))return tevCache.get(key);
+  const maps=src.maps.map(x=>({...x,t:texels(data.textures[x.texture])})),W=Math.max(...maps.map(x=>x.t.w)),H=Math.max(...maps.map(x=>x.t.h));
+  const gens=src.texCoordGens.map(([type,source,mtx])=>{
+   if(type!==1||source!==4)throw new Error(`${src.name}: unsupported texture coordinate generator ${type}/${source}`);
+   return mtx===60?[1,0,0,1,0,0]:srtMatrix(m.srts[(mtx-30)/3]);
+  });
+  const [t0,t1,t2]=p.texcoords||[[0,0],[1,0],[0,1]],vc=p.vertexColors||[[255,255,255,255],[255,255,255,255],[255,255,255,255],[255,255,255,255]];
+  const c=document.createElement('canvas');c.width=W;c.height=H;const image=new ImageData(W,H),o=image.data;
+  for(let y=0;y<H;y++)for(let x=0;x<W;x++){
+   const s=(x+.5)/W,t=(y+.5)/H,u=t0[0]+s*(t1[0]-t0[0])+t*(t2[0]-t0[0]),v=t0[1]+s*(t1[1]-t0[1])+t*(t2[1]-t0[1]);
+   const reg=[[0,0,0,0],...m.tevColors.map(c=>c.map(x=>x/255))];
+   // The rasterised channel: vertex colours (or the material colour), bilinear across the pane.
+   const ras=[0,1,2,3].map(k=>((vc[0][k]*(1-s)+vc[1][k]*s)*(1-t)+(vc[2][k]*(1-s)+vc[3][k]*s)*t)/255);
+   const chan=src.chanCtrl?src.chanCtrl.map(x=>x===0):[false,false];
+   if(chan[0])for(let k=0;k<3;k++)ras[k]=m.matColor[k]/255;if(chan[1])ras[3]=m.matColor[3]/255;
+   for(const st of src.stages){
+    let tex=[0,0,0,0];
+    if(st.map!==255){const g=gens[st.texCoordGen],du=u-.5,dv=v-.5;tex=sample(maps[st.map],g[0]*du+g[1]*dv+.5+g[4],g[2]*du+g[3]*dv+.5+g[5]);}
+    const r=st.channel===255?[0,0,0,0]:ras,kc=st.color.konst,ka=st.alpha.konst;
+    const konst=kc<8?[KONST[kc],KONST[kc],KONST[kc]]:kc>=12&&kc<16?m.kColors[kc-12].slice(0,3).map(x=>x/255):kc>=16?Array(3).fill(m.kColors[(kc-16)&3][(kc-16)>>2]/255):null;
+    const konstA=ka<8?KONST[ka]:ka>=16?m.kColors[(ka-16)&3][(ka-16)>>2]/255:null;
+    const colorIn=i=>[reg[0].slice(0,3),Array(3).fill(reg[0][3]),reg[1].slice(0,3),Array(3).fill(reg[1][3]),reg[2].slice(0,3),Array(3).fill(reg[2][3]),reg[3].slice(0,3),Array(3).fill(reg[3][3]),tex.slice(0,3),Array(3).fill(tex[3]),r.slice(0,3),Array(3).fill(r[3]),[1,1,1],[.5,.5,.5],konst,[0,0,0]][i];
+    const alphaIn=i=>[reg[0][3],reg[1][3],reg[2][3],reg[3][3],tex[3],r[3],konstA,0][i];
+    const combine=(cfg,a,b,cc,d)=>{if(cfg.op>1||a==null||b==null||cc==null||d==null)throw new Error(`${src.name}: unsupported TEV stage`);
+     let x=d+(cfg.op?-1:1)*((1-cc)*a+cc*b)+[0,.5,-.5][cfg.bias];x*=[1,2,4,.5][cfg.scale];return cfg.clamp?Math.min(Math.max(x,0),1):x;};
+    const ci=st.color.in.map(colorIn),col=[0,1,2].map(k=>combine(st.color,ci[0]?.[k],ci[1]?.[k],ci[2]?.[k],ci[3]?.[k]));
+    const ai=st.alpha.in.map(alphaIn),alp=combine(st.alpha,...ai);
+    reg[st.color.out]=[...col,reg[st.color.out][3]];reg[st.alpha.out][3]=alp;
+   }
+   const k=(y*W+x)*4;for(let ch=0;ch<4;ch++)o[k+ch]=Math.round(Math.min(Math.max(reg[0][ch],0),1)*255);
+  }
+  c.getContext('2d').putImageData(image,0,0);
+  if(tevCache.size>256)tevCache.clear();tevCache.set(key,c);return c;
+ }
  function drawPicture(ctx,p,m,alpha){
+  if(data.materials[p.material].stages){
+   const img=tevImage(p,p.material),r=rect(p);
+   ctx.setTransform(...mul(m,[r.w/img.width,0,0,-r.h/img.height,r.left,r.top]));ctx.globalAlpha=alpha;ctx.drawImage(img,0,0);return;
+  }
   const name=materialImage[p.material];if(!name)return;
   const img=tint(images[name],data.materials[p.material],p.vertexColors?.[0]),r=rect(p),W=img.width,H=img.height;
   // Map texture coordinates of the top-left, top-right and bottom-left corners onto the pane.
@@ -139,7 +222,7 @@ export async function createLayout(g,{spec=g.manifest.wii.layout,file='layout.js
    for(const g of l.gs){
     const cx=(g.cell%font.columns)*font.cellWidth,cy=Math.floor(g.cell/font.columns)*font.cellHeight;
     // The glyph hangs from the line's top. This transform's y axis points down, the layout's up.
-    if(g.glyphWidth)ctx.drawImage(img,cx,cy,g.glyphWidth,font.cellHeight,x+g.left*sx,-y,g.glyphWidth*sx,font.cellHeight*sy);
+    if(g.glyphWidth)ctx.drawImage(glyphImage(img,cx,cy,g.glyphWidth,font.cellHeight),x+(g.left-1)*sx,-y-sy,(g.glyphWidth+2)*sx,(font.cellHeight+2)*sy);
     x+=g.charWidth*sx+p.charSpace;
    }
    y-=lineHeight;

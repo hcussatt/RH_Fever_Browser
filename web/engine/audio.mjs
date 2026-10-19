@@ -4,9 +4,10 @@
 // gameUrl: the game's folder (dist/<id>/), whose assets/ the build extracted.
 // Music and sounds share one output gain, as on the Wii, so their balance is the original's:
 // the game's master volume (CSoundManager sets AxManager::SetMasterVolume(0.7)) times a fixed
-// headroom for the browser, whose output clips at full scale; .55 keeps every built level under it.
+// headroom for the browser, whose output clips at full scale; .48 keeps every built level's autoplay
+// render (web/engine/qa/audio-check.mjs) under it, the loudest peaking at .96.
 import {assetResponse} from './assets.mjs';
-const OUTPUT=.7*.55;
+const OUTPUT=.7*.48;
 export async function createAudio(context,gameUrl,{envelope}={}){
  const asset=name=>new URL('assets/'+name,gameUrl);
  const [data,musicInfo,resultData]=await Promise.all(['sfx.json','music.json','results.json'].map(async f=>(await assetResponse(asset(f))).json()));
