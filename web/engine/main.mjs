@@ -19,7 +19,10 @@ try{
  const musicData=assetResponse(new URL('assets/music.wav',gameUrl)).then(r=>r.arrayBuffer()).then(b=>audio.decodeAudioData(b));
  g=await loadGame(gameUrl);
  const {title,action}=g.manifest;document.title=title;canvas.setAttribute('aria-label',title+' game');
- document.querySelector('h1').textContent=title;const controls=g.manifest.wii.input===6?`A + B together · ${action} (A: Space / Left Shift / click, B: Right Shift / right click)`:'Space / X / click · '+action;for(const e of document.querySelectorAll('.controls'))e.textContent=controls;
+ document.querySelector('h1').textContent=title;
+ // What the cues wait for: A (4), A and B together (6), or both in a remix.
+ const inputs=new Set(g.timeline.cueInputs);
+ const controls=!inputs.has(6)?'Space / X / click · '+action:!inputs.has(4)?`A + B together · ${action} (A: Space / Left Shift / click, B: Right Shift / right click)`:`${action} · A: Space / X / Left Shift / click · B: Right Shift / right click · some cues need A + B together`;for(const e of document.querySelectorAll('.controls'))e.textContent=controls;
  renderer=await createRenderer(g,canvas);renderer.draw();music=await musicData;sfx=await createAudio(audio,gameUrl,{envelope:g.envelope});
  results=await createResults(g,canvas);
  window.rhf={g,renderer,audio,sfx,results,inputs:input.presses,metrics,heardTime,stats:g.stats,result:null,get track(){return track;},get phase(){return phase;},get frame(){return frame;}};

@@ -22,7 +22,7 @@ CHART = json.loads(require(OUT/'original-chart.json').read_text())
 u16 = lambda b,o=0: struct.unpack_from('>H', b,o)[0]
 u32 = lambda b,o=0: struct.unpack_from('>I', b,o)[0]
 
-def textures():
+def textures(prefix=''):
     data = (SOURCE/'cellanim.tpl').read_bytes()
     assert u32(data) == 0x20af30
     paths = []
@@ -30,7 +30,7 @@ def textures():
         header = u32(data,u32(data,8)+i*8)
         h,w,fmt,start = struct.unpack_from('>HHII',data,header)
         assert fmt in (5,6), f'Unsupported texture format {fmt}'
-        name=f'texture-{i}.png'
+        name=f'{prefix}texture-{i}.png'
         if fmt == 6:
             # RGBA8: 4x4 tiles of 64 bytes, alpha/red pairs then green/blue pairs.
             tiles = np.frombuffer(data,dtype=np.uint8,count=w*h*4,offset=start).reshape(h//4,w//4,2,16,2)
@@ -126,8 +126,24 @@ def audio_groups():
         if records[sid]['type']==1:records[sid]['bankFile']=u32(b,ref(banks,records[sid]['data'][1])+4)
     return {'sounds':records,'files':files,'musicFile':music_file}
 
+def remix():
+    """A remix's scenes each load their own archive (the remix version of each game's graphics).
+    Every bank in it is kept, since a scene's version picks which ones it registers; textures are
+    numbered across all scenes."""
+    global SOURCE
+    out={'textures':[],'banks':{},'scenes':[]}
+    for scene in PROFILE['scenes']:
+        SOURCE=require(source(GAME)/scene['game'])
+        first=len(out['textures']);out['textures']+=textures(scene['game']+'-')
+        names=sorted(p.stem for p in SOURCE.glob('*.brcad'))
+        for n in names:
+            b=bank(n);b['texture']+=first;out['banks'][scene['game']+'/'+n]=b
+        out['scenes'].append({'game':scene['game'],'banks':names})
+    return out
+
 if __name__=='__main__':
-    out={'textures':textures(),'banks':{n:bank(n) for n in PROFILE['banks']},'audio':audio_groups()}
+    out=remix() if 'scenes' in PROFILE else {'textures':textures(),'banks':{n:bank(n) for n in PROFILE['banks']}}
+    out['audio']=audio_groups()
     out['provenance']={'game':'Rhythm Heaven Fever SOME01','dolSha1':DOL_SHA1}
     (OUT/'original-assets.json').write_text(json.dumps(out,separators=(',',':'))+'\n')
     print(json.dumps({'banks':{n:{'cells':len(b['cells']),'animations':len(b['animations'])} for n,b in out['banks'].items()},'textures':out['textures'],'audioFiles':out['audio']['files']},indent=2))

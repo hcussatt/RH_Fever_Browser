@@ -24,7 +24,11 @@
     },
     "wii": {
       "type": "object", "additionalProperties": false,
-      "required": ["scene", "cellanim", "units", "banks", "projection", "endsWithMusic"],
+      "required": ["projection", "endsWithMusic"],
+      "oneOf": [
+        {"required": ["scene", "cellanim", "units", "banks"], "not": {"anyOf": [{"required": ["music"]}, {"required": ["scenes"]}]}},
+        {"required": ["music", "scenes"], "not": {"anyOf": [{"required": ["scene"]}, {"required": ["cellanim"]}, {"required": ["units"]}, {"required": ["banks"]}, {"required": ["layout"]}]}}
+      ],
       "properties": {
         "scene": {"$ref": "#/$defs/name"},
         "sceneVariant": {"type": "integer", "minimum": 0},
@@ -33,8 +37,26 @@
         "units": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/sourcePath"}},
         "banks": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/name"}},
         "projection": {"type": "array", "minItems": 2, "maxItems": 2, "items": {"type": "integer", "minimum": 1}},
+        "music": {"description": "A remix: the backing track (wave sound name) whose chart switches between scenes.", "$ref": "#/$defs/name"},
+        "scenes": {
+          "description": "A remix's scenes: each another manifest's game (its code, banks and profile), with the cellanim archive the remix version loads.",
+          "type": "array", "minItems": 1,
+          "items": {
+            "type": "object", "additionalProperties": false, "required": ["game", "cellanim"],
+            "properties": {"game": {"type": "string", "pattern": "^[a-z][a-z0-9_-]{0,47}$"}, "cellanim": {"$ref": "#/$defs/discPath"}}
+          }
+        },
+        "epilogue": {"description": "The epilogue cell animation archive, when not beside the game's cellanim.", "$ref": "#/$defs/discPath"},
         "perfectActive": {"type": "boolean"},
         "endsWithMusic": {"type": "boolean"},
+        "messageLayout": {
+          "description": "The game's own layout whose text boxes the chart's message panes use (Hole in One's CMyLayout); the shared speech balloon needs no entry.",
+          "type": "object", "additionalProperties": false, "required": ["archive", "file"],
+          "properties": {
+            "archive": {"$ref": "#/$defs/discPath"},
+            "file": {"type": "string", "pattern": "^[A-Za-z0-9_-]+\\.brlyt$"}
+          }
+        },
         "layout": {
           "type": "object", "additionalProperties": false,
           "required": ["archive", "file", "animations", "startAtEnd", "texts", "panes"],

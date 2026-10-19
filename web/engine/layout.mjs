@@ -4,17 +4,21 @@
 // The game's code drives it through layout events (11) from the platform backend: play or stop
 // an animation, set a text box's message, or offset a pane (see adapters/<game>/game.h).
 import {assetResponse,assetImage} from './assets.mjs';
-export async function createLayout(g,{spec=g.manifest.wii.layout,file='layout.json',fontFile='layout-font.png'}={}){
+export async function createLayout(g,{spec=g.manifest.wii.layout,file='layout.json',fontFile='layout-font.png',data:given,events=g.layoutEvents}={}){
  if(!spec)return null;
  const asset=n=>new URL('assets/'+n,g.base);
- const data=await (await assetResponse(asset(file))).json();
+ const data=given??await (await assetResponse(asset(file))).json();
  const load=n=>assetImage(asset(n));
  const images=Object.fromEntries(await Promise.all(Object.entries(data.images).map(async([k,v])=>[k,await load(v)])));
  const fontImage=await load(fontFile);
  const byName=Object.fromEntries(data.panes.map((p,i)=>[p.name,i]));
  const children=data.panes.map(()=>[]);data.panes.forEach((p,i)=>{if(p.parent!=null)children[p.parent].push(i);});
  // Live pane values (animations write into them and they keep the last value, as in nw4r).
- const panes=data.panes.map(p=>({...p,translate:[...p.translate],scale:[...p.scale],size:[...p.size],fontSize:p.fontSize&&[...p.fontSize],text:''}));
+ const fresh=p=>({...p,translate:[...p.translate],scale:[...p.scale],size:[...p.size],fontSize:p.fontSize&&[...p.fontSize],text:''});
+ const panes=data.panes.map(fresh);
+ // The panes as the layout file sets them up, and its animations bound but stopped, for a layout
+ // the game builds again (a new scene).
+ function reset(){data.panes.forEach((p,i)=>{panes[i]=fresh(p);});for(const a of animations)Object.assign(a,{frame:0,playing:false,skip:false,enabled:false,reverse:false});}
  const materialImage=data.materials.map(m=>m.texture==null?null:data.textures[m.texture]);
  // Live material values that RLTS and RLMC animations write into.
  const live=data.materials.map(m=>({srts:m.srts?.map(s=>[...s]),tevColors:m.tevColors?.map(c=>[...c]),kColors:m.kColors?.map(c=>[...c]),matColor:m.matColor&&[...m.matColor]}));
@@ -23,7 +27,7 @@ export async function createLayout(g,{spec=g.manifest.wii.layout,file='layout.js
   const walk=i=>{inTree.add(data.panes[i].name);children[i].forEach(walk);};walk(root);
   // Bound recursively: the pane and its descendants (and their materials) that the animation names.
   const targets=Object.entries(anim.panes).filter(([n])=>inTree.has(n)||data.panes.some(p=>inTree.has(p.name)&&p.material!=null&&data.materials[p.material].name===n));
-  return {anim,targets,frame:0,playing:false,skip:false,enabled:false};
+  return {anim,targets,frame:0,playing:false,skip:false,enabled:false,reverse:false};
  });
  const setFrame=(a,frame)=>{a.enabled=true;a.frame=frame;};
  for(const i of spec.startAtEnd||[])setFrame(animations[i],animations[i].anim.frames);
@@ -40,7 +44,8 @@ export async function createLayout(g,{spec=g.manifest.wii.layout,file='layout.js
  }
  function step(keys,f){if(f<=keys[0][0])return keys[0][1];let v=keys[0][1];for(const k of keys)if(k[0]<=f)v=k[1];return v;}
  function animate(a){
-  const f=Math.max(0,a.frame);
+  // Reversed playback reads the animation from its end (CLayoutAnimation::fn_801DA66C).
+  const f=Math.max(0,a.reverse?a.anim.frames-a.frame-1:a.frame);
   for(const [name,tags] of a.targets){
    const p=panes[byName[name]];
    for(const [target,keys] of Object.entries(tags.RLPA||{})){
@@ -66,7 +71,9 @@ export async function createLayout(g,{spec=g.manifest.wii.layout,file='layout.js
  function message(id){return (data.messages[id]??'???').replace(/\{[0-9a-f]*\}/g,'');}
  function apply(e){
   const op=e.action>>8,i=e.action&255;
-  if(op===1){const a=animations[i];setFrame(a,0);a.playing=true;a.skip=true;}
+  if(op===1){const a=animations[i];a.reverse=false;setFrame(a,0);a.playing=true;a.skip=true;}
+  // Play from the beginning, forward or reversed (value bit 1), or jump to the end (bit 0).
+  else if(op===6){const a=animations[i];a.reverse=!!(e.value&2);setFrame(a,e.value&1?a.anim.frames:0);a.playing=true;a.skip=true;}
   else if(op===2)animations[i].playing=false;
   else if(op===3)panes[byName[spec.texts[i]]].text=message(e.value);
   else if(op===4||op===5){const n=spec.panes[i];panes[byName[n]].translate[op-4]=base[n][op-4]+f32(e.value);}
@@ -86,7 +93,6 @@ export async function createLayout(g,{spec=g.manifest.wii.layout,file='layout.js
  }
  // Catch up with the game: the events of each step, then that step's layout frame.
  function update(){
-  const events=g.layoutEvents;
   while(applied<g.steps){
    while(events.length&&events[0].frame<=applied)apply(events.shift());
    frame();applied++;
@@ -199,13 +205,20 @@ export async function createLayout(g,{spec=g.manifest.wii.layout,file='layout.js
   if(p.frames.length!==1)throw new Error('Unsupported original window frame count');
   const material=data.materials[p.frames[0].material],img=tint(images[data.textures[material.texture]],material),r=rect(p);
   const w=img.width,h=img.height;
-  ctx.setTransform(...m);ctx.globalAlpha=alpha;ctx.fillStyle='#fff';ctx.fillRect(r.left+w,-r.top,r.w-2*w,r.h);if(r.h>2*h)ctx.fillRect(r.left,-r.top+h,r.w,r.h-2*h);
+  // The content is the content material's colour 1 (no texture) times the vertex colour: white for
+  // a speech balloon, clear for Hole in One's screen frame.
+  const c=data.materials[p.material].color1,v=p.vertexColors?.[0]||[255,255,255,255];
+  ctx.setTransform(...m);ctx.globalAlpha=alpha*c[3]*v[3]/255/255;ctx.fillStyle=`rgb(${c[0]*v[0]/255},${c[1]*v[1]/255},${c[2]*v[2]/255})`;ctx.fillRect(r.left+w,-r.top,r.w-2*w,r.h);if(r.h>2*h)ctx.fillRect(r.left,-r.top+h,r.w,r.h-2*h);
+  ctx.globalAlpha=alpha;
   // NW4R's one-frame window mirrors its single corner into all four corners.
   for(const [right,bottom] of [[0,0],[1,0],[0,1],[1,1]]){
    ctx.save();ctx.translate(r.left+(right?r.w:0),-r.top+(bottom?r.h:0));ctx.scale(right?-1:1,bottom?-1:1);ctx.drawImage(img,0,0);ctx.restore();
   }
   ctx.drawImage(img,w-1,0,1,h,r.left+w,-r.top,r.w-2*w,h);
   ctx.save();ctx.translate(0,-r.top*2+r.h);ctx.scale(1,-1);ctx.drawImage(img,w-1,0,1,h,r.left+w,-r.top,r.w-2*w,h);ctx.restore();
+  // The left and right edges stretch the corner's last row, mirrored for the right.
+  ctx.drawImage(img,0,h-1,w,1,r.left,-r.top+h,w,r.h-2*h);
+  ctx.save();ctx.translate(r.left*2+r.w,0);ctx.scale(-1,1);ctx.drawImage(img,0,h-1,w,1,r.left,-r.top+h,w,r.h-2*h);ctx.restore();
  }
  function drawText(ctx,p,m,alpha){
   if(!p.text)return;
@@ -252,5 +265,5 @@ export async function createLayout(g,{spec=g.manifest.wii.layout,file='layout.js
  }
  function textWidth(p,text=p.text){const font=data.font,sx=p.fontSize[0]/font.width;return Math.max(0,...text.split('\n').map(l=>[...l].reduce((n,c)=>n+(font.glyphs[c.codePointAt(0)]?.charWidth||0)*sx+p.charSpace,0)-(l.length?p.charSpace:0)));}
  function fitText(p,width,height){p.fontSize=[width,height];const w=textWidth(p),scale=w>p.size[0]?p.size[0]*.95/w:1;p.fontSize[0]*=scale;return scale;}
- return {draw,update,panes,animations,byName,data,fitText};
+ return {draw,update,reset,panes,animations,byName,data,fitText};
 }

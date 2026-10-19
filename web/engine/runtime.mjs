@@ -22,17 +22,26 @@ export async function loadGame(gameUrl,load=fetchBytes,{timeline:withTimeline=tr
  const w8=(a,x)=>view.setUint8(offset(a),x),w16=(a,x)=>view.setUint16(offset(a),x),w32=(a,x)=>view.setUint32(offset(a),x),wf=(a,x)=>view.setFloat32(offset(a),x);
  const alloc=n=>core._allocate(n)>>>0;
  await Promise.all(segments.map(async s=>core.HEAPU8.set(await read(s.file),offset(s.address))));
- // Bank ids are the order the original scene registers them in.
- const banks=profile.banks.map(n=>assets.banks[n]);
+ // Every bank of each scene's archive: a scene's init registers the ones it uses under the ids it
+ // picks (CCellAnimManager::registBank), found by file name (event 25 below). A remix has a
+ // scene per game it changes to, each with the archive its remix version loads.
+ const scenes=profile.scenes?assets.scenes.map(sc=>sc.banks.map(n=>[n,assets.banks[sc.game+'/'+n]])):[profile.banks.map(n=>[n,assets.banks[n]])];
+ const banks=[],named=[];
  banks[255]={texture:0,cells:[[]],animations:Array.from({length:256},()=>[{cell:0,frames:1,x:0,y:0,scaleX:1,scaleY:1,angle:0,alpha:255}])};
- banks.forEach((b,id)=>{
+ function install(b){
   const ap=alloc(b.animations.length*8),cp=alloc(b.cells.length*8);
   b.animations.forEach((keys,i)=>{const p=alloc(keys.length*24);w16(ap+i*8,keys.length);w32(ap+i*8+4,p);keys.forEach((k,j)=>{const a=p+j*24;w16(a,k.cell);w16(a+2,k.frames);w16(a+4,k.x);w16(a+6,k.y);wf(a+8,k.scaleX);wf(a+12,k.scaleY);wf(a+16,k.angle);w8(a+20,k.alpha);});});
   b.cells.forEach((objects,i)=>{const p=alloc(objects.length*32);w16(cp+i*8,objects.length);w32(cp+i*8+4,p);objects.forEach((o,j)=>{const a=p+j*32;[o.sx,o.sy,o.w,o.h,o.palette,o.reserved,o.x,o.y].forEach((v,k)=>w16(a+k*2,v));wf(a+16,o.scaleX);wf(a+20,o.scaleY);wf(a+24,o.angle);w8(a+28,o.flipX);w8(a+29,o.flipY);w8(a+30,o.alpha);});});
-  core._install_bank(id,b.animations.length,ap,cp);
- });
+  return [b.animations.length,ap,cp];
+ }
+ core._install_bank(255,...install(banks[255]));
+ scenes.forEach((list,scene)=>list.forEach(([name,b])=>{
+  const p=alloc(name.length+1);for(let i=0;i<name.length;i++)w8(p+i,name.charCodeAt(i));w8(p+name.length,0);
+  named[core._install_named_bank(scene,p,...install(b))]=b;
+ }));
  // The scene's version, as the scene load before the chart sets it (see tools/chart-index.py).
  if(chart.sceneVersion)w32(chart.sceneVersion.address,chart.sceneVersion.value);
+ if(chart.firstScene)core._select_scene(chart.firstScene);
  core._set_tempo(clock.tempoAtTick(0));core._initialize_scene();
  // Original grading routines operate on Wii UTF-16 strings and original criteria
  // pointers. Message lookup is the platform adapter; no grading is done in JS.
@@ -45,7 +54,8 @@ export async function loadGame(gameUrl,load=fetchBytes,{timeline:withTimeline=tr
  let tick=0,ended=false,endTick=null;
  const resultEvents=[];const sounds=[],chartSounds=[],gameSounds=[],commands=[],cues=[],cueInputs=[];const options={chartAudioScheduled:false};
  // Each event: kind, value, extra, frame, sound handle (see platform.c emit_handle).
- function drain(){const n=core._events_count(),p=core._events_ptr();const out=[];for(let i=0;i<n;i++)out.push(Array.from(core.HEAPU32.subarray(p/4+i*5,p/4+i*5+5)));core._events_clear();return out;}
+ // A bank registered under an id (25) is what the renderer draws for that id from then on.
+ function drain(){const n=core._events_count(),p=core._events_ptr();const out=[];for(let i=0;i<n;i++)out.push(Array.from(core.HEAPU32.subarray(p/4+i*5,p/4+i*5+5)));core._events_clear();for(const e of out)if(e[0]===25)banks[e[1]]=named[e[2]];return out;}
  let tapped=0;
  function frame(ticks,press){
   core._set_delta(ticks);core._set_frame_ticks(ticks);
@@ -79,7 +89,8 @@ export async function loadGame(gameUrl,load=fetchBytes,{timeline:withTimeline=tr
  // the browser already scheduled from the build's silent runs. Flows that only start in play
  // (a hit or a miss starts one, for example) are not in them, so their sounds play live.
  // Layout events (11): the game's 2D layouts (Love Rap's lyric captions), drawn by layout.mjs.
- const layoutEvents=[];let steps=0;
+ // Message events (15): the speech balloon and the message panes, drawn by message.mjs.
+ const layoutEvents=[],messageEvents=[];let steps=0;
  const consumed=new Set();
  function prescheduled(sound,at){
   const list=timeline?.sounds||[];
@@ -121,6 +132,7 @@ export async function loadGame(gameUrl,load=fetchBytes,{timeline:withTimeline=tr
    else if(e[0]===8)commands.push({tick:frameTick+rest(e[2]),op:e[1]});
    else if(e[0]===7){ended=true;endTick=frameTick+rest(e[2]);}
    else if(e[0]===11)layoutEvents.push({frame:steps,action:e[1],value:e[2]});
+   else if(e[0]===15)messageEvents.push({frame:steps,field:e[1]>>8,pane:e[1]&255,value:e[2]});
    else if(e[0]===13)musicVolumes.push({tick:frameTick,frames:e[1],volume:rest(e[2])});
    else if(e[0]===14)speeds.push({tick:frameTick+rest(e[2]),speed:rest(e[1])});
    else if(e[0]===20||e[0]===22)resultEvents.push(e);
@@ -171,5 +183,5 @@ export async function loadGame(gameUrl,load=fetchBytes,{timeline:withTimeline=tr
   if(press){core._grading_input(1);core._grading_input(0);}core._grading_frame();gradingFrame++;
   return drain().map(e=>({kind:e[0],value:e[1],extra:e[2],frame:gradingFrame,seconds:gradingFrame/60+((e[0]===5||e[0]===20||e[0]===21)?rest(e[2])/(core._grading_tempo()*.8):0)}));
  }
- return {manifest,base,core,options,assets,chart,clock,secondsAtTick:clock.secondsAtTick,tickAtSeconds:clock.tickAtSeconds,banks,timeline,step,drain,sounds,chartSounds,gameSounds,tunes,speeds,musicVolumes,commands,cues,cueInputs,layoutEvents,get steps(){return steps;},envelope,stats,result,gradingData,resultEvents,startGrading,stepGrading,u8,u16,u32,f32,w8,w16,w32,wf,alloc,offset,get tick(){return tick;},get ended(){return ended;},get endTick(){return endTick;}};
+ return {manifest,base,core,options,assets,chart,clock,secondsAtTick:clock.secondsAtTick,tickAtSeconds:clock.tickAtSeconds,banks,timeline,step,drain,sounds,chartSounds,gameSounds,tunes,speeds,musicVolumes,commands,cues,cueInputs,layoutEvents,messageEvents,get steps(){return steps;},envelope,stats,result,gradingData,resultEvents,startGrading,stepGrading,u8,u16,u32,f32,w8,w16,w32,wf,alloc,offset,get tick(){return tick;},get ended(){return ended;},get endTick(){return endTick;}};
 }

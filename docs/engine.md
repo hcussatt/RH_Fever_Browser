@@ -83,6 +83,32 @@ the interpreter calls.
   the timeline. Their chart sounds play live: `runtime.mjs` schedules ahead only
   the sounds it can match to the timeline.
 
+## Remixes
+
+A remix manifest (`games/remix1/game.json`) names its music and the scenes it
+changes between (`wii.scenes`: each scene's game and the remix version of its
+graphics) instead of one scene. The build compiles every scene's game into one
+core: `tools/recompile.py` writes `build/<id>/scenes.h` with each game's
+`game.h` renamed per scene and a profile table, and `platform.c` keeps the
+current profile.
+
+- `tools/chart-index.py` finds the remix chart from its music: the scene change
+  (`0x100` with no chart) just before `PREPARE_WAVE` starts it, the scene load
+  before that gives the first scene and its version, and the group loads (`0x12c`)
+  of the entry chart and the charts it starts alongside itself give the sounds.
+- A scene change during play follows `CGameManager`/`CScene`: the scene is
+  scheduled down, the fader (`CFaderFlash`) covers the screen, the old scene's
+  `_20` ends its banks and animations (`endCellAnimByBank`, `CExScene::_20`),
+  and the next scene is created, loaded, initialised and drawn once the fader
+  is idle (about seven black frames, as in the original). The chart waits with
+  `0x104` and takes the wait off its rest (`0x130`) so it keeps to the music.
+- Every bank of every scene archive is installed at load under its file name.
+  A scene's `registBank` picks one by the name of the file it read, so a scene
+  version that registers different banks needs no manifest list (event 25 tells
+  the renderer which bank an id now draws).
+- `tools/extract-assets.py` numbers textures across the scenes
+  (`<game>-texture-<n>.png`) and keys banks `<game>/<name>`.
+
 ## Layouts
 
 Some games draw 2D layouts (NW4R lyt) over the cell animations, like Love Rap's
@@ -99,6 +125,22 @@ text does not pick up its neighbours' edges.
 The game's layout class is replaced in `adapters/<id>/game.h` by layout events
 (kind 11: play or stop an animation, set a text box's message, offset a pane),
 indexing the manifest's `animations`, `texts` and `panes` lists.
+
+### Message panes
+
+Charts also show text in message panes: TickFlow `0x40` shows or hides pane *n*,
+`0x41` gives it a string and ExFlow `0x124` a message by id (`riq_E.bmg`). A pane
+is a text box some layout handed to the chart (`CTickFlow::fn_801DEF58`): the
+shared speech balloon (`CBalloonLayout`, `message.brlyt` in `layout_common.szs`),
+which each scene places and sizes, or a game's own (Hole in One's `CMyLayout`,
+named by the manifest's `wii.messageLayout`). Remix 1's opening lines use Hole in
+One's; Tap Trial's giraffe uses the balloon. `platform.c` reports the layouts the
+scene adds, the panes they register, the balloon's placement and the chart's
+commands as message events (kind 15); `web/engine/message.mjs` draws them with
+`layout.mjs`. Hole in One's layout also holds its screen frame (`W_frm_00`): the
+game plays its two animations (`baseball_frm_change_00/01`, forward, reversed or
+straight to the end) as it changes view, and the same events drive them. `tools/extract-layout.py` writes `message-layouts.json` for every
+game.
 
 ## Audio
 
@@ -129,7 +171,7 @@ original nw4r sound code where it matters for how a game sounds:
 - Sounds played before the chart starts (scene setup and pre-roll) are kept.
 - Event kinds: 1 game sound, 3 perfect failed, 5 chart sound, 7 end, 8 chart
   command, 10 tune, 11 layout, 12 game sound from a chart command, 13 music
-  volume, 14 speed. Each event is 5 words: kind, value, extra, frame, handle.
+  volume, 14 speed, 15 message pane. Each event is 5 words: kind, value, extra, frame, handle.
 - Pitch interpolation, LFO and filters are approximated.
 
 `web/engine/qa/audio-check.mjs` renders a whole autoplay run offline and reports
@@ -150,12 +192,12 @@ Nothing on the frame loop or audio path ever waits on the network.
 
 1. `games/<id>/game.json`: copy an existing one. `wii.units` are the decomp
    translation units to translate (see `third_party/rhf-decomp/config/SOME01/splits.txt`);
-   `banks` are the cell-animation banks in the order the scene registers them;
+   `banks` are the cell-animation banks the scene can register (found by file name);
    `scene` names the
    decomp's scene (`sceneVariant` picks one main chart when the scene has
    several, and is the scene version the game sets before loading it: Double
    Date's version 1 is the sunset bench with both couples); `input` is the input the game's cues wait for (4 A, the default,
-   or 6 A and B together), for the controls shown on the page;
+   or 6 A and B together; the page shows controls from the cues' own inputs);
    `perfectActive`, `projection` and `endsWithMusic`
    cover how the game plays and ends.
 2. `adapters/<id>/game.h`: the scene constructor, init, update, flow command and
@@ -163,6 +205,9 @@ Nothing on the frame loop or audio path ever waits on the network.
    (`GAME_CALLS`) and per-frame hooks (`GAME_AFTER_UPDATE`). The build fails with
    the address of any call that is still missing.
 3. `./build.sh <iso>` builds and tests every game that has a manifest.
+4. Add the game to its remix set in `web/engine/menu.mjs` (the first remix whose
+   graphics it has on the disc, `cellanim/<game>/remix0N`); games in no remix are
+   listed under Other games.
 
 ## Other consoles (later)
 

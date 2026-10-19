@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Convert one game's 2D layout (NW4R BRLYT/BRLAN), its textures, the glyphs its font needs and
-the game's message text into browser assets (layout.json and layout-*.png).
+the game's message text into browser assets (layout.json and layout-*.png), and the layouts that
+show its chart's messages (message-layouts.json and message-*.png).
 
 Love Rap draws its lyric captions with one (src/Game/Rap/MyLayout.cpp). Games without a
-"layout" entry in their manifest have nothing to convert.
+"layout" entry in their manifest have only message layouts to convert.
 """
 import json
 import struct
@@ -66,6 +67,10 @@ def tpl(data):
         i, a = (px & 15)*17, (px >> 4)*17
     elif fmt == 0:  # I4: 8x8 tiles, two pixels per byte.
         i = a = i4(data, start, w, h)
+    elif fmt == 3:  # IA8: 4x4 tiles, alpha then intensity.
+        pw, ph = (w+3)//4*4, (h+3)//4*4
+        px = np.frombuffer(data, np.uint8, pw*ph*2, start).reshape(ph//4, pw//4, 4, 4, 2).transpose(0, 2, 1, 3, 4).reshape(ph, pw, 2)[:h, :w]
+        i, a = px[..., 1], px[..., 0]
     else:
         raise SystemExit(f'Unsupported layout texture format {fmt}')
     return Image.fromarray(np.dstack([i, i, i, a]).astype(np.uint8), 'RGBA')
@@ -287,7 +292,38 @@ def font(b, chars):
             'cellHeight': ch, 'columns': columns, 'glyphs': glyphs}, Image.fromarray(np.dstack([atlas]*4), 'RGBA')
 
 
+def message_layouts():
+    """The layouts whose text boxes show the chart's messages (message panes, web/engine/message.mjs):
+    the shared speech balloon and the game's own (each remix scene's), with every message and the
+    glyphs they need."""
+    games = [GAME]+[s['game'] for s in PROFILE.get('scenes', [])]
+    names = ['balloon']+[g for g in games if 'messageLayout' in manifest(g)['wii']]
+    out = {'layouts': {}}
+    for name in names:
+        root = require(DISC/'message-layout'/name)
+        file = manifest(name)['wii']['messageLayout']['file'] if name != 'balloon' else 'message.brlyt'
+        data = layout((root/'blyt'/file).read_bytes())
+        # The layout's own animations (named after it): Hole in One's screen frame,
+        # baseball_frm_change_00/01. The balloon's archive holds other layouts' animations only.
+        stem = file.rsplit('.', 1)[0]
+        data['animations'] = {p.stem: animation(p.read_bytes()) for p in sorted((root/'anim').glob(f'{stem}_*.brlan'))}
+        assert not any(a['timg'] for a in data['animations'].values()), f'{name}: message layout animation swaps textures'
+        data['images'] = {}
+        for n in data['textures']:
+            tpl((root/'timg'/n).read_bytes()).save(OUT/f'message-{name}-{n}.png')
+            data['images'][n] = f'message-{name}-{n}.png'
+        out['layouts'][name] = data
+    fonts = {d['fonts'][0] for d in out['layouts'].values()}
+    assert len(fonts) == 1, f'Message layouts use different fonts: {fonts}'
+    out['messages'] = messages(require(DISC/'message'/'riq_E.bmg').read_bytes())
+    chars = {ord(c) for t in out['messages'].values() for c in t if c not in '\n'}
+    out['font'], atlas = font(require(DISC/'font'/fonts.pop()).read_bytes(), chars)
+    atlas.save(OUT/'message-font.png')
+    (OUT/'message-layouts.json').write_text(json.dumps(out, separators=(',', ':'))+'\n')
+
+
 def main():
+    message_layouts()
     entry = PROFILE.get('layout')
     if not entry:
         return

@@ -30,7 +30,9 @@ test('Pages project path, local import errors, storage isolation, and offline sh
   await page.route('**/games.json',route=>route.fulfill({json:[{id:'newplugin',title:'New Plugin',expectedCues:7},...catalog]}));
   await page.goto(base);
   await page.waitForFunction(count=>document.querySelectorAll('.game').length===count,catalog.length+1);
-  assert.equal(await page.locator('#selected-title').textContent(),'New Plugin');
+  // A game no remix set lists goes under Other games, the last set (engine/menu.mjs).
+  assert.ok((await page.locator('.game h3').allTextContents()).includes('New Plugin'));
+  assert.equal(await page.locator('.set-title').last().textContent(),'Other games');
   assert.equal(await page.locator('#game-count').textContent(),String(catalog.length+1).padStart(2,'0'));
   await page.unroute('**/games.json');
   await page.goto(base);await page.waitForFunction(count=>document.querySelectorAll('.game').length===count,catalog.length);
