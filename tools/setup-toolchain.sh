@@ -4,13 +4,16 @@
 # Then run:  . tools/env.sh
 set -eu
 cd "$(dirname "$0")/.."
+. ./tools/env.sh
 mkdir -p .toolchain
 cd .toolchain
 
 if [ ! -x emsdk/upstream/emscripten/emcc ]; then
   [ -d emsdk ] || git clone --depth 1 https://github.com/emscripten-core/emsdk.git
-  emsdk/emsdk install 5.0.7
-  emsdk/emsdk activate 5.0.7
+  "$RHF_PYTHON" emsdk/emsdk.py install 5.0.7
+fi
+if [ ! -f emsdk/.emscripten ]; then
+  "$RHF_PYTHON" emsdk/emsdk.py activate 5.0.7
 fi
 
 if [ ! -x binutils/powerpc-eabi-objdump ]; then

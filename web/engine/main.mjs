@@ -3,22 +3,26 @@
 import {loadGame} from './runtime.mjs';
 import {createAudio} from './audio.mjs';
 import {createRenderer} from './renderer.mjs';
+import {createResults} from './results.mjs';
 import {createInputQueue,bindControls} from './input.mjs';
 import {createTrack} from './clock.mjs';
+import {assetResponse,requireAssets} from './assets.mjs';
 const gameUrl=new URL('./',location.href);
 const canvas=document.querySelector('canvas'),overlay=document.querySelector('#overlay'),play=document.querySelector('#play'),status=document.querySelector('#status');
-let g,renderer,audio,music,startTime,running=false,frame=0,sfx,paused=false,track,backing;const input=createInputQueue(),metrics=[];
+let g,renderer,audio,music,startTime,running=false,frame=0,sfx,paused=false,results,resultsStart,phase='game',track,backing;const input=createInputQueue(),metrics=[];
 // Debug and QA handle (tests and audio checks read it).
 window.rhf={};
 function fail(e){running=false;audio?.suspend();overlay.hidden=false;play.disabled=true;play.textContent='Runtime error';status.textContent=e.message;console.error(e);window.rhf.error=e.stack;}
 try{
+ await requireAssets(gameUrl.pathname.split('/').filter(Boolean).at(-1));
  const context=new AudioContext({latencyHint:'interactive'});audio=context;
- const musicData=fetch(new URL('assets/music.wav',gameUrl)).then(r=>r.arrayBuffer()).then(b=>audio.decodeAudioData(b));
+ const musicData=assetResponse(new URL('assets/music.wav',gameUrl)).then(r=>r.arrayBuffer()).then(b=>audio.decodeAudioData(b));
  g=await loadGame(gameUrl);
  const {title,action}=g.manifest;document.title=title;canvas.setAttribute('aria-label',title+' game');
  document.querySelector('h1').textContent=title;for(const e of document.querySelectorAll('.controls'))e.textContent='Space / X / click · '+action;
  renderer=await createRenderer(g,canvas);renderer.draw();music=await musicData;sfx=await createAudio(audio,gameUrl,{envelope:g.envelope});
- window.rhf={g,renderer,audio,sfx,inputs:input.presses,metrics,heardTime,stats:g.stats,result:null,get frame(){return frame;},get track(){return track;}};
+ results=await createResults(g,canvas);
+ window.rhf={g,renderer,audio,sfx,results,inputs:input.presses,metrics,heardTime,stats:g.stats,result:null,get track(){return track;},get phase(){return phase;},get frame(){return frame;}};
  play.disabled=false;play.textContent='Play';
 }catch(e){fail(e);}
 // Every sound plays at its chart tick on the audio clock: the chart's own sounds from the build's
@@ -61,8 +65,9 @@ function heardTime(){
  if(t&&t.performanceTime>0&&performance.now()-t.performanceTime<100)return Math.min(audio.currentTime,t.contextTime+(performance.now()-t.performanceTime)/1000);
  return audio.currentTime-(audio.outputLatency||0)-(audio.baseLatency||0);
 }
-function press(){if(!running)return;input.push(Math.max(frame+1,Math.floor(Math.max(0,heardTime()-startTime)*60)+1));}
+function press(){if(!running)return;if(phase==='results'){results.input(true);return;}input.push(Math.max(frame+1,Math.floor(Math.max(0,heardTime()-startTime)*60)+1));}
 const pollGamepad=bindControls(canvas,{press,
+ release(){if(running&&phase==='results')results.input(false);},
  pause(){if(running)pause();else if(paused)play.click();},
  start(){if(!running&&!play.disabled){play.click();return true;}return false;}});
 // Starts the song. A later versus mode calls this when both players are ready.
@@ -80,12 +85,17 @@ document.querySelector('#restart').onclick=()=>location.reload();
 // The song ends at this second of the backing track.
 const endSeconds=()=>g.manifest.wii.endsWithMusic?Math.max(music.duration,g.secondsAtTick(g.timeline.endTick)):g.secondsAtTick(g.timeline.endTick);
 function finish(){
- running=false;const result=g.result();window.rhf.result=result;
- status.textContent=`${result.hits} hits · ${result.misses} misses · ${result.through} through`;overlay.hidden=false;play.textContent='Play again';play.onclick=()=>location.reload();
+ phase='results';sfx.stop();resultsStart=audio.currentTime+.06;
+ const result=results.begin(sfx,resultsStart);window.rhf.result=result;status.textContent='';
  window.dispatchEvent(new CustomEvent('rhf-result',{detail:result}));
 }
 function loop(){if(!running)return;try{
  pollGamepad();
+ if(phase==='results'){
+  results.draw(heardTime()-resultsStart);
+  if(results.done){running=false;sfx.stop();audio.suspend();location.href=new URL('../',gameUrl).href;return;}
+  requestAnimationFrame(loop);return;
+ }
  const began=performance.now();const elapsed=Math.max(0,heardTime()-startTime);
  const target=Math.floor(elapsed*60);
  while(frame<target){frame++;
@@ -96,7 +106,7 @@ function loop(){if(!running)return;try{
  schedule();
  renderer.draw();metrics.push({frame,ms:performance.now()-began,catchUp:Math.max(0,target-frame)});
  if(track.posAt(elapsed)>=endSeconds())finish();
- else requestAnimationFrame(loop);
+ requestAnimationFrame(loop);
  }catch(e){fail(e);}}
 
 async function pause(){if(!running)return;running=false;paused=true;await audio.suspend();overlay.hidden=false;play.textContent='Resume';}

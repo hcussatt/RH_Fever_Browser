@@ -99,19 +99,21 @@ def audio_groups():
     if not loads:raise SystemExit(f'{GAME}: no sound group load includes the music (file {music_file})')
     files={}
     # Group 0 is the system set every minigame shares (SE_MISS and the other common sounds).
-    for gi in dict.fromkeys([0]+[gi for l in loads for gi in l]):
+    # GROUP_RESULT (162), loaded by the original grading chart lbl_801F97A0.
+    for gi in dict.fromkeys([0,162,163]+[gi for l in loads for gi in l]):
         g,group_items=items(gi);found={}
         for item in group_items:
             fid,off,size,woff,wsize=struct.unpack_from('>5I',b,item)
             metadata=b[u32(b,g+16)+off:u32(b,g+16)+off+size]
             found[fid]=(metadata,b[u32(b,g+24)+woff:u32(b,g+24)+woff+wsize])
-        if music_file not in found and not any(m[:4] in (b'RBNK',b'RSEQ') for m,_ in found.values()):
+        if gi not in (162,163) and music_file not in found and not any(m[:4] in (b'RBNK',b'RSEQ') for m,_ in found.values()):
             continue
         for fid,(metadata,wave_data) in found.items():
             files[fid]={'magic':metadata[:4].decode('ascii'),'metadata':f'file-{fid}.bin','waves':f'wave-{fid}.bin' if wave_data else None}
             (OUT/f'file-{fid}.bin').write_bytes(metadata)
             if wave_data:(OUT/f'wave-{fid}.bin').write_bytes(wave_data)
-    names={int(i):n for n,i in re.findall(r'unsigned int (\w+) = (\d+);',(DECOMP/'build_default/SOME01/include/rev_tengoku.rsid').read_text()) if n.startswith(('SE_','WSD_'))}
+    labels=DECOMP/'build_default/SOME01/include/rev_tengoku.rsid'
+    names={int(i):n for n,i in re.findall(r'unsigned int (\w+) = (\d+);',labels.read_text()) if n.startswith(('SE_','WSD_'))} if labels.exists() else {int(i):n for i,n in PROFILE.get('soundNames',{}).items()}
     records={}
     for sid in range(u32(b,sounds)):
         if file_of(sid) not in files:continue

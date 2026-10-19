@@ -3,17 +3,18 @@
 // driven like CLayoutAnimation (src/GameUtil/LayoutAnimation.cpp) and CLayout::_18.
 // The game's code drives it through layout events (11) from the platform backend: play or stop
 // an animation, set a text box's message, or offset a pane (see adapters/<game>/game.h).
-export async function createLayout(g){
- const spec=g.manifest.wii.layout;if(!spec)return null;
+import {assetResponse,assetImage} from './assets.mjs';
+export async function createLayout(g,{spec=g.manifest.wii.layout,file='layout.json',fontFile='layout-font.png'}={}){
+ if(!spec)return null;
  const asset=n=>new URL('assets/'+n,g.base);
- const data=await (await fetch(asset('layout.json'))).json();
- const load=async n=>{const i=new Image();i.src=asset(n);await i.decode();return i;};
+ const data=await (await assetResponse(asset(file))).json();
+ const load=n=>assetImage(asset(n));
  const images=Object.fromEntries(await Promise.all(Object.entries(data.images).map(async([k,v])=>[k,await load(v)])));
- const fontImage=await load('layout-font.png');
+ const fontImage=await load(fontFile);
  const byName=Object.fromEntries(data.panes.map((p,i)=>[p.name,i]));
  const children=data.panes.map(()=>[]);data.panes.forEach((p,i)=>{if(p.parent!=null)children[p.parent].push(i);});
  // Live pane values (animations write into them and they keep the last value, as in nw4r).
- const panes=data.panes.map(p=>({...p,translate:[...p.translate],scale:[...p.scale],size:[...p.size],text:''}));
+ const panes=data.panes.map(p=>({...p,translate:[...p.translate],scale:[...p.scale],size:[...p.size],fontSize:p.fontSize&&[...p.fontSize],text:''}));
  const materialImage=data.materials.map(m=>m.texture==null?null:data.textures[m.texture]);
  const animations=spec.animations.map(([pane,name])=>{
   const anim=data.animations[name],root=byName[pane],inTree=new Set();
@@ -45,6 +46,7 @@ export async function createLayout(g){
     if(t<2)p.translate[t]=v;else if(t===5)p.rotate=v;else if(t===6||t===7)p.scale[t-6]=v;else if(t===8||t===9)p.size[t-8]=v;
    }
    if(tags.RLVC?.[16])p.alpha=Math.min(Math.max(hermite(tags.RLVC[16],f)+.5,0),255)|0;
+   if(tags.RLVI?.[0])p.visible=!!step(tags.RLVI[0],f);
    if(tags.RLTP?.[0]){const m=data.materials.findIndex(m=>m.name===name);if(m>=0)materialImage[m]=a.anim.timg[step(tags.RLTP[0],f)];}
   }
  }
@@ -82,20 +84,20 @@ export async function createLayout(g){
  const tinted=new Map();
  // The material's TEV setup: colour = lerp(color0, color1, texture intensity), alpha likewise
  // from the texture's alpha.
- function tint(image,m){
-  const key=image.src+'|'+m.color0+'|'+m.color1;if(tinted.has(key))return tinted.get(key);
+ function tint(image,m,color=[255,255,255,255]){
+  const key=image.src+'|'+m.color0+'|'+m.color1+'|'+color;if(tinted.has(key))return tinted.get(key);
   const c=document.createElement('canvas');c.width=image.width;c.height=image.height;
   const x=c.getContext('2d');x.drawImage(image,0,0);const d=x.getImageData(0,0,c.width,c.height),p=d.data;
-  for(let k=0;k<p.length;k+=4){const i=p[k]/255,a=p[k+3]/255;
-   for(let ch=0;ch<3;ch++)p[k+ch]=m.color0[ch]+(m.color1[ch]-m.color0[ch])*i;
-   p[k+3]=m.color0[3]+(m.color1[3]-m.color0[3])*a;}
+  for(let k=0;k<p.length;k+=4){const a=p[k+3]/255;
+   for(let ch=0;ch<3;ch++)p[k+ch]=(m.color0[ch]+(m.color1[ch]-m.color0[ch])*p[k+ch]/255)*color[ch]/255;
+   p[k+3]=(m.color0[3]+(m.color1[3]-m.color0[3])*a)*color[3]/255;}
   x.putImageData(d,0,0);tinted.set(key,c);return c;
  }
  const mul=(a,b)=>[a[0]*b[0]+a[2]*b[1],a[1]*b[0]+a[3]*b[1],a[0]*b[2]+a[2]*b[3],a[1]*b[2]+a[3]*b[3],a[0]*b[4]+a[2]*b[5]+a[4],a[1]*b[4]+a[3]*b[5]+a[5]];
  const rect=p=>{const [w,h]=p.size,hx=p.origin%3,vy=Math.floor(p.origin/3);return {left:-w*hx/2,top:h*vy/2,w,h};};
  function drawPicture(ctx,p,m,alpha){
   const name=materialImage[p.material];if(!name)return;
-  const img=tint(images[name],data.materials[p.material]),r=rect(p),W=img.width,H=img.height;
+  const img=tint(images[name],data.materials[p.material],p.vertexColors?.[0]),r=rect(p),W=img.width,H=img.height;
   // Map texture coordinates of the top-left, top-right and bottom-left corners onto the pane.
   const [t0,t1,t2]=p.texcoords||[[0,0],[1,0],[0,1]];
   const ux=(t1[0]-t0[0])*W,uy=(t1[1]-t0[1])*H,vx=(t2[0]-t0[0])*W,vy=(t2[1]-t0[1])*H,det=ux*vy-uy*vx;if(!det)return;
@@ -104,11 +106,27 @@ export async function createLayout(g){
   const inv=[vy/det,-uy/det,-vx/det,ux/det];
   const A=[ax[0]*inv[0]+ay[0]*inv[1],ax[1]*inv[0]+ay[1]*inv[1],ax[0]*inv[2]+ay[0]*inv[3],ax[1]*inv[2]+ay[1]*inv[3]];
   const ox=r.left-(A[0]*t0[0]*W+A[2]*t0[1]*H),oy=r.top-(A[1]*t0[0]*W+A[3]*t0[1]*H);
-  ctx.setTransform(...mul(m,[A[0],A[1],A[2],A[3],ox,oy]));ctx.globalAlpha=alpha;ctx.drawImage(img,0,0);
+  ctx.save();ctx.setTransform(...m);ctx.beginPath();ctx.rect(r.left,r.top-r.h,r.w,r.h);ctx.clip();
+  ctx.setTransform(...mul(m,[A[0],A[1],A[2],A[3],ox,oy]));ctx.globalAlpha=alpha;
+  if(p.texcoords?.some(t=>t.some(x=>x<0||x>1))){ctx.fillStyle=ctx.createPattern(img,'repeat');ctx.fillRect(Math.min(...p.texcoords.map(t=>t[0]))*W,Math.min(...p.texcoords.map(t=>t[1]))*H,Math.abs(ux)+Math.abs(vx),Math.abs(uy)+Math.abs(vy));}
+  else ctx.drawImage(img,0,0);
+  ctx.restore();
+ }
+ function drawWindow(ctx,p,m,alpha){
+  if(p.frames.length!==1)throw new Error('Unsupported original window frame count');
+  const material=data.materials[p.frames[0].material],img=tint(images[data.textures[material.texture]],material),r=rect(p);
+  const w=img.width,h=img.height;
+  ctx.setTransform(...m);ctx.globalAlpha=alpha;ctx.fillStyle='#fff';ctx.fillRect(r.left+w,-r.top,r.w-2*w,r.h);if(r.h>2*h)ctx.fillRect(r.left,-r.top+h,r.w,r.h-2*h);
+  // NW4R's one-frame window mirrors its single corner into all four corners.
+  for(const [right,bottom] of [[0,0],[1,0],[0,1],[1,1]]){
+   ctx.save();ctx.translate(r.left+(right?r.w:0),-r.top+(bottom?r.h:0));ctx.scale(right?-1:1,bottom?-1:1);ctx.drawImage(img,0,0);ctx.restore();
+  }
+  ctx.drawImage(img,w-1,0,1,h,r.left+w,-r.top,r.w-2*w,h);
+  ctx.save();ctx.translate(0,-r.top*2+r.h);ctx.scale(1,-1);ctx.drawImage(img,w-1,0,1,h,r.left+w,-r.top,r.w-2*w,h);ctx.restore();
  }
  function drawText(ctx,p,m,alpha){
   if(!p.text)return;
-  const font=data.font,img=tint(fontImage,data.materials[p.material]);
+  const font=data.font,img=tint(fontImage,data.materials[p.material],p.colors?.[0]);
   const sx=p.fontSize[0]/font.width,sy=p.fontSize[1]/font.height,lineHeight=font.lineFeed*sy+p.lineSpace;
   const glyph=c=>font.glyphs[c.codePointAt(0)];
   const lines=p.text.split('\n').map(l=>{const gs=[...l].map(glyph).filter(Boolean);return {gs,width:gs.reduce((s,g)=>s+g.charWidth*sx+p.charSpace,0)-(gs.length?p.charSpace:0)};});
@@ -138,6 +156,7 @@ export async function createLayout(g){
   const alpha=influenced?p.alpha*parentAlpha/255:p.alpha;
   if(alpha>0){
    if(p.kind==='picture')drawPicture(ctx,p,mul(m,[1,0,0,-1,0,0]),alpha/255);
+   else if(p.kind==='window')drawWindow(ctx,p,m,alpha/255);
    else if(p.kind==='text')drawText(ctx,p,m,alpha/255);
   }
   for(const k of children[i])drawPane(ctx,k,m,alpha,p.influencedAlpha);
@@ -148,5 +167,7 @@ export async function createLayout(g){
   drawPane(ctx,0,root,255,false);
   ctx.globalAlpha=1;
  }
- return {draw,update,panes,animations};
+ function textWidth(p,text=p.text){const font=data.font,sx=p.fontSize[0]/font.width;return Math.max(0,...text.split('\n').map(l=>[...l].reduce((n,c)=>n+(font.glyphs[c.codePointAt(0)]?.charWidth||0)*sx+p.charSpace,0)-(l.length?p.charSpace:0)));}
+ function fitText(p,width,height){p.fontSize=[width,height];const w=textWidth(p),scale=w>p.size[0]?p.size[0]*.95/w:1;p.fontSize[0]*=scale;return scale;}
+ return {draw,update,panes,animations,byName,data,fitText};
 }

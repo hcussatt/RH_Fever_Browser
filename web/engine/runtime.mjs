@@ -2,7 +2,7 @@
 // Everything game-specific comes from the game's manifest (games/<id>/game.json);
 // everything else is read from files the build extracted from the user's ISO.
 import {createClock} from './clock.mjs';
-const fetchBytes=async url=>new Uint8Array(await (await fetch(url)).arrayBuffer());
+import {assetBytes as fetchBytes} from './assets.mjs';
 // gameUrl: the game's folder (dist/<id>/). load: url -> bytes (Node tests pass readFile).
 // The chart runs live in the original interpreter. original-timeline.json is the build's silent
 // dry run of it (chart sounds, cue ticks, end tick); the dry run itself loads with timeline:false.
@@ -12,7 +12,7 @@ export async function loadGame(gameUrl,load=fetchBytes,{timeline:withTimeline=tr
  const manifest=await json(new URL('game.json',base)),profile=manifest.wii;
  const read=name=>load(new URL('assets/'+name,base));
  const {default:createCore}=await import(new URL(`${manifest.id}-core.mjs`,base));
- const [assets,segments,chart,timeline,core]=await Promise.all([json(new URL('assets/original-assets.json',base)),json(new URL('assets/original-segments.json',base)),json(new URL('assets/original-chart.json',base)),withTimeline?json(new URL('assets/original-timeline.json',base)):null,createCore()]);
+ const [assets,segments,chart,timeline,core,gradingData]=await Promise.all([json(new URL('assets/original-assets.json',base)),json(new URL('assets/original-segments.json',base)),json(new URL('assets/original-chart.json',base)),withTimeline?json(new URL('assets/original-timeline.json',base)):null,createCore(),json(new URL('assets/results.json',base))]);
  const clock=createClock(chart);
  core._reset_runtime();
  const ramBase=core._ram_ptr()-0x80000000;
@@ -32,10 +32,16 @@ export async function loadGame(gameUrl,load=fetchBytes,{timeline:withTimeline=tr
   core._install_bank(id,b.animations.length,ap,cp);
  });
  core._set_tempo(clock.tempoAtTick(0));core._initialize_scene();
+ // Original grading routines operate on Wii UTF-16 strings and original criteria
+ // pointers. Message lookup is the platform adapter; no grading is done in JS.
+ const messages=Object.entries(gradingData.messages),messageTable=alloc(messages.length*8);
+ messages.forEach(([id,text],i)=>{const p=alloc((text.length+1)*2);for(let k=0;k<text.length;k++)w16(p+k*2,text.charCodeAt(k));w16(p+text.length*2,0);w32(messageTable+i*8,+id);w32(messageTable+i*8+4,p);});
+ core._install_messages(messageTable,messages.length);
+ core._configure_grading_prompt(gradingData.prompt.bank.animations[0].reduce((n,k)=>n+k.frames,0));
  const f32bits=new DataView(new ArrayBuffer(4));
  const rest=bits=>(f32bits.setUint32(0,bits),f32bits.getFloat32(0));
  let tick=0,ended=false,endTick=null;
- const sounds=[],chartSounds=[],gameSounds=[],commands=[],cues=[];const options={chartAudioScheduled:false};
+ const resultEvents=[];const sounds=[],chartSounds=[],gameSounds=[],commands=[],cues=[];const options={chartAudioScheduled:false};
  // Each event: kind, value, extra, frame, sound handle (see platform.c emit_handle).
  function drain(){const n=core._events_count(),p=core._events_ptr();const out=[];for(let i=0;i<n;i++)out.push(Array.from(core.HEAPU32.subarray(p/4+i*5,p/4+i*5+5)));core._events_clear();return out;}
  function frame(ticks,press){
@@ -107,6 +113,7 @@ export async function loadGame(gameUrl,load=fetchBytes,{timeline:withTimeline=tr
    else if(e[0]===11)layoutEvents.push({frame:steps,action:e[1],value:e[2]});
    else if(e[0]===13)musicVolumes.push({tick:frameTick,frames:e[1],volume:rest(e[2])});
    else if(e[0]===14)speeds.push({tick:frameTick+rest(e[2]),speed:rest(e[1])});
+   else if(e[0]===20||e[0]===22)resultEvents.push(e);
   }
  }
  // Sounds and tuning from before the music started (the scene's setup and the chart's lead-in):
@@ -132,6 +139,20 @@ export async function loadGame(gameUrl,load=fetchBytes,{timeline:withTimeline=tr
  }
  // Judgment counters kept by the platform backend (adapters/wii/platform.c stat()).
  const stats=()=>Array.from({length:9},(_,i)=>core._stat(i));
- function result(){const s=stats();return {hits:s[0],misses:s[1],through:s[2],stray:s[3],perfectFailed:s[4]};}
- return {manifest,base,core,options,assets,chart,clock,secondsAtTick:clock.secondsAtTick,tickAtSeconds:clock.tickAtSeconds,banks,timeline,step,drain,sounds,chartSounds,gameSounds,commands,cues,layoutEvents,tunes,speeds,musicVolumes,get steps(){return steps;},envelope,stats,result,u8,u16,u32,f32,w8,w16,w32,wf,alloc,offset,get tick(){return tick;},get ended(){return ended;},get endTick(){return endTick;}};
+ const wideString=p=>{let text='';for(let i=0;i<256;i++){const c=u16(p+i*2);if(!c)return text;text+=String.fromCharCode(c);}throw new Error('Unterminated original grading comment');};
+ function result(){
+  const s=stats();core._calculate_grade();const cp=u32(0x8032016c),follow=!!u8(cp+0xde),count=u32(cp+0xc8);
+  const comments=Array.from({length:count},(_,i)=>wideString(cp+0xe0+i*130));
+  const tail=follow?comments.pop():'';const prefix=wideString(u32(cp+0x2f4));
+  return {hits:s[0],misses:s[1],through:s[2],stray:s[3],perfectFailed:s[4],grade:u32(cp+0x2fc),but:!!u8(cp+0xdf),caption:gradingData.caption,comments,
+   follow:follow?prefix+tail.replace(/^[A-Z]/,c=>c.toLowerCase()):'',
+   categories:Array.from({length:u8(cp+0xc4)},(_,i)=>({total:u16(cp+4+i*20),hits:u16(cp+6+i*20),misses:u16(cp+8+i*20),through:u16(cp+10+i*20)}))};
+ }
+ let gradingFrame=0;
+ function startGrading(){core._events_clear();core._start_grading();gradingFrame=0;}
+ function stepGrading(press=false){
+  if(press){core._grading_input(1);core._grading_input(0);}core._grading_frame();gradingFrame++;
+  return drain().map(e=>({kind:e[0],value:e[1],extra:e[2],frame:gradingFrame,seconds:gradingFrame/60+((e[0]===5||e[0]===20||e[0]===21)?rest(e[2])/(core._grading_tempo()*.8):0)}));
+ }
+ return {manifest,base,core,options,assets,chart,clock,secondsAtTick:clock.secondsAtTick,tickAtSeconds:clock.tickAtSeconds,banks,timeline,step,drain,sounds,chartSounds,gameSounds,tunes,speeds,musicVolumes,commands,cues,layoutEvents,get steps(){return steps;},envelope,stats,result,gradingData,resultEvents,startGrading,stepGrading,u8,u16,u32,f32,w8,w16,w32,wf,alloc,offset,get tick(){return tick;},get ended(){return ended;},get endTick(){return endTick;}};
 }

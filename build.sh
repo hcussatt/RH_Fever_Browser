@@ -16,29 +16,34 @@ fi
 iso="$1"
 skip_tests=${2:-}
 
-[ -d .toolchain ] && export PATH="$PWD/.toolchain/emsdk/upstream/emscripten:$PWD/.toolchain/binutils:$PATH"
-for tool in python3 node emcc "${RHF_OBJDUMP:-powerpc-eabi-objdump}"; do
+. ./tools/env.sh
+for tool in node emcc "${RHF_OBJDUMP:-powerpc-eabi-objdump}"; do
   command -v "$tool" >/dev/null 2>&1 || { echo "Missing $tool. Run tools/setup-toolchain.sh first (see README)." >&2; exit 1; }
 done
+"$RHF_PYTHON" -c 'import numpy, PIL, cryptography' || {
+  echo 'Missing Python packages. Create .venv with Python 3.10+ and install requirements.txt there.' >&2
+  exit 1
+}
 
 git submodule update --init third_party/rhf-decomp
 
 echo "== Reading files from your ISO"
-python3 tools/extract-disc.py "$iso"
+"$RHF_PYTHON" tools/extract-disc.py "$iso"
 
 # Every game with a manifest in games/<id>/game.json.
-games=$(python3 -c 'import sys; sys.path.insert(0, "tools"); from paths import GAMES; print(*GAMES)')
+games=$("$RHF_PYTHON" -c 'import sys; sys.path.insert(0, "tools"); from paths import GAMES; print(*GAMES)')
 for game in $games; do
   echo "== $game: translating original code"
-  RHF_GAME=$game python3 tools/recompile.py
+  RHF_GAME=$game "$RHF_PYTHON" tools/recompile.py
   tools/build-core.sh "$game"
   echo "== $game: finding the chart"
-  RHF_GAME=$game python3 tools/chart-index.py
+  RHF_GAME=$game "$RHF_PYTHON" tools/chart-index.py
   echo "== $game: converting assets"
-  RHF_GAME=$game python3 tools/extract-assets.py >/dev/null
-  RHF_GAME=$game python3 tools/extract-sfx.py >/dev/null
-  RHF_GAME=$game python3 tools/extract-layout.py >/dev/null
-  RHF_GAME=$game python3 tools/decode-music.py
+  RHF_GAME=$game "$RHF_PYTHON" tools/extract-assets.py >/dev/null
+  RHF_GAME=$game "$RHF_PYTHON" tools/extract-sfx.py >/dev/null
+  RHF_GAME=$game "$RHF_PYTHON" tools/extract-layout.py >/dev/null
+  RHF_GAME=$game "$RHF_PYTHON" tools/extract-results.py
+  RHF_GAME=$game "$RHF_PYTHON" tools/decode-music.py
   tools/stage-web.sh "$game"
   node tools/chart-timeline.mjs "$game"
 done

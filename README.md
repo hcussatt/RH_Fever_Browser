@@ -10,22 +10,41 @@ is a real-time multiplayer mod.
 
 Playable today: **Hole in One**, **Tap Trial**, **Love Rap** and **Sneaky Spirits**.
 
-## No game files in this repository
+## Runtime code here; assets stay local
 
-This repository contains only original tooling, adapters and page code. It has
-no game executable, graphics, charts, sounds or translated game code, and it
-will not run without a disc image you supply. `./build.sh` reads everything it
-needs from your ISO into `build/` and `dist/`, which git ignores.
+The hosted player publishes the engine and compiled game runtime. Approved
+translated C snapshots in `runtime-src/` let CI compile that runtime without an
+ISO. Graphics, charts, sound, original data sections, the original executable,
+and the Wii common key are not published. Players select their own ISO and key;
+an asset converter runs in a browser worker and stores prepared games locally.
+The ISO is read in slices, never uploaded or copied wholesale into browser storage.
 
 `scripts/check-clean.py` blocks commits that contain disc images, executables,
-Nintendo formats, WASM, decoded media, translated game code, the Wii common key,
-or any 64-byte run copied from your `main.dol`. Turn the hook on once per clone:
+Nintendo formats, decoded media, the Wii common key, and original binary data.
+Only the three named `runtime-src/<game>/original-functions.inc` code snapshots
+are exempt from the generated-code rule. A separate deployment audit checks the
+public output, allowing only the compiled per-game WASM artifacts. Turn the hook on once per clone:
 
 ```sh
 git config core.hooksPath hooks
 ```
 
 The same check runs on every push in GitHub Actions.
+
+## GitHub Pages
+
+See [deployment and validation](docs/pages.md). Pushes to `main` build and test the
+public player, audit its contents, and deploy it to Pages. Pull requests build
+and test the same artifact without deploying. A repository administrator must
+select **Settings → Pages → Source → GitHub Actions** once.
+
+The hosted player needs a desktop browser, your ISO and your key; no local Python,
+Node or compiler is needed. The first import downloads pinned Pyodide 0.27.7 and
+its NumPy/Pillow/cryptography packages. Prepared assets use browser Cache Storage.
+After import and successful service worker installation, the runtime can load
+offline. Browser storage may be cleared or evicted; persistent storage is requested.
+UI-only updates preserve compatible asset imports. Changed runtimes/converters
+can require reimport. There is no built-in Internet Archive downloader.
 
 ## What you need
 
@@ -40,6 +59,9 @@ The same check runs on every push in GitHub Actions.
 ```sh
 git clone --recurse-submodules <this repo> rhf-web && cd rhf-web
 git config core.hooksPath hooks
+# Use an installed Python 3.10+ executable here; macOS /usr/bin/python3 may be 3.9.
+python3.11 -m venv .venv
+.venv/bin/python3 -m pip install -r requirements.txt
 tools/setup-toolchain.sh
 ./build.sh "/path/to/Rhythm Heaven Fever (USA).iso"
 ./serve.sh --open
@@ -47,6 +69,11 @@ tools/setup-toolchain.sh
 
 Open the printed URL in Chrome and pick a game. Space, X, click or gamepad A
 plays; Escape pauses. Click once first so the browser allows sound.
+
+The build and installer automatically use `.venv` when present, otherwise they
+look for Python 3.10+ on PATH. `RHF_PYTHON=/path/to/python3` overrides that choice;
+the same interpreter is passed to Emscripten. If installation previously stopped
+with an old-Python error, rerun `tools/setup-toolchain.sh` after fixing Python.
 
 ## Wii common key
 

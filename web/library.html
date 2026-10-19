@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#ee4d36"><title>Rhythm Heaven Fever · Arcade</title>
+<link rel="stylesheet" href="import/cabinet.css">
+<main>
+<header class="page-header"><a class="wordmark" href="./">RHF / BROWSER</a><span class="local-light">FREE PLAY</span></header>
+<div class="cabinet">
+  <header class="marquee"><h1>RHYTHM HEAVEN FEVER</h1></header>
+  <section class="screen-bezel" aria-label="Game selection">
+    <div class="screen">
+      <div class="screen-top"><span><i></i> SELECT YOUR GAME</span><span>FREE PLAY</span></div>
+      <div class="screen-content">
+        <nav id="games" aria-label="Minigames"></nav>
+        <section class="game-preview" aria-live="polite">
+          <div id="selected-art" hidden></div>
+          <p class="game-number">GAME <span id="selected-number">01</span> / 03</p><h2 id="selected-title">Hole in One</h2><p id="selected-status">Prepare from your disc</p><div id="selected-action"><button class="screen-button" id="screen-import">INSERT YOUR DISC <span>↗</span></button></div>
+        </section>
+      </div>
+      <div class="screen-bottom"><span>SPACE / X / CLICK</span><span>1 PLAYER</span></div>
+    </div>
+  </section>
+  <section class="control-deck" aria-label="Cabinet controls"><span>YOUR DISC. LOCAL PLAY.</span><div class="deck-buttons"><button id="open-import" aria-label="Load your disc">LOAD DISC</button><button id="help" aria-label="How to play">CONTROLS</button></div></section>
+</div>
+<footer class="page-footer"><span>USA / SOME01</span><span id="version">LOADING…</span></footer>
+</main>
+<dialog id="import-dialog" aria-labelledby="import-title"><div class="dialog-top"><span>LOCAL DISC IMPORT</span><button id="close-import" class="close" aria-label="Close import">×</button></div><div class="dialog-body"><h2 id="import-title">Let’s get you playing.</h2><p>Choose your USA Wii ISO. We’ll prepare the graphics and sound right here. Your disc and key never leave this browser.</p>
+<form id="import-form"><label for="iso">01 &nbsp; YOUR DISC IMAGE</label><input id="iso" type="file" accept=".iso" required><p class="hint">Raw SOME01 ISO · 4.7 GB · Convert RVZ / WBFS first.</p>
+<label for="key">02 &nbsp; WII COMMON KEY</label><input id="key" type="password" autocomplete="off" spellcheck="false" pattern="[0-9a-fA-F]{32}" minlength="32" maxlength="32" aria-describedby="key-hint" placeholder="32 hexadecimal digits"><p id="key-hint" class="hint">Used for this import only. Never uploaded or saved.</p>
+<label class="file-label" for="key-file">Or choose a key text file</label><input id="key-file" type="file" accept=".txt">
+<div class="actions"><button id="import" class="primary" type="submit">PREPARE MY GAMES →</button><button id="cancel" class="secondary" type="button" hidden>Cancel import</button></div></form>
+<p id="progress" role="status" aria-live="polite">First import takes a few minutes. Keep this tab open.</p><progress id="busy" aria-label="Preparing local game data" hidden></progress>
+<div class="storage-row"><p class="hint" id="storage"></p><button id="remove" class="text-button" type="button">Remove local game data</button></div></div></dialog>
+<dialog id="help-dialog"><div class="dialog-top"><span>HOW TO PLAY</span><button id="close-help" class="close" aria-label="Close help">×</button></div><div class="dialog-body"><h2>It’s all in the timing.</h2><p>Load your disc once, pick a game, and follow the rhythm.</p><dl><dt>Play / A</dt><dd>Space, X, click, or gamepad A</dd><dt>Pause</dt><dd>Escape</dd></dl><p>Desktop Chrome recommended. Games stay on this device until you clear site data.</p></div></dialog>
+<dialog id="confirm-remove"><div class="dialog-body"><h2>Remove local game data?</h2><p>You’ll need your ISO to prepare these games again.</p><form method="dialog" class="actions"><button value="cancel" class="secondary">Keep games</button><button value="remove" class="primary">Remove data</button></form></div></dialog>
+<script type="module" src="import/library.mjs"></script>
+</html>
