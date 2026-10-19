@@ -161,6 +161,18 @@ game plays its two animations (`baseball_frm_change_00/01`, forward, reversed or
 straight to the end) as it changes view, and the same events drive them. `tools/extract-layout.py` writes `message-layouts.json` for every
 game.
 
+### "You" markers
+
+`CExScene::_08` makes three cell animations from the permanent bank
+(`permanent.brcad`): `permanent_you`, `_you_1P` and `_you_2P`, stored at
+`0x80320200..08` under canvas 2 at layer -100. Games that mark the player's
+character (Hole in One, Love Rap, See-Saw, Donk-Donk, Bossa Nova) place and show
+them through the original `CExScene` calls; the others never enable them.
+`tools/extract-results.py` stores the bank in `results.json`, `platform.c`
+installs it as bank 254 (`install_permanent`), `CExScene::_20` hides the markers
+again on scene changes, and the renderer hides marker 0 in instruction-example
+mode like `CExScene::_1C`.
+
 ## Audio
 
 `web/engine/audio.mjs` plays the original samples with Web Audio, following the

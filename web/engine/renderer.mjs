@@ -20,7 +20,8 @@ async function sceneLayouts(g){
  }};
 }
 export async function createRenderer(g,canvas){
- const images=await Promise.all(g.assets.textures.map(n=>assetImage(new URL('assets/'+n,g.base))));
+ // The game's textures, then the permanent bank's (bank 254, see runtime.mjs).
+ const images=await Promise.all([...g.assets.textures,...(g.gradingData.permanent?.textures||[])].map(n=>assetImage(new URL('assets/'+n,g.base))));
  const ctx=canvas.getContext('2d',{alpha:false});
  const layout=g.manifest.wii.scenes?await sceneLayouts(g):await createLayout(g),messages=await createMessages(g);
  const {u8,u16,u32,f32,core,banks}=g;
@@ -79,7 +80,9 @@ export async function createRenderer(g,canvas){
   // Screen units from the manifest. Tap Trial uses the original wide projection,
   // x +/-416, y +/-228 (CellAnimManager::setupProj); Hole in One's 854x480 is not yet qualified.
   const [w,h]=g.manifest.wii.projection,origin=[canvas.width/w,0,0,canvas.height/h,canvas.width/2,canvas.height/2];
-  const drawn=actors.filter(a=>u8(a+12)!==255&&u8(a+0xa7)&&!(u32(a+0xb0)&&u8(a+0xc2))).sort((a,b)=>(u32(b+0x98)|0)-(u32(a+0x98)|0));
+  // CExScene::_1C hides the "you" marker while the screen shows an instruction example (lbl_80320228).
+  const hiddenYou=u8(0x80320228)?u32(0x80320200):0;
+  const drawn=actors.filter(a=>u8(a+12)!==255&&u8(a+0xa7)&&a!==hiddenYou&&!(u32(a+0xb0)&&u8(a+0xc2))).sort((a,b)=>(u32(b+0x98)|0)-(u32(a+0x98)|0));
   for(const a of drawn)drawActor(a,origin);
   layout?.draw(ctx,canvas);messages.draw(ctx,canvas);
   ctx.globalAlpha=1;

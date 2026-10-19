@@ -55,6 +55,9 @@ static uint32_t named_bank_count,file_names[512],file_count;
 void finish_frame(void);
 typedef struct {uint32_t count,animations,cells;} Bank;
 static Bank banks[256];
+// Bank 255 is the platform's never-drawn placeholder; 254 holds the permanent bank (install_permanent).
+#define PERMANENT_BANK 254
+static uint32_t you_animations[3];
 EM_JS(void,panic_js,(uint32_t address,uint32_t kind,uint32_t pc,uint32_t stack,uint32_t depth),{console.error(Array.from(HEAPU32.subarray(stack/4,stack/4+depth)).map(x=>x.toString(16)));throw new Error('Original code '+kind+' at 0x'+address.toString(16)+' after 0x'+pc.toString(16));});
 #define panic(a,k) panic_js(a,k,lr,(uint32_t)(uintptr_t)trace,call_depth)
 static uint32_t idx(uint32_t a){if(a<0x80000000u||a>=0x82000000u)panic(a,1);return a-0x80000000u;}
@@ -209,7 +212,10 @@ static void canvas_default(uint32_t i){
 // (canvases, input checkers, the chart's input remaps and the layouts), flows above category 0 end
 // and the rest carry on as plain CExFlows until the next scene registers its own class.
 static void ex_scene_unload(void){
+  // The "you" markers: hidden, scale 1, back on the default base (canvas 2).
+  for(uint32_t i=0;i<3;i++){uint32_t you=rd32(0x80320200+i*4);wr8(you+0xa7,0);wrf32(you+0x8c,1);wrf32(you+0x90,1);}
   base_canvas=canvas[2];for(uint32_t i=2;i<=9;i++)canvas_default(i);
+  for(uint32_t i=0;i<3;i++){r[3]=rd32(0x80320200+i*4);r[4]=base_canvas;r[5]=0;r[6]=0;call(0x801dcfa4);}
   checker_count=0;for(int i=0;i<256;i++)input_map[i]=i;
   layout_count=0;emit(15,MESG_CLEAR<<8,0); // CLayoutManager::fn_801D6BB0
   end_flows_above(0);register_flow(0x8008d2cc);
@@ -496,6 +502,10 @@ EMSCRIPTEN_KEEPALIVE uint32_t events_count(void){return event_count;}
 EMSCRIPTEN_KEEPALIVE void events_clear(void){event_count=0;}
 EMSCRIPTEN_KEEPALIVE uint32_t allocate(uint32_t size){return alloc(size);}
 EMSCRIPTEN_KEEPALIVE void install_bank(uint32_t id,uint32_t count,uint32_t animations,uint32_t cells){banks[id]=(Bank){count,animations,cells};}
+// The permanent bank (CExScene::_08's registBank of permanent.brcad) and its "you" animations.
+EMSCRIPTEN_KEEPALIVE void install_permanent(uint32_t count,uint32_t animations,uint32_t cells,uint32_t you,uint32_t you_1p,uint32_t you_2p){
+  banks[PERMANENT_BANK]=(Bank){count,animations,cells};you_animations[0]=you;you_animations[1]=you_1p;you_animations[2]=you_2p;
+}
 // A bank of one scene's archive, registered by name when the scene asks for it (registBank).
 EMSCRIPTEN_KEEPALIVE uint32_t install_named_bank(uint32_t scene_index,uint32_t name,uint32_t count,uint32_t animations,uint32_t cells){
   if(named_bank_count>=64)panic(name,18);NamedBank*b=&named_banks[named_bank_count];
@@ -530,9 +540,14 @@ EMSCRIPTEN_KEEPALIVE void initialize_scene(void){
     canvas[i]=persistent[persistent_count++]=create_actor(255,0);
     if(i){r[3]=canvas[i];r[4]=canvas[i-1];r[5]=0;r[6]=0;call(0x801dcfa4);}
   }
-  // CExScene's "you" markers (permanent_you, _you_1P, _you_2P): placeholders the scenes may move,
-  // enable and attach, never drawn.
-  for(uint32_t i=0;i<3;i++){uint32_t you=persistent[persistent_count++]=create_actor(255,0);wr32(0x80320200+i*4,you);wr8(you+0xa7,0);}
+  // CExScene::_08's "you" markers (permanent_you, _you_1P, _you_2P) from the permanent bank, made
+  // under canvas 2 at layer -100 and hidden; the scenes that have them move, enable and attach
+  // them (CExScene::fn_80009950..fn_80009A58). Without the permanent bank they are placeholders.
+  for(uint32_t i=0;i<3;i++){
+    uint32_t you=persistent[persistent_count++]=banks[PERMANENT_BANK].count?create_actor(PERMANENT_BANK,you_animations[i]):create_actor(255,0);
+    wr32(0x80320200+i*4,you);wr32(you+0x98,(uint32_t)-100);wr8(you+0xa7,0);
+    r[3]=you;r[4]=canvas[2];r[5]=0;r[6]=0;call(0x801dcfa4);
+  }
   uint32_t other=persistent[persistent_count++]=create_actor(255,0);wr32(0x803201f8,other);wr32(0x803201fc,other);
   invoke1(profiles[profile_index].init,scene);
   wr32(0x803201bc,7);wr8(0x803201b8,1);

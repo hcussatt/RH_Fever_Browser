@@ -35,6 +35,12 @@ export async function loadGame(gameUrl,load=fetchBytes,{timeline:withTimeline=tr
   return [b.animations.length,ap,cp];
  }
  core._install_bank(255,...install(banks[255]));
+ // The permanent bank (bank 254): the "you" markers over the player's character (see platform.c).
+ // An import from before it was extracted has none, and the markers stay placeholders.
+ if(gradingData.permanent){
+  banks[254]={...gradingData.permanent.bank,texture:assets.textures.length};
+  core._install_permanent(...install(banks[254]),...gradingData.permanent.you);
+ }
  scenes.forEach((list,scene)=>list.forEach(([name,b])=>{
   const p=alloc(name.length+1);for(let i=0;i<name.length;i++)w8(p+i,name.charCodeAt(i));w8(p+name.length,0);
   named[core._install_named_bank(scene,p,...install(b))]=b;
