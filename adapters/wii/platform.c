@@ -74,18 +74,21 @@ static uint32_t rotl(uint32_t v,uint32_t n){return n?(v<<n)|(v>>(32-n)):v;}
 static void cmp(unsigned field,int64_t a,int64_t b){cr[field*4]=a<b;cr[field*4+1]=a>b;cr[field*4+2]=a==b;cr[field*4+3]=0;}
 static void fcmp(unsigned field,double a,double b){cr[field*4]=a<b;cr[field*4+1]=a>b;cr[field*4+2]=a==b;cr[field*4+3]=isnan(a)||isnan(b);}
 static void call(uint32_t address);
+// A paired-single quantized store's conversion (Gekko, as Dolphin models it): saturate, then
+// truncate toward zero; NaN stores the minimum.
+static int32_t fast_cast(double x,float lo,float hi){float v=(float)x;return (int32_t)(v>=lo?(v<=hi?v:hi):lo);}
 #include "original-functions.inc"
 static uint32_t alloc(uint32_t size){uint32_t a=heap;heap=(heap+size+31)&~31u;if(heap>=0x81600000)panic(a,2);return a;}
 // Each scene's original addresses, from adapters/<game>/game.h (a remix lists several; see
 // tools/recompile.py). id: the original ESceneID a remix's chart names; version: where the scene
 // keeps its version (CSceneManager::fn_8008A4DC).
-typedef struct{uint32_t id,version,create,init,update,flow_command,wrong_input,flow_create,end_on_hit;void(*after_update)(void);} SceneProfile;
+typedef struct{uint32_t id,version,create,init,update,flow_command,wrong_input,flow_create;void(*after_update)(void);} SceneProfile;
 #ifdef GAME_SCENE_PROFILES
 GAME_SCENE_PROFILES
 #else
 #define GAME_SCENE_COUNT 1
 static void after_update_0(void){GAME_AFTER_UPDATE}
-static const SceneProfile profiles[1]={{0xffffffffu,0,GAME_SCENE_CREATE,GAME_SCENE_INIT,GAME_SCENE_UPDATE,GAME_FLOW_COMMAND,GAME_WRONG_INPUT,GAME_FLOW_CREATE,GAME_END_CHECKER_ON_HIT,after_update_0}};
+static const SceneProfile profiles[1]={{0xffffffffu,0,GAME_SCENE_CREATE,GAME_SCENE_INIT,GAME_SCENE_UPDATE,GAME_FLOW_COMMAND,GAME_WRONG_INPUT,GAME_FLOW_CREATE,after_update_0}};
 #endif
 static int find_profile(uint32_t id){for(int i=0;i<GAME_SCENE_COUNT;i++)if(profiles[i].id==id)return i;return -1;}
 static int is_flow_command(uint32_t address){for(int i=0;i<GAME_SCENE_COUNT;i++)if(profiles[i].flow_command==address)return 1;return 0;}
@@ -101,7 +104,7 @@ static void emit(uint32_t kind,uint32_t value,uint32_t extra){emit_handle(kind,v
 // 0x20+i Hole in One's message i. MESG_FRAME plays one of the screen frame's animations in Hole
 // in One's layout: extra = animation<<2 | reverse<<1 | jump to its end.
 enum{MESG_VISIBLE,MESG_TEXT,MESG_STRING,MESG_REGISTER,MESG_LAYOUT,MESG_CLEAR,MESG_TAIL,
-  MESG_BOX_X,MESG_BOX_Y,MESG_BOX_W,MESG_BOX_H,MESG_TAIL_X,MESG_TAIL_Y,MESG_OVERLAY_Y,MESG_OVERLAY_H,MESG_FRAME};
+  MESG_BOX_X,MESG_BOX_Y,MESG_BOX_W,MESG_BOX_H,MESG_TAIL_X,MESG_TAIL_Y,MESG_OVERLAY_Y,MESG_OVERLAY_H,MESG_FRAME,MESG_TAIL_FLIP};
 enum{MESG_LAYOUT_BALLOON=1,MESG_LAYOUT_GOLF=2};
 static uint32_t fbits(float x){union{float v;uint32_t u;}b={.v=x};return b.u;}
 // The rest of the flow running now; 0 outside the chart (a press, a scene update).
@@ -291,6 +294,24 @@ static void exflow_command(void){
   else if(op==0x121||op==0x131)wr32(self+0x24,0); // Scene version / play-mode queries: normal play.
   r[3]=0;
 }
+// The game's sequence user procedure (F0 E0 in a sound's program): it sets sequence variables from
+// the game's state, which the sound's notes then depend on. It runs when a sound is played, as
+// the sound's sequence starts, and each global it sets follows the sound as a sequence variable
+// event (26): value = the variable (16-31), extra = its value. web/engine/sequence.mjs applies
+// them where the sound calls the procedure; a sound that does not call it ignores them.
+static uint32_t userproc_fn,userproc_arg,userproc_param;
+static void userproc(void){
+  if(!userproc_fn)return;
+  uint32_t saved_r[32];FPR saved_f[32];uint8_t saved_cr[32];memcpy(saved_r,r,sizeof r);memcpy(saved_f,f,sizeof f);memcpy(saved_cr,cr,sizeof cr);
+  // SeqUserprocCallbackParam {s16* localVariable; s16* globalVariable; s16* trackVariable; bool cmpFlag}.
+  if(!userproc_param)userproc_param=alloc(16+3*32);
+  uint32_t p=userproc_param,globals=p+48;
+  wr32(p,p+16);wr32(p+4,globals);wr32(p+8,p+80);wr8(p+12,0);
+  for(int i=0;i<16;i++)wr16(globals+i*2,0x8001); // unset: a value no procedure here stores
+  r[3]=0;r[4]=p;r[5]=userproc_arg;call(userproc_fn);
+  for(uint32_t i=0;i<16;i++){uint16_t v=rd16(globals+i*2);if(v!=0x8001)emit(26,16+i,(uint32_t)(int32_t)(int16_t)v);}
+  memcpy(r,saved_r,sizeof r);memcpy(f,saved_f,sizeof f);memcpy(cr,saved_cr,sizeof cr);
+}
 static void call(uint32_t address){
   trace[call_depth]=address;
   if(++call_depth>128)panic(address,6);
@@ -327,6 +348,9 @@ static void call(uint32_t address){
   case 0x801e4178:r[3]=1;break;
   case 0x801e9158:if(checker_count>=128)panic(checker_count,7);checkers[checker_count++]=r[4];emit(9,r[4],0);break; // new input checker (9): the dry run reads its target tick
   case 0x801e9488:score_sum+=(r[4]?r[4]:wrong_count*5);score_count++;wrong_count=0;break;
+  // CInputCheckManager::fn_801E94E8(type): a press of A or A+B (unk430) restarts the wrong-press
+  // timer, as a press with no cue does in press() (Bossa Nova's checker calls it itself).
+  case 0x801e94e8:if(r[4]==4||r[4]==6)wrong_timer=48;break;
   case 0x801e9d58:input_map[r[4]&255]=r[5];break;
   case 0x801e9c40:for(int i=0;i<256;i++)input_map[i]=i;break;
   case 0x80004714:memset(ram+idx(r[3]),r[4],r[5]);break;
@@ -341,7 +365,9 @@ static void call(uint32_t address){
   // played (12) or one from a press or the scene's own update (1).
   // A start below 0 delays the sound by that many ticks; above 0 it starts that many ticks in.
   case 0x801e4f60:{uint32_t handle=r[5];if(handle)attach(handle);
-    emit_handle(chart_sound?5:current_flow?12:1,r[4],flow_rest(),handle);if(f[1].d!=0)emit(10,3,fbits(f[1].d));break;}
+    emit_handle(chart_sound?5:current_flow?12:1,r[4],flow_rest(),handle);if(f[1].d!=0)emit(10,3,fbits(f[1].d));userproc();break;}
+  // CSoundManager's setSeqUserprocCallback (nw4r SoundArchivePlayer::SetSeqUserprocCallback).
+  case 0x801e7344:userproc_fn=r[4];userproc_arg=r[5];break;
   // Tuning (10): value = type | fade frames << 8 (0 volume, 1 pitch, 2 pan, 3 start, 4 stop,
   // 5 pause), extra = float bits (pause: 1 or 0), on the handle's sound or the one played last.
   case 0x801e65f4:emit_handle(10,0|r[4]<<8,fbits(f[1].d),r[5]);break;
@@ -416,6 +442,10 @@ static void call(uint32_t address){
     break;
   }
   case 0x80039e00:emit(15,(MESG_REGISTER<<8)|(r[4]&255),r[5]?0x10:0x11);break;
+  // CBalloonLayout::fn_80039F30(x, y, flip): the straight tail's place, turned upside down or not.
+  case 0x80039f30:
+    if(rd32(rd32(r[3])+0x10)!=0x800399e4)panic(r[3],20);
+    emit(15,MESG_TAIL_X<<8,fbits(f[1].d));emit(15,MESG_TAIL_Y<<8,fbits(f[2].d));emit(15,MESG_TAIL_FLIP<<8,r[4]!=0);break;
   case 0x8003a418: // fn_8003A418(pane, y, height)
     emit(15,(MESG_REGISTER<<8)|(r[4]&255),0x12);
     emit(15,(MESG_OVERLAY_Y<<8)|(r[4]&255),fbits(f[1].d));emit(15,(MESG_OVERLAY_H<<8)|(r[4]&255),fbits(f[2].d));break;
@@ -500,7 +530,9 @@ EMSCRIPTEN_KEEPALIVE void initialize_scene(void){
     canvas[i]=persistent[persistent_count++]=create_actor(255,0);
     if(i){r[3]=canvas[i];r[4]=canvas[i-1];r[5]=0;r[6]=0;call(0x801dcfa4);}
   }
-  uint32_t you=persistent[persistent_count++]=create_actor(255,0);wr32(0x80320200,you);wr8(you+0xa7,0);
+  // CExScene's "you" markers (permanent_you, _you_1P, _you_2P): placeholders the scenes may move,
+  // enable and attach, never drawn.
+  for(uint32_t i=0;i<3;i++){uint32_t you=persistent[persistent_count++]=create_actor(255,0);wr32(0x80320200+i*4,you);wr8(you+0xa7,0);}
   uint32_t other=persistent[persistent_count++]=create_actor(255,0);wr32(0x803201f8,other);wr32(0x803201fc,other);
   invoke1(profiles[profile_index].init,scene);
   wr32(0x803201bc,7);wr8(0x803201b8,1);
@@ -539,7 +571,14 @@ EMSCRIPTEN_KEEPALIVE uint32_t chart_flow_count_value(void){return chart_flow_cou
 EMSCRIPTEN_KEEPALIVE uint32_t chart_flow_at(uint32_t i){return i<chart_flow_count?chart_flows[i]:0;}
 // Once the chart has switched to grading, its flows wait for the results screen (grading_frame):
 // a game that plays on to the end of its music would otherwise reach the result prompt early.
-EMSCRIPTEN_KEEPALIVE void begin_frame(void){if(!grading)run_flows();}
+// Ended cell animations leave the pool between frames, keeping the others in creation order
+// (the draw order of equal layers): a game that makes short-lived ones every beat would fill it.
+static void compact_actors(void){
+  uint32_t n=0;
+  for(uint32_t i=0;i<actor_count;i++)if(actor_active[i]){actors[n]=actors[i];actor_active[n++]=1;}
+  actor_count=n;
+}
+EMSCRIPTEN_KEEPALIVE void begin_frame(void){if(actor_count>1024)compact_actors();if(!grading)run_flows();}
 // One note's volume envelope from the original nw4r EnvGenerator, as the mixer would apply it:
 // amplitude ratios at each 3 ms update, released after release_ms (negative: never). Returns the count.
 EMSCRIPTEN_KEEPALIVE uint32_t envelope_curve(int attack,int hold,int decay,int sustain,int release,int release_ms,uint32_t out,uint32_t max){
@@ -572,9 +611,10 @@ static void press(uint32_t type){
     call(rd32(rd32(c)+0x20));uint32_t judgment=r[3];
     if(judgment<=1){
       consumed=1;r[3]=c;r[4]=type;call(rd32(rd32(c)+(judgment==0?0x24:0x28)));
-      if(r[3]){uint32_t grade=rd8(quality);score_sum+=grade;score_count++;wrong_count=0;r[3]=rd32(0x8032016c);r[4]=rd8(c+0x78);r[5]=judgment;call(0x801eaf2c);
-        if(profiles[profile_index].end_on_hit&&rd8(c+0x70)){invoke1(rd32(rd32(c)+0x14),c);checker_count--;memmove(checkers+i,checkers+i+1,(checker_count-i)*4);}
-      }
+      if(r[3]){uint32_t grade=rd8(quality);score_sum+=grade;score_count++;wrong_count=0;r[3]=rd32(0x8032016c);r[4]=rd8(c+0x78);r[5]=judgment;call(0x801eaf2c);}
+      // A judged checker that ends on its judgment (unk70) and waits for no release (unk50) leaves
+      // the list (CList::removeCurrent, whose finalDestroy is the checker's _14).
+      if(rd8(c+0x70)&&!rd8(c+0x50)){invoke1(rd32(rd32(c)+0x14),c);checker_count--;memmove(checkers+i,checkers+i+1,(checker_count-i)*4);}
     }
   }
   if(!consumed){

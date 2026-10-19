@@ -1,0 +1,32 @@
+{
+  "$schema": "../../schemas/game.schema.json",
+  "schemaVersion": 1,
+  "id": "concons",
+  "title": "Donk-Donk",
+  "action": "Donk",
+  "platform": "wii",
+  "wii": {
+    "scene": "Concons",
+    "sceneVariant": 0,
+    "cellanim": "EN/content2/cellanim/concons/ver0/cellanim.szs",
+    "units": [
+      "Game/Concons/SceneConcons.cpp",
+      "Game/Concons/MyChecker.cpp",
+      "Game/Concons/MyFlow.cpp"
+    ],
+    "banks": [
+      "concons",
+      "concons_bg_00",
+      "concons_bg_01",
+      "concons_bg_02"
+    ],
+    "projection": [
+      854,
+      480
+    ],
+    "endsWithMusic": true
+  },
+  "web": {
+    "enabled": false
+  }
+}

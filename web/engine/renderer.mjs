@@ -7,11 +7,22 @@
 // cell animations.
 import {createLayout} from './layout.mjs';
 import {createMessages} from './message.mjs';
-import {assetImage} from './assets.mjs';
+import {assetImage,assetResponse} from './assets.mjs';
+// A remix's scenes each build their own game's layout (Love Rap's captions, Bossa Nova's subtitles):
+// the running scene's is drawn, with the layout events from while it ran (assets/layouts.json).
+async function sceneLayouts(g){
+ const list=await (await assetResponse(new URL('assets/layouts.json',g.base))).json(),layouts=new Map();
+ for(const {scene,file,font,spec} of list){const events=[];layouts.set(scene,{events,layout:await createLayout(g,{spec,file,fontFile:font,events})});}
+ let scene=g.chart.firstScene||0;
+ return {draw(ctx,canvas){
+  for(const e of g.layoutEvents.splice(0)){scene=e.scene;layouts.get(e.scene)?.events.push(e);}
+  layouts.get(scene)?.layout.draw(ctx,canvas);
+ }};
+}
 export async function createRenderer(g,canvas){
  const images=await Promise.all(g.assets.textures.map(n=>assetImage(new URL('assets/'+n,g.base))));
  const ctx=canvas.getContext('2d',{alpha:false});
- const layout=await createLayout(g),messages=await createMessages(g);
+ const layout=g.manifest.wii.scenes?await sceneLayouts(g):await createLayout(g),messages=await createMessages(g);
  const {u8,u16,u32,f32,core,banks}=g;
  const mul=(a,b)=>[a[0]*b[0]+a[2]*b[1],a[1]*b[0]+a[3]*b[1],a[0]*b[2]+a[2]*b[3],a[1]*b[2]+a[3]*b[3],a[0]*b[4]+a[2]*b[5]+a[4],a[1]*b[4]+a[3]*b[5]+a[5]];
  const trs=(x,y,deg,sx,sy)=>{const a=deg*Math.PI/180,c=Math.cos(a),s=Math.sin(a);return [c*sx,s*sx,-s*sy,c*sy,x,y];};
@@ -25,7 +36,7 @@ export async function createRenderer(g,canvas){
   let sum=0;for(const k of keys){sum+=k.frames;if(sum>frame)return k;}return keys.at(-1);
  }
  const cell=a=>banks[u8(a+12)].cells[key(a).cell];
- const children=a=>{const out=[];for(let c=u32(a+0xb4),n=0;c&&n<256;c=u32(c+0xb8),n++)out.push(c);return out;};
+ const children=a=>{const out=[];for(let c=u32(a+0xb4),n=0;c&&n<4096;c=u32(c+0xb8),n++)out.push(c);return out;}; // bounded past the pool size (2048): a canvas can carry a whole scene (Launch Party in Remix 6)
  function makeMatrix(a,base){
   const k=key(a);
   let m=mul(base,trs(f32(a+0x84),f32(a+0x88),f32(a+0x94),f32(a+0x8c),f32(a+0x90)));

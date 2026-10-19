@@ -80,7 +80,7 @@ for script in ['prepare-data.py', 'chart-index.py', 'extract-assets.py', 'extrac
   const name='rhf-assets:'+siteRoot.pathname+':'+version+':'+id+':'+crypto.randomUUID();
   const cache=await caches.open(name);let bytes=0;
   try{
-   for(const fileName of py.FS.readdir(dir).filter(n=>/\.(json|png|wav)$/.test(n)||/^data-[0-9a-f]+\.bin$/.test(n))){
+   for(const fileName of py.FS.readdir(dir).filter(n=>/\.(json|png|wav)$/.test(n)||/^(data-[0-9a-f]+|sequence-\d+)\.bin$/.test(n))){
     const data=py.FS.readFile(dir+'/'+fileName);bytes+=data.byteLength;
     await cache.put(new URL('assets/'+fileName,base),new Response(data,{headers:{'content-type':mime(fileName)}}));
    }

@@ -146,7 +146,7 @@ def pane(b, o):
 
 
 def layout(b):
-    out = {'panes': [], 'materials': []}
+    out = {'panes': [], 'materials': [], 'textures': [], 'fonts': []}  # a layout may list no textures (Bossa Nova's subtitles)
     stack, last = [], None
     for kind, pos, size in sections(b):
         if kind == 'lyt1':
@@ -322,25 +322,43 @@ def message_layouts():
     (OUT/'message-layouts.json').write_text(json.dumps(out, separators=(',', ':'))+'\n')
 
 
-def main():
-    message_layouts()
-    entry = PROFILE.get('layout')
-    if not entry:
-        return
-    root = require(DISC/GAME/'layout')
+def game_layout(game, entry, prefix):
+    """A game's own 2D layout (Love Rap's lyric captions, Bossa Nova's subtitles): <prefix>.json,
+    its images and the glyphs of every message."""
+    root = require(DISC/game/'layout')
     out = layout((root/'blyt'/entry['file']).read_bytes())
     out['animations'] = {p.stem: animation(p.read_bytes()) for p in sorted((root/'anim').glob('*.brlan'))}
     names = set(out['textures'])|{n for a in out['animations'].values() for n in a['timg']}
     for n in names:
-        tpl((root/'timg'/n).read_bytes()).save(OUT/f'layout-{n}.png')
-    out['images'] = {n: f'layout-{n}.png' for n in sorted(names)}
+        tpl((root/'timg'/n).read_bytes()).save(OUT/f'{prefix}-{n}.png')
+    out['images'] = {n: f'{prefix}-{n}.png' for n in sorted(names)}
     out['messages'] = messages(require(DISC/'message'/'riq_E.bmg').read_bytes())
     chars = {ord(c) for t in out['messages'].values() for c in t if c not in '\n'}
-    out['font'], atlas = font(require(DISC/'font'/out['fonts'][0]).read_bytes(), chars)
-    atlas.save(OUT/'layout-font.png')
-    (OUT/'layout.json').write_text(json.dumps(out, separators=(',', ':'))+'\n')
-    print(json.dumps({'panes': len(out['panes']), 'animations': list(out['animations']), 'images': len(names),
+    # A font the archive carries (Bossa Nova's subtitles), else a stand-alone one (see extract-disc.py).
+    font_file = root/'font'/out['fonts'][0] if (root/'font'/out['fonts'][0]).exists() else DISC/'font'/out['fonts'][0]
+    out['font'], atlas = font(require(font_file).read_bytes(), chars)
+    atlas.save(OUT/f'{prefix}-font.png')
+    (OUT/f'{prefix}.json').write_text(json.dumps(out, separators=(',', ':'))+'\n')
+    print(json.dumps({'layout': prefix, 'panes': len(out['panes']), 'animations': list(out['animations']), 'images': len(names),
                       'messages': len(out['messages']), 'glyphs': len(chars)}))
+
+
+def main():
+    message_layouts()
+    if 'scenes' in PROFILE:
+        # A remix draws the layout of whichever of its scenes is running (web/engine/renderer.mjs):
+        # layout-<game>.json for each scene game that has one, listed in layouts.json with its spec.
+        index = []
+        for i, scene in enumerate(PROFILE['scenes']):
+            entry = manifest(scene['game'])['wii'].get('layout')
+            if entry:
+                game_layout(scene['game'], entry, f'layout-{scene["game"]}')
+                index.append({'scene': i, 'file': f'layout-{scene["game"]}.json', 'font': f'layout-{scene["game"]}-font.png', 'spec': entry})
+        (OUT/'layouts.json').write_text(json.dumps(index, separators=(',', ':'))+'\n')
+        return
+    entry = PROFILE.get('layout')
+    if entry:
+        game_layout(GAME, entry, 'layout')
 
 
 if __name__ == '__main__':

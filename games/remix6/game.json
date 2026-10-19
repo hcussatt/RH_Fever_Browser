@@ -1,0 +1,26 @@
+{
+  "$schema": "../../schemas/game.schema.json",
+  "schemaVersion": 1,
+  "id": "remix6",
+  "title": "Remix 6",
+  "action": "Play each game",
+  "platform": "wii",
+  "wii": {
+    "music": "WSD_REMIX6",
+    "scenes": [
+      {"game": "rocket", "cellanim": "EN/content2/cellanim/rocket/remix06/cellanim.szs"},
+      {"game": "concons", "cellanim": "EN/content2/cellanim/concons/remix06/cellanim.szs"},
+      {"game": "receive", "cellanim": "EN/content2/cellanim/receive/remix06/cellanim.szs"},
+      {"game": "rap", "cellanim": "EN/content2/cellanim/rap/remix06/cellanim.szs"}
+    ],
+    "epilogue": "EN/content2/cellanim/remix/ver6/cellanim_epilogue.szs",
+    "projection": [
+      854,
+      480
+    ],
+    "endsWithMusic": true
+  },
+  "web": {
+    "enabled": false
+  }
+}

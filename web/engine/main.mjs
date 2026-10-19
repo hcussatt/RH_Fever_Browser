@@ -100,8 +100,10 @@ async function start(){
  // music waits for it.
  const first=Math.min(0,...g.timeline.sounds.map(s=>s.tick),...g.sounds.map(s=>s.tick));
  startTime=audio.currentTime+.1-g.secondsAtTick(first);track=createTrack();backing=sfx.playMusic(music,startTime);
- // The chart's own sounds, then the scene's setup and lead-in sounds (before the music start).
- pending.push(...g.timeline.sounds);g.options.chartAudioScheduled=true;liveEvents();
+ // A remix's entry chart first plays its mode sound (SE_REMIX_MODE_SET_REMIXn, silent), which sets
+ // the sequence variable the games' remix sounds read (see tools/chart-index.py). Then the chart's
+ // own sounds, then the scene's setup and lead-in sounds (before the music start).
+ pending.push(...(g.chart.preludeSounds||[]).map(sound=>({sound,tick:null})),...g.timeline.sounds);g.options.chartAudioScheduled=true;liveEvents();
  running=true;window.rhf.source=backing.source;requestAnimationFrame(loop);
 }
 play.onclick=async()=>{

@@ -4,7 +4,7 @@ Every extracted bank (the game's and the shared system bank) is merged into one 
 waves and programs; each sound's notes point at programs of the bank its record names.
 Random RSEQ parameters are retained as ranges for the browser adapter.
 """
-import collections,json,struct
+import collections,json,math,struct
 from nintendo_audio import wave_files,decode_wave,write_wav,u32
 from paths import DOL,assets,game
 out=assets(game())
@@ -22,9 +22,22 @@ for bankid in [k for k,v in files.items() if v['magic']=='RBNK']:
 used=set()
 # Sequences that change tempo after other tracks may have started (not modelled: none expected).
 late_tempo=set()
+# Variables 16-31 are the sequence player's globals, shared by every sequence and kept between
+# sounds (nw4r SeqPlayer); a game's user procedure (F0 E0, its SeqUserprocCallback) also sets
+# them. A sound whose notes depend on a global, on its user procedure or on a random variable
+# is dynamic: web/engine/sequence.mjs traces it again when it plays, from the globals then. The
+# notes kept for it here assume globals left at -1 (nw4r's default). A sound that only sets
+# globals keeps what it sets, for the browser to apply when it plays.
+GLOBALS=range(16,32)
+def s16(x):return (x+0x8000&0xffff)-0x8000
 def trace(seq,start,bank_programs):
- # Sequence variables start at -1 (nw4r's default); nothing the port runs sets them.
- notes=[];queue=[(start,0)];tracks=0;variables=collections.defaultdict(lambda:-1)
+ notes=[];queue=[(start,0)];tracks=0;variables=collections.defaultdict(lambda:-1);info={'dynamic':False,'globals':{}}
+ def read(v):
+  if v in GLOBALS:info['dynamic']=True
+  return variables[v]
+ def write(v,x):
+  variables[v]=x=s16(x)
+  if v in GLOBALS:info['globals'][v]=x
  # Tempo and timebase belong to the sequence player, not to a track: tracks opened by the
  # first one (echo layers, for example) run at the tempo it set.
  player={'tempo':120,'timebase':48}
@@ -52,7 +65,7 @@ def trace(seq,start,bank_programs):
      lo=int.from_bytes(seq[pc:pc+2],'big',signed=True);hi=int.from_bytes(seq[pc+2:pc+4],'big',signed=True)
      for _ in range(4):byte()
      random=[lo,hi];return (lo+hi)//2
-    if argkind==0xa1:return variables[byte()]
+    if argkind==0xa1:return read(byte())
     return vlq() if kind=='vlq' else ((byte()<<8)|byte()) if kind=='short' else byte()
    # A conditional command (0xa2) whose condition is false is read past and not run.
    if not execute:
@@ -64,7 +77,9 @@ def trace(seq,start,bank_programs):
      arg()
      if arg2:arg('short')
     elif 0xe0<=op<=0xe3 or op==0xfe:arg('short')
-    elif op==0xf0:byte();byte();arg('short')
+    elif op==0xf0:
+     if byte()!=0xe0:byte()
+     arg('short')
     elif op not in (0xfb,0xfc,0xfd,0xff):raise ValueError(f'unhandled conditional {op:x} at {at:x}')
     continue
    if op<0x80:
@@ -73,11 +88,31 @@ def trace(seq,start,bank_programs):
     notes.append(dict(state,program=bank_programs+state['program'],time=t,note=op,velocity=velocity,length=length,duration=duration,random=pending.copy()))
     if state['noteWait']:t+=duration
    elif op==0xf0:
-    sub=byte();v=byte();x=arg('short');old=variables[v]
+    # nw4r MmlParser's extended commands: variable math and compares, and the user procedure.
+    sub=byte()
+    if sub==0xe0:
+     proc=arg('short')
+     if proc:raise ValueError(f'user procedure {proc} at {at:x} is not modelled')
+     if execute:info['dynamic']=True
+     continue
+    v=byte();x=arg('short')
     if execute:
-     if sub==0x80:variables[v]=x
-     elif sub==0x81:variables[v]=old+x
-     elif sub in [0x90,0x91,0x92,0x93,0x94,0x95]:state['condition']={0x90:old==x,0x91:old>=x,0x92:old>x,0x93:old<=x,0x94:old<x,0x95:old!=x}[sub]
+     if sub==0x80:write(v,x)
+     elif sub==0x86:info['dynamic']=True;write(v,0)
+     elif sub==0x8a:write(v,~x)
+     elif sub in (0x81,0x82,0x83,0x84,0x85,0x87,0x88,0x89,0x8b):
+      old=read(v)
+      if sub==0x81:write(v,old+x)
+      elif sub==0x82:write(v,old-x)
+      elif sub==0x83:write(v,old*x)
+      elif sub==0x84:
+       if x:write(v,int(old/x))
+      elif sub==0x85:write(v,old<<x if x>=0 else old>>-x)
+      elif sub==0x87:write(v,old&x)
+      elif sub==0x88:write(v,old|x)
+      elif sub==0x89:write(v,old^x)
+      elif x:write(v,int(math.fmod(old,x)))
+     elif sub in [0x90,0x91,0x92,0x93,0x94,0x95]:old=read(v);state['condition']={0x90:old==x,0x91:old>=x,0x92:old>x,0x93:old<=x,0x94:old<x,0x95:old!=x}[sub]
      else:raise ValueError('Unhandled math '+hex(sub))
    elif op==0x80:t+=arg('vlq')*60/state['tempo']/state['timebase']
    elif op==0x81:state['program']=arg('vlq')
@@ -118,7 +153,7 @@ def trace(seq,start,bank_programs):
     else:raise ValueError(f'unhandled {op:x} at {at:x}')
    else:raise ValueError(f'unhandled {op:x} at {at:x}')
   tracks+=1
- return notes
+ return notes,info
 # The game's sequence tempo table (lbl_802E8720 in src/Game/SoundData.inc, installed by
 # main.cpp): CSoundManager::play stretches a listed sequence by the chart tempo over the tempo
 # it was written at (calc_seq_tempo_sound_id, tune_tempo_rel).
@@ -142,10 +177,16 @@ def seq_tempo(sid):
 sounds={}
 for seqid in [k for k,v in files.items() if v['magic']=='RSEQ']:
  b=(out/f'file-{seqid}.bin').read_bytes();seq=b[u32(b,16)+u32(b,u32(b,16)+8):]
+ # The sequence's data block, which the browser traces dynamic sounds from (sequence.mjs).
+ (out/f'sequence-{seqid}.bin').write_bytes(seq)
  for sid,s in assets['audio']['sounds'].items():
   if s['type']!=1 or s['fileId']!=int(seqid):continue
   if s['bankFile'] not in first_program:raise SystemExit(f"{s['name']}: its bank (file {s['bankFile']}) was not extracted")
-  sounds[sid]={'name':s['name'],'volume':s['volume'],'tempo':seq_tempo(int(sid)),'notes':trace(seq,s['data'][0],first_program[s['bankFile']])}
+  notes,info=trace(seq,s['data'][0],first_program[s['bankFile']])
+  sounds[sid]={'name':s['name'],'volume':s['volume'],'tempo':seq_tempo(int(sid)),'notes':notes}
+  sounds[sid]['sequence']={'file':f'sequence-{seqid}.bin','start':s['data'][0],'bank':first_program[s['bankFile']]}
+  if info['dynamic']:sounds[sid]['dynamic']=True
+  elif info['globals']:sounds[sid]['globals']={str(k):v for k,v in sorted(info['globals'].items())}
 (out/'sfx.json').write_text(json.dumps({'waves':waves,'programs':programs,'sounds':sounds},indent=2)+'\n')
 if late_tempo:raise SystemExit(f'Tempo changes mid-sequence are not modelled (sequence offsets {sorted(late_tempo)})')
 print(json.dumps({'samples':len(waves),'programs':len(programs),'sounds':len(sounds),'commands':sorted(used),'notes':sum(len(s['notes']) for s in sounds.values())}))

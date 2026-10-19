@@ -20,7 +20,8 @@ SHARED={'GameUtil/TickFlow.cpp','nw4r/snd/snd_EnvGenerator.cpp','GameUtil/TimeRa
 # Single pure functions outside those units that the chart interpreter needs.
 SHARED_FUNCTIONS={'calc_initial_wave_tempo__13CSoundManagerFP8WaveInfo',
   'fn_80009950__8CExSceneFll','fn_80009A40__8CExSceneFb', # the "you" marker's position and visibility
-  'CalcVolumeRatio__Q44nw4r3snd6detail4UtilFf'} # decibels to amplitude, for sound envelopes
+  'CalcVolumeRatio__Q44nw4r3snd6detail4UtilFf', # decibels to amplitude, for sound envelopes
+  'Atan2FIdx__Q24nw4r4mathFff'} # nw4r's table arctangent (Bossa Nova's ball arcs)
 # Each game's manifest names the original units whose functions are translated; a remix
 # translates the units of every game it changes to.
 PROFILE=manifest(GAME)['wii']
@@ -89,6 +90,16 @@ def generate(a,size,name):
         if m in ['lwz','lhz','lha','lbz','lfd','lfs']:
             v={'lwz':'rd32','lhz':'rd16','lha':'rds16','lbz':'rd8','lfd':'rdf64','lfs':'rdf32'}[m]
             c=f'{q[0]}={v}({ea(p[1])});'
+        elif m in ['lwzu','lhzu','lhau','lbzu','lfdu','lfsu']:
+            # Load with update: the base register takes the effective address.
+            v={'lwzu':'rd32','lhzu':'rd16','lhau':'rds16','lbzu':'rd8','lfdu':'rdf64','lfsu':'rdf32'}[m]
+            base_register=reg(re.search(r'r\d+',p[1])[0])
+            c=f'{{uint32_t e={ea(p[1])};{q[0]}={v}(e);{base_register}=e;}}'
+        elif m in ['sthu','stbu','stfdu','stfsu']:
+            v={'sthu':'wr16','stbu':'wr8','stfdu':'wr64','stfsu':'wrf32'}[m]
+            value=fpbits(p[0]) if m=='stfdu' else q[0]
+            base_register=reg(re.search(r'r\d+',p[1])[0])
+            c=f'{{uint32_t e={ea(p[1])};{v}(e,{value});{base_register}=e;}}'
         elif m in ['stw','sth','stb','stfd','stfs','stwu']:
             v={'stw':'wr32','sth':'wr16','stb':'wr8','stfd':'wr64','stfs':'wrf32','stwu':'wr32'}[m]
             value=fpbits(p[0]) if m=='stfd' else q[0]
@@ -108,7 +119,7 @@ def generate(a,size,name):
             c=f'{{uint32_t address={q[1]}+{q[2]};{q[0]}=rd32(address);{q[1]}=address;}}'
         elif m in ['li','lis','mr','fmr']:
             c=f'{q[0]}={q[1]}' + ('*65536u;' if m=='lis' else ';')
-        elif m in ['addi','subi','addis','add','subf','mulli','mullw','or','xor','xoris','and','andc','nor']:
+        elif m in ['addi','subi','addis','add','subf','mulli','mullw','or','xor','xoris','oris','and','andc','nor']:
             if m=='addis':v=f'{q[1]}+({q[2]}*65536u)'
             elif m in ['addi','add']:v=f'{q[1]}+({q[2]})'
             elif m=='subi':v=f'{q[1]}-({q[2]})'
@@ -117,6 +128,7 @@ def generate(a,size,name):
             elif m=='or':v=f'{q[1]}|{q[2]}'
             elif m=='xor':v=f'{q[1]}^{q[2]}'
             elif m=='xoris':v=f'{q[1]}^({q[2]}*65536u)'
+            elif m=='oris':v=f'{q[1]}|({q[2]}*65536u)'
             elif m=='and':v=f'{q[1]}&{q[2]}'
             elif m=='andc':v=f'{q[1]}&~{q[2]}'
             elif m=='nor':v=f'~({q[1]}|{q[2]})'
@@ -124,13 +136,14 @@ def generate(a,size,name):
         elif m in ['neg','cntlzw','extsh','extsb']:
             v={'neg':f'-{q[1]}','cntlzw':f'({q[1]}?__builtin_clz({q[1]}):32)','extsh':f'(int16_t){q[1]}','extsb':f'(int8_t){q[1]}'}[m]
             c=f'{q[0]}={v};'
-        elif m in ['srwi','slwi','srawi','clrlwi','rlwinm']:
+        elif m in ['srwi','slwi','srawi','clrlwi','clrrwi','rlwinm']:
             if m=='srwi':v=f'{q[1]}>>{q[2]}'
             elif m=='slwi':v=f'{q[1]}<<{q[2]}'
             elif m=='srawi':
                 v=f'(int32_t){q[1]}>>{q[2]}'
                 c=f'carry=((int32_t){q[1]}<0 && ({q[1]} & ((1u<<{q[2]})-1)));'
             elif m=='clrlwi':v=f'{q[1]} & {hex((1<<(32-int(p[2],0)))-1)}u'
+            elif m=='clrrwi':v=f'{q[1]} & {hex((0xffffffff<<int(p[2],0))&0xffffffff)}u'
             else:
                 mb,me=int(p[3],0),int(p[4],0);mask=0;i=mb
                 while True:
@@ -190,6 +203,13 @@ def generate(a,size,name):
         elif m=='fnabs':c=f'{q[0]}=-fabs({q[1]});'
         elif m=='frsp':c=f'{q[0]}=(float){q[1]};'
         elif m=='fctiwz':c=f'{fpbits(p[0])}=0xfff8000000000000ull|(uint32_t)(int32_t){q[1]};'
+        elif m in ['psq_st','psq_l'] and p[-2]=='1' and p[-1] in ('2','3','4','5'):
+            # One quantized value through GQR2-5, which OSInitFastCast sets for fast casts
+            # (0x80038224): u8, u16, s8, s16 with scale 0. A store saturates and truncates
+            # toward zero; a load converts the integer to a float.
+            t={'2':('uint8_t',0,255,'rd8','wr8'),'3':('uint16_t',0,65535,'rd16','wr16'),'4':('int8_t',-128,127,'rd8','wr8'),'5':('int16_t',-32768,32767,'rd16','wr16')}[p[-1]]
+            if m=='psq_st':c=f'{t[4]}({ea(p[1])},(uint32_t)(int32_t)fast_cast({q[0]},{t[1]},{t[2]}));'
+            else:c=f'{q[0]}=(float)({t[0]}){t[3]}({ea(p[1])});'
         elif m in ['psq_st','psq_l']:
             # GQR0 prologue/epilogue paired-single saves are redundant here:
             # the adjacent stfd/lfd preserves PS0, and no gameplay PS1 ops occur.
@@ -250,7 +270,7 @@ if 'scenes' in PROFILE:
     for i,g in enumerate(SCENE_GAMES):
         scene=ids[manifest(g)['wii']['scene']];P=f'GAME_{i}_'
         header.append(f'#define GAME_SCENE_AFTER_UPDATE_{i} static void after_update_{i}(void){{{P}AFTER_UPDATE}}')
-        profiles.append(f'{{{scene},{chart.scene_version_address(scene):#x},{P}SCENE_CREATE,{P}SCENE_INIT,{P}SCENE_UPDATE,{P}FLOW_COMMAND,{P}WRONG_INPUT,{P}FLOW_CREATE,{P}END_CHECKER_ON_HIT,after_update_{i}}}')
+        profiles.append(f'{{{scene},{chart.scene_version_address(scene):#x},{P}SCENE_CREATE,{P}SCENE_INIT,{P}SCENE_UPDATE,{P}FLOW_COMMAND,{P}WRONG_INPUT,{P}FLOW_CREATE,after_update_{i}}}')
     header.append('#define GAME_SCENE_PROFILES '+' '.join(f'GAME_SCENE_AFTER_UPDATE_{i}' for i in range(len(SCENE_GAMES)))+
                   f' static const SceneProfile profiles[{len(SCENE_GAMES)}]={{'+','.join(profiles)+'};')
     (out/'scenes.h').write_text('\n'.join(header)+'\n')
