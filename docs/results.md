@@ -85,7 +85,8 @@ follow-up, and the three-comment Love Rap layout. The normal page's Play,
 Escape pause/resume, X confirmation, Space confirmation, and return to the
 library were exercised with its output gain muted. Hole in One's five offline
 branches had no missing sounds, no clipped/non-finite samples, and digital peak
-amplitudes between 0.332 and 0.339. These are digital-output checks, not acoustic
+amplitudes between 0.332 and 0.339 before the newer shared output-gain adjustment
+(and 0.289 to 0.299 across all nine merged result branches afterward). These are digital-output checks, not acoustic
 measurements.
 
 ## Fidelity limits and future work
@@ -102,6 +103,6 @@ progression, award a new medal, run the menu's Perfect-campaign celebration,
 or present two-player results. The original medal pane is retained but hidden
 in this context. Adding progression later needs the original save/previous
 level-state checks before enabling that pane; do not simply display a medal
-for every Superb. The medal's multi-texture material/color animation also needs
-support before that progression path is enabled. Missing unrelated Wii scene-loading waits are represented by
+for every Superb. The newer generic material renderer supports texture stages and colour animation,
+but the medal/progression presentation still needs qualification before enabling it. Missing unrelated Wii scene-loading waits are represented by
 ready assets, rather than reproducing variable disc I/O time.

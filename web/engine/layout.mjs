@@ -201,6 +201,7 @@ export async function createLayout(g,{spec=g.manifest.wii.layout,file='layout.js
   else ctx.drawImage(img,0,0);
   ctx.restore();
  }
+ const opaqueWindows=new Map();
  function drawWindow(ctx,p,m,alpha){
   if(p.frames.length!==1)throw new Error('Unsupported original window frame count');
   const material=data.materials[p.frames[0].material],img=tint(images[data.textures[material.texture]],material),r=rect(p);
@@ -208,6 +209,22 @@ export async function createLayout(g,{spec=g.manifest.wii.layout,file='layout.js
   // The content is the content material's colour 1 (no texture) times the vertex colour: white for
   // a speech balloon, clear for Hole in One's screen frame.
   const c=data.materials[p.material].color1,v=p.vertexColors?.[0]||[255,255,255,255];
+  if(c.every(value=>value===255)&&v.every(value=>value===255)){
+   // Bake opaque balloons into one surface, so filtering adjacent mirrored
+   // corner/edge quads cannot leave seams. Transparent game frames use the
+   // separate content and border path below.
+   const key=p.material+'|'+p.size+'|'+material.color0+'|'+material.color1;let surface=opaqueWindows.get(key);
+   if(!surface){
+    surface=document.createElement('canvas');surface.width=Math.ceil(r.w);surface.height=Math.ceil(r.h);
+    const x=surface.getContext('2d'),dst=x.createImageData(surface.width,surface.height),src=img.getContext('2d').getImageData(0,0,w,h).data;
+    for(let y=0;y<surface.height;y++)for(let x=0;x<surface.width;x++){
+     const sx=Math.min(x,surface.width-1-x,w-1),sy=Math.min(y,surface.height-1-y,h-1),a=(sy*w+sx)*4,b=(y*surface.width+x)*4;
+     dst.data.set(src.subarray(a,a+4),b);
+    }
+    x.putImageData(dst,0,0);opaqueWindows.set(key,surface);
+   }
+   ctx.setTransform(...m);ctx.globalAlpha=alpha;ctx.drawImage(surface,r.left,-r.top,r.w,r.h);return;
+  }
   ctx.setTransform(...m);ctx.globalAlpha=alpha*c[3]*v[3]/255/255;ctx.fillStyle=`rgb(${c[0]*v[0]/255},${c[1]*v[1]/255},${c[2]*v[2]/255})`;ctx.fillRect(r.left+w,-r.top,r.w-2*w,r.h);if(r.h>2*h)ctx.fillRect(r.left,-r.top+h,r.w,r.h-2*h);
   ctx.globalAlpha=alpha;
   // NW4R's one-frame window mirrors its single corner into all four corners.
