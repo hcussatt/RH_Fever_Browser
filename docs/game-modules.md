@@ -22,6 +22,9 @@ input, rendering, audio, and grading, enable it with its expected cue count:
 is checked against the original chart's silent run before imported data is
 published to the local library. It does not alter timing or grading.
 
+A game whose cues wait for A and B together sets `"input": 6` under `wii` (the
+default, 4, is A alone); the page then shows both buttons' keys.
+
 Supply `adapters/<id>/game.h`, the manifest's original C++ units, scene,
 cell-animation archive, banks, projection, and optional layout metadata. New
 original behavior may require adapter work; registration alone does not port

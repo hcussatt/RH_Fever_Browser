@@ -1,0 +1,32 @@
+{
+  "$schema": "../../schemas/game.schema.json",
+  "schemaVersion": 1,
+  "id": "date",
+  "title": "Double Date",
+  "action": "Kick",
+  "platform": "wii",
+  "wii": {
+    "scene": "Date",
+    "sceneVariant": 1,
+    "cellanim": "EN/content2/cellanim/date/ver0/cellanim.szs",
+    "units": [
+      "Game/Date/SceneDate.cpp",
+      "Game/Date/MyChecker.cpp",
+      "Game/Date/MyFlow.cpp"
+    ],
+    "banks": [
+      "w_date",
+      "w_date_bg",
+      "w_date_weasel",
+      "w_date_sport"
+    ],
+    "projection": [
+      854,
+      480
+    ],
+    "endsWithMusic": true
+  },
+  "web": {
+    "enabled": false
+  }
+}
