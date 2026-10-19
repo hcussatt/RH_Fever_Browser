@@ -137,7 +137,9 @@ named by the manifest's `wii.messageLayout`). Remix 1's opening lines use Hole i
 One's; Tap Trial's giraffe uses the balloon. `platform.c` reports the layouts the
 scene adds, the panes they register, the balloon's placement and the chart's
 commands as message events (kind 15); `web/engine/message.mjs` draws them with
-`layout.mjs`. `tools/extract-layout.py` writes `message-layouts.json` for every
+`layout.mjs`. Hole in One's layout also holds its screen frame (`W_frm_00`): the
+game plays its two animations (`baseball_frm_change_00/01`, forward, reversed or
+straight to the end) as it changes view, and the same events drive them. `tools/extract-layout.py` writes `message-layouts.json` for every
 game.
 
 ## Audio

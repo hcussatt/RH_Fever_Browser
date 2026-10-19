@@ -303,6 +303,11 @@ def message_layouts():
         root = require(DISC/'message-layout'/name)
         file = manifest(name)['wii']['messageLayout']['file'] if name != 'balloon' else 'message.brlyt'
         data = layout((root/'blyt'/file).read_bytes())
+        # The layout's own animations (named after it): Hole in One's screen frame,
+        # baseball_frm_change_00/01. The balloon's archive holds other layouts' animations only.
+        stem = file.rsplit('.', 1)[0]
+        data['animations'] = {p.stem: animation(p.read_bytes()) for p in sorted((root/'anim').glob(f'{stem}_*.brlan'))}
+        assert not any(a['timg'] for a in data['animations'].values()), f'{name}: message layout animation swaps textures'
         data['images'] = {}
         for n in data['textures']:
             tpl((root/'timg'/n).read_bytes()).save(OUT/f'message-{name}-{n}.png')

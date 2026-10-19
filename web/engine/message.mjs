@@ -5,15 +5,19 @@
 // adapters/wii/platform.c); this draws them with layout.mjs.
 import {createLayout} from './layout.mjs';
 import {assetResponse} from './assets.mjs';
-const VISIBLE=0,TEXT=1,STRING=2,REGISTER=3,LAYOUT=4,CLEAR=5,TAIL=6,BOX_X=7,BOX_Y=8,BOX_W=9,BOX_H=10,TAIL_X=11,TAIL_Y=12,OVERLAY_Y=13,OVERLAY_H=14;
+const VISIBLE=0,TEXT=1,STRING=2,REGISTER=3,LAYOUT=4,CLEAR=5,TAIL=6,BOX_X=7,BOX_Y=8,BOX_W=9,BOX_H=10,TAIL_X=11,TAIL_Y=12,OVERLAY_Y=13,OVERLAY_H=14,FRAME=15;
 const LAYOUTS={1:'balloon',2:'golf'};
 // Wide screen: the balloon's x is narrowed like CBalloonLayout::getScaledX.
 const WIDE=608/832;
 export async function createMessages(g){
  const file=await (await assetResponse(new URL('assets/message-layouts.json',g.base))).json();
- const layouts={};
- for(const [name,data] of Object.entries(file.layouts))
-  layouts[name]=await createLayout(g,{spec:{animations:[]},data:{...data,font:file.font,messages:file.messages},fontFile:'message-font.png',events:[]});
+ // Each layout's animations bind to the whole layout, in the order its setup creates them
+ // (Hole in One's CMyLayout: frame change 00, then 01). The game plays them through FRAME events.
+ const layouts={},events={};
+ for(const [name,data] of Object.entries(file.layouts)){
+  const spec={animations:Object.keys(data.animations??{}).sort().map(n=>[data.panes[0].name,n])};
+  layouts[name]=await createLayout(g,{spec,data:{...data,font:file.font,messages:file.messages},fontFile:'message-font.png',events:events[name]=[]});
+ }
  const alive=new Set(),panes=new Map(); // pane index -> {layout, text, container}
  const pane=(layout,name)=>layout.panes[layout.byName[name]];
  // What a layout's setup (_10) does to its panes: CBalloonLayout::fn_800399E4 hides the balloon
@@ -38,10 +42,11 @@ export async function createMessages(g){
  const f32=u=>new Float32Array(new Uint32Array([u]).buffer)[0];
  const text=id=>(file.messages[id]??'').replace(/\{[0-9a-f]*\}/g,'');
  function string(address){let s='';for(let a=address;g.u16(a);a+=2)s+=String.fromCharCode(g.u16(a));return s;}
- function apply({field,pane:index,value}){
+ function apply({frame,field,pane:index,value}){
   if(field===LAYOUT)return setup(LAYOUTS[value]);
   if(field===CLEAR){alive.clear();panes.clear();return;}
   if(field===REGISTER)return register(index,value);
+  if(field===FRAME){if(!alive.has('golf'))throw new Error('Screen frame animation without its layout');events.golf.push({frame,action:6<<8|value>>2,value:value&3});return;}
   const balloon=layouts.balloon,v=f32(value);
   // CBalloonLayout::fn_8003A1D0 and fn_8003A418 place the balloon and the overlay strip.
   if(field===BOX_X)pane(balloon,'N_message_00').translate[0]=v*WIDE;

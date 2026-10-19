@@ -98,9 +98,10 @@ static void emit(uint32_t kind,uint32_t value,uint32_t extra){emit_handle(kind,v
 // Hole in One's CMyLayout) is announced when the scene adds it; MESG_CLEAR drops them all when
 // the scene ends. MESG_REGISTER gives a pane a text box (CTickFlow::fn_801DEF58): 0 none,
 // 0x10 the balloon (with its window), 0x11 the balloon's text alone, 0x12 the overlay strip,
-// 0x20+i Hole in One's message i.
+// 0x20+i Hole in One's message i. MESG_FRAME plays one of the screen frame's animations in Hole
+// in One's layout: extra = animation<<2 | reverse<<1 | jump to its end.
 enum{MESG_VISIBLE,MESG_TEXT,MESG_STRING,MESG_REGISTER,MESG_LAYOUT,MESG_CLEAR,MESG_TAIL,
-  MESG_BOX_X,MESG_BOX_Y,MESG_BOX_W,MESG_BOX_H,MESG_TAIL_X,MESG_TAIL_Y,MESG_OVERLAY_Y,MESG_OVERLAY_H};
+  MESG_BOX_X,MESG_BOX_Y,MESG_BOX_W,MESG_BOX_H,MESG_TAIL_X,MESG_TAIL_Y,MESG_OVERLAY_Y,MESG_OVERLAY_H,MESG_FRAME};
 enum{MESG_LAYOUT_BALLOON=1,MESG_LAYOUT_GOLF=2};
 static uint32_t fbits(float x){union{float v;uint32_t u;}b={.v=x};return b.u;}
 // The rest of the flow running now; 0 outside the chart (a press, a scene update).
@@ -419,8 +420,15 @@ static void call(uint32_t address){
     emit(15,(MESG_REGISTER<<8)|(r[4]&255),0x12);
     emit(15,(MESG_OVERLAY_Y<<8)|(r[4]&255),fbits(f[1].d));emit(15,(MESG_OVERLAY_H<<8)|(r[4]&255),fbits(f[2].d));break;
   case 0x801e73d4:{uint32_t found=0;for(uint32_t i=0;i<162&&!found;i++)if(rd16(0x802e8210+i*8)==(r[4]&0xffff))found=0x802e8210+i*8;r[3]=found;break;} // CSoundManager::find_wave_info over the DOL's wave table
-  // Layout transitions (frame decoration); not yet ported.
-  case 0x8007263c:case 0x800726ac:case 0x8007271c:case 0x80072794:case 0x8007280c:break;
+  // Hole in One's screen frame (CMyLayout's two CLayoutAnimations, baseball_frm_change_00/01):
+  // play forward or reversed from the beginning, and with r4 jump straight to the end.
+  case 0x8007263c:case 0x800726ac:case 0x8007271c:case 0x80072794:{
+    uint32_t a=address==0x8007263c||address==0x800726ac?0:1,reverse=address==0x800726ac||address==0x80072794;
+    emit(15,MESG_FRAME<<8,a<<2|reverse<<1|(r[4]!=0));break;
+  }
+  // Hole in One's CMyLayout::fn_8007280C hands message pane r4's screen position to
+  // CExScene::fn_800096EC, which only stores it; nothing the port runs reads it back.
+  case 0x8007280c:break;
   // Archive/bank registration is completed by the static browser asset loader.
   case 0x801d3644:case 0x801d369c:case 0x801d3f94:case 0x801d41cc:case 0x801ed7d4:case 0x800db700:break;
   case 0x801db568:register_bank(r[4],r[6]&255);break; // CCellAnimManager::registBank(brcad, tpl, id)

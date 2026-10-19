@@ -16,8 +16,9 @@ export async function createLayout(g,{spec=g.manifest.wii.layout,file='layout.js
  // Live pane values (animations write into them and they keep the last value, as in nw4r).
  const fresh=p=>({...p,translate:[...p.translate],scale:[...p.scale],size:[...p.size],fontSize:p.fontSize&&[...p.fontSize],text:''});
  const panes=data.panes.map(fresh);
- // The panes as the layout file sets them up, for a layout the game builds again (a new scene).
- function reset(){data.panes.forEach((p,i)=>{panes[i]=fresh(p);});}
+ // The panes as the layout file sets them up, and its animations bound but stopped, for a layout
+ // the game builds again (a new scene).
+ function reset(){data.panes.forEach((p,i)=>{panes[i]=fresh(p);});for(const a of animations)Object.assign(a,{frame:0,playing:false,skip:false,enabled:false,reverse:false});}
  const materialImage=data.materials.map(m=>m.texture==null?null:data.textures[m.texture]);
  // Live material values that RLTS and RLMC animations write into.
  const live=data.materials.map(m=>({srts:m.srts?.map(s=>[...s]),tevColors:m.tevColors?.map(c=>[...c]),kColors:m.kColors?.map(c=>[...c]),matColor:m.matColor&&[...m.matColor]}));
@@ -26,7 +27,7 @@ export async function createLayout(g,{spec=g.manifest.wii.layout,file='layout.js
   const walk=i=>{inTree.add(data.panes[i].name);children[i].forEach(walk);};walk(root);
   // Bound recursively: the pane and its descendants (and their materials) that the animation names.
   const targets=Object.entries(anim.panes).filter(([n])=>inTree.has(n)||data.panes.some(p=>inTree.has(p.name)&&p.material!=null&&data.materials[p.material].name===n));
-  return {anim,targets,frame:0,playing:false,skip:false,enabled:false};
+  return {anim,targets,frame:0,playing:false,skip:false,enabled:false,reverse:false};
  });
  const setFrame=(a,frame)=>{a.enabled=true;a.frame=frame;};
  for(const i of spec.startAtEnd||[])setFrame(animations[i],animations[i].anim.frames);
@@ -43,7 +44,8 @@ export async function createLayout(g,{spec=g.manifest.wii.layout,file='layout.js
  }
  function step(keys,f){if(f<=keys[0][0])return keys[0][1];let v=keys[0][1];for(const k of keys)if(k[0]<=f)v=k[1];return v;}
  function animate(a){
-  const f=Math.max(0,a.frame);
+  // Reversed playback reads the animation from its end (CLayoutAnimation::fn_801DA66C).
+  const f=Math.max(0,a.reverse?a.anim.frames-a.frame-1:a.frame);
   for(const [name,tags] of a.targets){
    const p=panes[byName[name]];
    for(const [target,keys] of Object.entries(tags.RLPA||{})){
@@ -69,7 +71,9 @@ export async function createLayout(g,{spec=g.manifest.wii.layout,file='layout.js
  function message(id){return (data.messages[id]??'???').replace(/\{[0-9a-f]*\}/g,'');}
  function apply(e){
   const op=e.action>>8,i=e.action&255;
-  if(op===1){const a=animations[i];setFrame(a,0);a.playing=true;a.skip=true;}
+  if(op===1){const a=animations[i];a.reverse=false;setFrame(a,0);a.playing=true;a.skip=true;}
+  // Play from the beginning, forward or reversed (value bit 1), or jump to the end (bit 0).
+  else if(op===6){const a=animations[i];a.reverse=!!(e.value&2);setFrame(a,e.value&1?a.anim.frames:0);a.playing=true;a.skip=true;}
   else if(op===2)animations[i].playing=false;
   else if(op===3)panes[byName[spec.texts[i]]].text=message(e.value);
   else if(op===4||op===5){const n=spec.panes[i];panes[byName[n]].translate[op-4]=base[n][op-4]+f32(e.value);}
