@@ -19,10 +19,12 @@ import subprocess
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT/'tools'))
+from game_registry import web_games
 BLOCKED_DIRS = ('build/', 'dist/', 'local/', '.toolchain/')
 # Runtime code publication is authorized; assets and original data are not.
 # Keep the allowance exact, not a blanket exception for generated files.
-RUNTIME_SOURCES = {f'runtime-src/{game}/original-functions.inc' for game in ('golf', 'tap', 'rap')}
+RUNTIME_SOURCES = {f'runtime-src/{game["id"]}/original-functions.inc' for game in web_games(ROOT, validate=False)}
 PUBLIC_KEY_MODULES = {'web/import/common-key.mjs', 'import/common-key.mjs'}
 BLOCKED_EXT = {
     '.iso', '.wbfs', '.rvz', '.ciso', '.gcz', '.wia', '.nkit', '.wad', '.tik', '.tmd',

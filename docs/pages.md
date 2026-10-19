@@ -31,12 +31,16 @@ Missing or incompatible caches prompt reimport. The service worker caches the
 static shell; updates wait for old tabs to close to avoid replacing a running
 game's runtime. Asset import needs Internet access for the Python packages.
 
+See [game-modules.md](game-modules.md) for the versioned game-manifest schema,
+module registration, Actions build matrix, and import optimizations.
+
 ## Local preparation
 
 First build and test from the disc using `build.sh`. Refresh the approved code
 snapshots and stage the public site:
 
 ```sh
+python3 -m pip install -r requirements-ci.txt
 python3 tools/prepare-pages.py --snapshot
 python3 scripts/check-pages.py
 python3 tests/test-public-policy.py

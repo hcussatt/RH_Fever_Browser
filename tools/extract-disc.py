@@ -33,7 +33,7 @@ def layout_fonts(brlyt):
     return names
 
 
-def main(iso):
+def main(iso, *, sound_archive=True):
     disc = WiiFiles(iso)
     if disc.raw(0, 6) != b'SOME01':
         raise SystemExit(f'Expected Rhythm Heaven Fever USA (SOME01), found {disc.raw(0, 6)!r}')
@@ -79,10 +79,11 @@ def main(iso):
             (DISC/'message').mkdir(exist_ok=True)
             (DISC/'message'/name).write_bytes(data)
             report['files'][f'message/{name}'] = hashlib.sha256(data).hexdigest()
-    if not BRSAR.exists() or BRSAR.stat().st_size != disc.files['EN/content2/rev_tengoku.brsar'][1]:
+    if sound_archive and (not BRSAR.exists() or BRSAR.stat().st_size != disc.files['EN/content2/rev_tengoku.brsar'][1]):
         BRSAR.write_bytes(disc.get('EN/content2/rev_tengoku.brsar'))
     (DISC/'extract-report.json').write_text(json.dumps(report, indent=2)+'\n')
-    print(f'Read main.dol, {len(report["files"])} cellanim, layout and message files and the sound archive into {DISC}')
+    print(f'Read main.dol, {len(report["files"])} cellanim, layout and message files into {DISC}')
+    return disc
 
 
 if __name__ == '__main__':

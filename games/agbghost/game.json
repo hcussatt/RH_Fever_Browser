@@ -1,4 +1,6 @@
 {
+  "$schema": "../../schemas/game.schema.json",
+  "schemaVersion": 1,
   "id": "agbghost",
   "title": "Sneaky Spirits",
   "action": "Shoot",
@@ -6,9 +8,21 @@
   "wii": {
     "scene": "AgbGhost",
     "cellanim": "EN/content2/cellanim/agbGhost/ver0/cellanim.szs",
-    "units": ["Game/AgbGhost/SceneAgbGhost.cpp", "Game/AgbGhost/MyChecker.cpp", "Game/AgbGhost/MyFlow.cpp"],
-    "banks": ["ghost"],
-    "projection": [832, 456],
+    "units": [
+      "Game/AgbGhost/SceneAgbGhost.cpp",
+      "Game/AgbGhost/MyChecker.cpp",
+      "Game/AgbGhost/MyFlow.cpp"
+    ],
+    "banks": [
+      "ghost"
+    ],
+    "projection": [
+      832,
+      456
+    ],
     "endsWithMusic": true
+  },
+  "web": {
+    "enabled": false
   }
 }

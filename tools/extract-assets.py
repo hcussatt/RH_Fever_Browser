@@ -10,7 +10,7 @@ import sys
 import numpy as np
 from PIL import Image
 
-from paths import BRSAR, DECOMP, DOL_SHA1, assets, game, manifest, require, source
+from paths import DECOMP, DOL_SHA1, assets, game, manifest, read_sound_archive, require, source
 
 GAME = game()
 SOURCE = require(source(GAME))
@@ -85,7 +85,10 @@ def audio_groups():
     """The system sound group, the sound groups the game loads with its main chart (minus groups
     holding only other music, the tutorial's), every sound stored in those groups, and the
     chart's backing track."""
-    b=require(BRSAR).read_bytes();base=u32(b,0x18)+8
+    header=read_sound_archive(0,0x28)
+    # All references below are in INFO. Audio payloads live much farther into
+    # the archive: leave unrelated games on disc instead of copying 319 MB.
+    b=read_sound_archive(0,u32(header,0x18)+u32(header,0x1c));base=u32(b,0x18)+8
     table=lambda off:base+u32(b,base+off+4)
     ref=lambda t,i:base+u32(b,t+8+i*8)
     sounds=table(0);banks=table(8);groups=table(0x20)
@@ -104,8 +107,8 @@ def audio_groups():
         g,group_items=items(gi);found={}
         for item in group_items:
             fid,off,size,woff,wsize=struct.unpack_from('>5I',b,item)
-            metadata=b[u32(b,g+16)+off:u32(b,g+16)+off+size]
-            found[fid]=(metadata,b[u32(b,g+24)+woff:u32(b,g+24)+woff+wsize])
+            metadata=read_sound_archive(u32(b,g+16)+off,size)
+            found[fid]=(metadata,read_sound_archive(u32(b,g+24)+woff,wsize) if wsize else b'')
         if gi not in (162,163) and music_file not in found and not any(m[:4] in (b'RBNK',b'RSEQ') for m,_ in found.values()):
             continue
         for fid,(metadata,wave_data) in found.items():
