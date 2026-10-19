@@ -36,8 +36,8 @@ export async function createResults(g,canvas){
    if(e.kind===10){if(last)last[['volume','pitch','pan'][e.value]]=float(e.extra);continue;}
    last=null;
    if(e.kind===1||e.kind===5){last={sound:e.value,seconds:e.seconds,tempo:120};sounds.push(last);}
-   if(e.kind===13)wave=sfx.playWave(e.value,origin+e.seconds);
-   if(e.kind===15)sfx.stopWave(wave,origin+e.seconds,e.value);
+   if(e.kind===21)wave=sfx.playWave(e.value,origin+e.seconds);
+   if(e.kind===23)sfx.stopWave(wave,origin+e.seconds,e.value);
   }
   for(const s of sounds)sfx.play(s.sound,origin+s.seconds,s);
  }
@@ -65,9 +65,9 @@ export async function createResults(g,canvas){
   else {ready=false;resolve();}
  }
  function apply(e,at){
-  if(e.kind===14){fadeFrom=fade;fadeTarget=e.value?0:1;fadeDuration=e.extra;fadeFrame=at;}
+  if(e.kind===22){fadeFrom=fade;fadeTarget=e.value?0:1;fadeDuration=e.extra;fadeFrame=at;}
   if(e.kind===16){promptMode=e.value===0?'loop':'out';promptFrame=at+(e.value===0?Math.ceil(e.extra/1.6)+1:0);}
-  if(e.kind!==12)return;
+  if(e.kind!==20)return;
   if(e.value===9){screen=1;steps=0;}
   if(e.value===10)screen=2;
   if(e.value===11){done=true;ready=false;}

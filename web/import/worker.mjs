@@ -1,5 +1,5 @@
 // A File is mounted read-only; the multi-GB ISO is never loaded into RAM wholesale.
-import {loadGame} from '../engine/runtime.mjs';
+import {traceTimeline} from '../engine/timeline.mjs';
 import {readLibrary,writeLibrary,siteRoot} from '../engine/assets.mjs';
 const PYODIDE='https://cdn.jsdelivr.net/pyodide/v0.27.7/full/';
 let busy=false;
@@ -61,14 +61,7 @@ for script in ['prepare-data.py', 'chart-index.py', 'extract-assets.py', 'extrac
    const r=await fetch(url);if(!r.ok)throw new Error('Cannot load '+url);return new Uint8Array(await r.arrayBuffer());
   };
   progress('Checking '+title+' chart…');
-  const g=await loadGame(base,load,{timeline:false});g.options.chartAudioScheduled=true;
-  const limit=Math.ceil(g.secondsAtTick(48*1000)*60);
-  for(let frame=0;!g.ended;frame++){
-   if(frame>=limit)throw new Error(title+': chart did not end.');
-   g.step(g.tickAtSeconds((frame+1)/60));
-  }
-  const round=x=>Math.round(x*1e4)/1e4;
-  const timeline={source:'Local silent run of the unmodified SOME01 chart',endTick:round(g.endTick),sounds:g.chartSounds.map(({tick,...s})=>({tick:round(tick),...s})),commands:g.commands.map(c=>({tick:round(c.tick),op:c.op})),cues:g.cues.map(round).sort((a,b)=>a-b)};
+  const timeline=await traceTimeline(base,load);
   const expected={golf:64,tap:102,rap:31}[id];
   if(expected&&timeline.cues.length!==expected)throw new Error(title+': unexpected chart cue count.');
   const dir='/project/dist/'+id+'/assets';

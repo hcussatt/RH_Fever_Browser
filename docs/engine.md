@@ -20,6 +20,10 @@ built games for the picker page.
 
 - `clock.mjs` maps chart ticks (48 per beat) to seconds of the backing track,
   either at a fixed rate or through the chart's tempo segments.
+- Some games change the song's speed mid-chart (Sneaky Spirits slows to a
+  quarter on each hit). `createTrack()` maps wall time to backing-track
+  position through those speed changes; the chart's tick is always taken from
+  the track position, so the game and the music stay in step.
 - The frame loop advances the original code one 60 Hz frame at a time up to the
   frame of the audio the player is hearing (`heardTime()`), so audio drives the
   game, not the other way round.
@@ -87,6 +91,21 @@ original nw4r sound code where it matters for how a game sounds:
   volume (0.7) times a fixed browser headroom.
 - Volume, pitch and pan the chart sets on a sound (TickFlow sound tuning, event
   kind 10) ride along with that sound, in the live events and in the timeline.
+- Sound handles: a sound played on a handle (the game's `SNDHandle`) can be
+  tuned, faded, paused or stopped later through that handle, like Sneaky
+  Spirits' looping rain. Tunes with a fade length fade over that many game
+  frames (1/60 s). A negative start delays a sound by that many ticks; a
+  positive one starts it that far into the sequence.
+- Speed changes (event kind 14) change the backing track's rate and every
+  sound not yet started is rescheduled; music volume (kind 13) fades the
+  backing track.
+- Sounds are scheduled 0.3 s ahead. Sounds the game plays from chart commands
+  (kind 12) are pre-scheduled when five extra dry runs (on time, early, late,
+  stray presses, every other cue) agree on them; the rest play live.
+- Sounds played before the chart starts (scene setup and pre-roll) are kept.
+- Event kinds: 1 game sound, 3 perfect failed, 5 chart sound, 7 end, 8 chart
+  command, 10 tune, 11 layout, 12 game sound from a chart command, 13 music
+  volume, 14 speed. Each event is 5 words: kind, value, extra, frame, handle.
 - Pitch interpolation, LFO and filters are approximated.
 
 `web/engine/qa/audio-check.mjs` renders a whole autoplay run offline and reports

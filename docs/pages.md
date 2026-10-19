@@ -85,3 +85,5 @@ Internet Archive fetching is not implemented. A future URL importer would need
 CORS support on the actual download/redirect endpoint, streaming, integrity
 checks, and cancellation/resume handling. A normal browser download followed by
 local ISO selection already uses the same import path.
+
+The public release currently includes the three games with approved `runtime-src/` snapshots. Additional upstream game manifests remain available to local builds; publish them after preparing and validating their runtime snapshots.

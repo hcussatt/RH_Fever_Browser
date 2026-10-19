@@ -14,3 +14,17 @@ export function createClock(tempo){
  function tempoAtTick(tick){for(const s of segments){if(tick<s.beats*48)return s.beats*60*s.rate/s.samples;tick-=s.beats*48;}const s=segments.at(-1);return s.beats*60*s.rate/s.samples;}
  return {secondsAtTick,tickAtSeconds,tempoAtTick};
 }
+// How the backing track plays against the page's clock: from wall second `wall` (after the song
+// start) it plays at `speed` from track second `pos`. A speed change (TickFlow speed, or a game's
+// slow motion) slows the chart and the track together, so ticks stay on the track's time.
+export function createTrack(){
+ const segments=[{wall:0,pos:0,speed:1}];
+ const find=(key,x)=>{let s=segments[0];for(const t of segments)if(t[key]<=x)s=t;return s;};
+ return {
+  posAt(wall){const s=find('wall',wall);return s.pos+(wall-s.wall)*s.speed;},
+  wallAt(pos){const s=find('pos',pos);return s.wall+(pos-s.pos)/s.speed;},
+  // The track plays at this speed from this wall second on.
+  set(wall,speed){const pos=this.posAt(wall);while(segments.length>1&&segments.at(-1).wall>=wall)segments.pop();segments.push({wall,pos,speed:Math.max(speed,1e-3)});},
+  get speed(){return segments.at(-1).speed;},
+ };
+}

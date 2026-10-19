@@ -15,7 +15,7 @@ spec.loader.exec_module(clean)
 
 def audit(site):
     build = json.loads((site/'deployment.json').read_text())
-    games = {p.parent.name for p in (ROOT/'games').glob('*/game.json')}
+    games = {p.parent.name for p in (ROOT/'runtime-src').glob('*/original-functions.inc')}
     allowed = {'index.html', 'games.json', '.nojekyll', 'deployment.json', 'sw.js', 'import/tools.zip'}
     allowed.update(str(p.relative_to(ROOT/'web')) for p in (ROOT/'web/import').iterdir() if p.is_file())
     allowed.update('engine/'+p.name for p in (ROOT/'web/engine').glob('*.mjs'))

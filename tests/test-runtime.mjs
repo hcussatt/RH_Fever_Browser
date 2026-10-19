@@ -17,9 +17,10 @@ if(auto&&delay===0){await mkdir(new URL(`../dist/${id}/qa/`,import.meta.url),{re
 
 // Expected [hits, misses, through, stray, perfectFailed] for each game's cue count.
 const stats=g.stats().slice(0,5),cues=targets.length;
-const expected={golf:64,tap:102,rap:31}[id];
+const expected={golf:64,tap:102,rap:31,agbghost:12}[id];
 if(expected)assert.equal(cues,expected);
 if(auto&&delay===0)assert.deepEqual(stats,[cues,0,0,0,0]);
-if(!auto)assert.deepEqual(stats,[0,0,cues,0,2]);
+// Perfect-fail reports with nobody pressing (Sneaky Spirits' misses report none).
+if(!auto)assert.deepEqual(stats,[0,0,cues,0,id==='agbghost'?0:2]);
 if(id==='golf'&&auto&&delay===12)assert.deepEqual(stats,[0,0,64,64,2]);
 if(id==='tap'&&auto&&delay===24){assert.equal(stats[0]+stats[1]+stats[2],102);assert.ok(stats[2]>0);assert.notEqual(stats[4],0);}

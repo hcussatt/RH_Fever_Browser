@@ -170,6 +170,9 @@ def generate(a,size,name):
             bits=[crbit(s) for s in p]
             assert min(bits)>=0,(m,p)
             c=f'cr[{bits[0]}]='+(f'cr[{bits[1]}]|cr[{bits[2]}];' if m=='cror' else '0;')
+        elif m=='mfcr':
+            # CR bit 0 (cr0 lt) is the most significant bit.
+            c=f'{{uint32_t v=0;for(int i=0;i<32;i++)v=v<<1|cr[i];{q[0]}=v;}}'
         elif m in ['fadds','fsubs','fmuls','fdivs','fadd','fsub','fmul','fdiv']:
             op={'add':'+','sub':'-','mul':'*','div':'/'}[m[1:4]]
             c=f'{q[0]}='+('(float)' if m.endswith('s') else '')+f'({q[1]}{op}{q[2]});'

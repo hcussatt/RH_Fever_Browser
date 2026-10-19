@@ -48,11 +48,11 @@ for(const id of ids){
    let n=0;do{events.push(...game.stepGrading(phase>0&&n===0));assert.ok(++n<1800,'result flow must reach its next wait/end');}while(!(game.core._grading_state()&17));
    assert.ok(game.core._grading_state()&(phase<2?1:16));
   }
-  const revealed=events.filter(e=>e.kind===12&&e.value<=4).map(e=>e.value);
+  const revealed=events.filter(e=>e.kind===20&&e.value<=4).map(e=>e.value);
   assert.deepEqual(revealed,[0,1,2]);
-  const heading=events.find(e=>e.kind===12&&e.value===0),comments=events.find(e=>e.kind===12&&e.value===1),grade=events.find(e=>e.kind===12&&e.value===2);
+  const heading=events.find(e=>e.kind===20&&e.value===0),comments=events.find(e=>e.kind===20&&e.value===1),grade=events.find(e=>e.kind===20&&e.value===2);
   assert.equal(comments.frame-heading.frame,90);assert.equal(grade.frame-comments.frame,135);
-  assert.deepEqual(events.filter(e=>e.kind===13).map(e=>e.value),[auto?123:125,auto?126:128]);
+  assert.deepEqual(events.filter(e=>e.kind===21).map(e=>e.value),[auto?123:125,auto?126:128]);
   assert.equal(events.filter(e=>e.kind===1&&e.value===247).length,2);
   assert.equal(events.filter(e=>e.kind===1&&e.value===248).length,2);
   console.log(`${id} ${auto?'centered':'no input'}: grade ${result.grade}, original comments and complete result/epilogue flow`);

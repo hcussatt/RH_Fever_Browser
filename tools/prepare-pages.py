@@ -18,7 +18,7 @@ TOOLS = ['paths.py', 'wii_files.py', 'extract-disc.py', 'prepare-data.py',
 
 
 def stage(snapshot=False, output='site'):
-    games = sorted(p.parent.name for p in (ROOT/'games').glob('*/game.json'))
+    games = sorted(p.parent.name for p in (ROOT/'runtime-src').glob('*/original-functions.inc'))
     if snapshot:
         for game in games:
             target = ROOT/'runtime-src'/game
