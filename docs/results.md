@@ -2,7 +2,7 @@
 
 The standalone ports now run the USA game's original checkpoint manager and
 results/epilogue charts. The browser no longer replaces results with a hit-count
-overlay. This applies to Hole in One, Tap Trial, and Love Rap, in free play.
+overlay. This applies to all eight registered web games, including Remix 1, in free play.
 
 ## Source of behavior
 
@@ -57,7 +57,7 @@ node tests/test-tap-timing.mjs
 ```
 
 The grading test compares original WASM predicates against an independent
-threshold oracle across 131,760 integer/percentage boundary cases. It also
+threshold oracle across 307,440 integer/percentage boundary cases. It also
 plays each full game with no input and with centered input, then runs both
 results confirmations and the epilogue through completion. It checks the
 original 90-frame heading-to-comments and 135-frame comments-to-grade rests,

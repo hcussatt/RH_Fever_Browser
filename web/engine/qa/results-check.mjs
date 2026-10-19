@@ -8,7 +8,8 @@ export async function checkResults(gameUrl,{mode='centered'}={}){
  while(!g.ended){
   const tick=g.tickAtSeconds(++frame/60);let press=false;
   if(tick>=g.timeline.cues[cue]){
-   press=mode==='centered'||mode==='ok'&&cue%4!==0||mode==='but'&&cue%12!==0||mode==='follow'&&categories.get(cue)===1;cue++;
+   const hit=mode==='centered'||mode==='ok'&&cue%4!==0||mode==='but'&&cue%12!==0||mode==='follow'&&categories.get(cue)===1;
+   press=hit?(g.timeline.cueInputs?.[cue]??true):false;cue++;
   }
   for(const e of g.step(tick,press))if(e[0]===9){
    const at=g.tick+g.f32(e[1]+0x58)-g.f32(e[1]+0x54),i=g.timeline.cues.findIndex(t=>Math.abs(t-at)<.5);categories.set(i,g.u8(e[1]+0x78));

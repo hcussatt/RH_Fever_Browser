@@ -27,7 +27,9 @@
     "endsWithMusic": true
   },
   "web": {
-    "enabled": false,
-    "icon": "game_01_4.00.tpl"
+    "enabled": true,
+    "icon": "game_01_4.00.tpl",
+    "order": 40,
+    "expectedCues": 59
   }
 }

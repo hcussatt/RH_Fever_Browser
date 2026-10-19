@@ -78,6 +78,14 @@ class GameRegistryTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'startAtEnd'):
             web_games(self.root)
 
+    def test_remix_requires_its_scene_modules_to_be_enabled(self):
+        path = self.add('mix')
+        game = json.loads(path.read_text())
+        game['wii'] = copy.deepcopy(json.loads((ROOT/'games/remix1/game.json').read_text())['wii'])
+        path.write_text(json.dumps(game))
+        with self.assertRaisesRegex(ValueError, 'must also be web-enabled'):
+            web_games(self.root)
+
 
 if __name__ == '__main__':
     unittest.main()
