@@ -15,7 +15,7 @@ from game_registry import web_games
 ROOT = Path(__file__).resolve().parents[1]
 TOOLS = ['paths.py', 'wii_files.py', 'extract-disc.py', 'prepare-data.py',
          'chart-index.py', 'extract-assets.py', 'extract-sfx.py',
-         'extract-layout.py', 'extract-results.py', 'decode-music.py', 'nintendo_audio.py']
+         'extract-layout.py', 'extract-results.py', 'extract-menu.py', 'decode-music.py', 'nintendo_audio.py']
 
 
 def stage(snapshot=False, output='site'):

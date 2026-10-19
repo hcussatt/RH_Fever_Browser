@@ -62,7 +62,7 @@ os.environ.pop('RHF_WII_COMMON_KEY', None)
   await py.runPythonAsync(`
 os.environ['RHF_GAME'] = game_id
 sys.argv = ['import-assets']
-for script in ['prepare-data.py', 'chart-index.py', 'extract-assets.py', 'extract-sfx.py', 'extract-layout.py', 'extract-results.py', 'decode-music.py']:
+for script in ['prepare-data.py', 'chart-index.py', 'extract-assets.py', 'extract-sfx.py', 'extract-layout.py', 'extract-results.py', 'extract-menu.py', 'decode-music.py']:
     runpy.run_path('/project/tools/' + script, run_name='__main__')
     gc.collect()
 `);

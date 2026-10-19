@@ -27,6 +27,7 @@
     "endsWithMusic": true
   },
   "web": {
-    "enabled": false
+    "enabled": false,
+    "icon": "game_01_4.00.tpl"
   }
 }
