@@ -1,0 +1,29 @@
+{
+  "$schema": "../../schemas/game.schema.json",
+  "schemaVersion": 1,
+  "id": "seesaw",
+  "title": "See-Saw",
+  "action": "Jump",
+  "platform": "wii",
+  "wii": {
+    "scene": "Seesaw",
+    "cellanim": "EN/content2/cellanim/seesaw/ver0/cellanim.szs",
+    "units": [
+      "Game/Seesaw/SceneSeesaw.cpp",
+      "Game/Seesaw/MyChecker.cpp",
+      "Game/Seesaw/MyFlow.cpp"
+    ],
+    "banks": [
+      "seesaw",
+      "seesaw_bar"
+    ],
+    "projection": [
+      854,
+      480
+    ],
+    "endsWithMusic": true
+  },
+  "web": {
+    "enabled": false
+  }
+}

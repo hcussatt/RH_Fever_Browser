@@ -8,8 +8,8 @@ is a real-time multiplayer mod.
 > (Anthropic) through Claude Code. A human tests every major build. This project
 > is primarily a work of AI.
 
-Playable today: **Hole in One**, **Tap Trial**, **Love Rap**, **Sneaky Spirits** and
-**Screwbot Factory**.
+Playable today: **Hole in One**, **Tap Trial**, **Love Rap**, **Sneaky Spirits**,
+**Screwbot Factory** and **See-Saw**.
 
 ## Runtime code here; assets stay local
 

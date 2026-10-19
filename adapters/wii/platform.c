@@ -261,6 +261,9 @@ static void call(uint32_t address){
   case 0x8007c000:{uint32_t index=r[4],type=r[5],power=r[6];float duration=f[1].d,x=f[2].d,y=f[3].d;set_canvas_timed(index,type,power,duration,x,y);break;}
   case 0x8007c244:{uint32_t i=r[4];union{float f;uint32_t u;}x={.f=rdf32(canvas[i]+0x8c)},y={.f=rdf32(canvas[i]+0x90)};r[3]=x.u;r[4]=y.u;break;}
   case 0x80008fc0:anim_tempo_update=r[4]&1;anim_tempo=(uint16_t)wave_tempo(r[5]&0xffff);break; // CExScene: animations follow the chart tempo
+  case 0x8000a6b4:r[3]=rd8(0x80320228);break; // CExScene::fn_8000A6B4 reads its static flag
+  case 0x8000a6bc:wr32(0x80320230,0);break; // CExScene::fn_8000A6BC
+  case 0x8000a6c8:wr32(0x80320230,rd32(0x80320230)+1);break; // CExScene::fn_8000A6C8
   case 0x80008160:case 0x8000818c:case 0x8000835c:case 0x80008830:case 0x80008a20:break;
   case 0x8008d290:{uint32_t self=r[3];call(0x801dd6f4);wr32(self,0x802ed598);r[3]=self;break;} // CExFlow ctor
   case 0x8008d310:break;
