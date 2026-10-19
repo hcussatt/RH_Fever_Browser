@@ -38,6 +38,7 @@ export async function createResults(g,canvas){
    if(e.kind===1||e.kind===5){last={sound:e.value,seconds:e.seconds,tempo:120};sounds.push(last);}
    if(e.kind===21)wave=sfx.playWave(e.value,origin+e.seconds);
    if(e.kind===23)sfx.stopWave(wave,origin+e.seconds,e.value);
+   if(e.kind===18)sfx.stopAt?.(origin+e.seconds);
   }
   for(const s of sounds)sfx.play(s.sound,origin+s.seconds,s);
  }
@@ -55,7 +56,7 @@ export async function createResults(g,canvas){
  function begin(audio,start){
   sfx=audio;origin=start;freeze.getContext('2d').drawImage(canvas,0,0);g.startGrading();
   events=g.resultEvents.map(e=>({kind:e[0],value:e[1],extra:e[2],frame:0,seconds:0}));
-  resolve();result=g.result();initialize();return result;
+  schedule(events);resolve();result=g.result();initialize();return result;
  }
  function input(down){
   if(!ready||done)return;

@@ -25,7 +25,7 @@ Preserve original timing windows, float operation order, scoring, and Perfect ru
 
 ## Build and run
 
-Requires Python 3.10+ with `requirements.txt`, Node.js 18+, Git, Emscripten 5.0.7, and PowerPC binutils. `tools/setup-toolchain.sh` installs toolchain components into `.toolchain/`. The user supplies a USA SOME01 raw ISO and a Wii common key through the mechanisms documented in `README.md`. Do not print or commit the key.
+Requires Python 3.10+ with `requirements.txt`, Node.js 18+, Git, Emscripten 5.0.7, and PowerPC binutils. `tools/setup-toolchain.sh` installs toolchain components into `.toolchain/`. The user supplies a USA SOME01 raw ISO and a Wii common key through the mechanisms documented in `README.md`. Only the explicitly authorized public common-key module may contain the key.
 
 Run from the repository root:
 
@@ -61,8 +61,49 @@ Use `web/engine/qa/audio-check.mjs` for relevant offline audio checks, and inspe
 
 ## Git and game material
 
-The user authorizes publishing the compiled game runtime, including statically translated game code/WASM, for GitHub Pages. The hosted player should import assets and required original data locally from the user's ISO. This overrides the earlier blanket prohibition on publishing generated runtime code. Never publish disc images, original executables, Nintendo archives, extracted charts/media, original data segments, or the Wii common key. Do not import the outer workspace's reference material into tracked paths.
+The user authorizes publishing the compiled game runtime, including statically translated game code/WASM, for GitHub Pages. The hosted player should import assets and required original data locally from the user's ISO. This overrides the earlier blanket prohibition on publishing generated runtime code. Never publish disc images, original executables, Nintendo archives, extracted charts/media, original data segments, or unrelated key material. The user explicitly authorized bundling the public Wii common key in `web/import/common-key.mjs` and its generated Pages copy `import/common-key.mjs`; this is the only key-publication exception. Do not import the outer workspace's reference material into tracked paths.
 
-The clean-material checker allows only `runtime-src/<id>/original-functions.inc` translated-code snapshots for registered manifests with `web.enabled: true`. WASM remains excluded from tracked source; CI compiles it into the ignored `site/` artifact, which `scripts/check-pages.py` audits. See `docs/pages.md` for the importer, cache compatibility, and Pages workflow. Retain asset, original-data, and key protections.
+The clean-material checker allows only `runtime-src/<id>/original-functions.inc` translated-code snapshots for registered manifests with `web.enabled: true`. WASM remains excluded from tracked source; CI compiles it into the ignored `site/` artifact, which `scripts/check-pages.py` audits. See `docs/pages.md` for the importer, cache compatibility, and Pages workflow. Retain asset and original-data protections and the key check outside that exact public module.
 
 Keep `hooks/pre-commit`, `.gitignore`, and `scripts/check-clean.py` effective. Before committing, inspect the diff and run `python3 scripts/check-clean.py --staged` after staging the intended files. The tracked-file check also runs in GitHub Actions on pushes and pull requests; passing it without local disc references does not perform the optional comparison against extracted disc bytes.
+
+
+## CI/CD and publishing new games to Pages
+
+A completed, playable minigame is expected to ship in the Pages app, not only in
+local `dist/`. Preserve existing published games while adding new ones. Keep a
+prototype's `web.enabled` false until it passes local gameplay/asset qualification;
+then explicitly enable it as part of completing the port.
+
+- Register the game in `games/<id>/game.json` using `schemas/game.schema.json`.
+  Set `web.enabled`, `web.expectedCues`, and `web.order`, and supply the `wii`
+  adapter/asset metadata described in `docs/game-modules.md`. Do not
+  maintain separate hard-coded game lists in the picker, worker, or workflow.
+- Build from the local USA ISO and test actual input, timing, audio, complete
+  results/epilogue transitions, and Perfect outcomes. Add or extend runtime and
+  grading coverage for the new game. Browser/autoplay checks alone do not prove
+  Wii-identical behavior. Keep automated audio silent during user gameplay.
+- Refresh the approved translated snapshot with
+  `python3 tools/prepare-pages.py --snapshot` after a local build. A web-enabled
+  game needs `runtime-src/<id>/original-functions.inc`; CI compiles its WASM
+  without an ISO. Keep importer dependencies in the source archive current and
+  verify a fresh import works without a decomp checkout or local build files.
+- Validate registration with `python3 tools/game_registry.py` and
+  `python3 tests/test_game_registry.py`. Run source/public policy checks,
+  `python3 scripts/check-pages.py` on the staged artifact, and `npm test`.
+  Never add the ISO, charts, original data segments, or extracted media to Git
+  or the public site. The exact public common-key module is the sole key exception.
+- `.github/workflows/pages.yml` discovers enabled games, compiles each through
+  its generated Actions matrix, assembles/audits `site/`, and runs browser
+  integration tests on PRs. Require these checks on the final merged tree;
+  resolving conflicts or changing source requires a fresh successful run.
+- Merge the tested PR into `hcussatt/RH_Fever_Browser:main` to trigger deployment.
+  A successful PR build does **not** update the live website. The main-branch
+  workflow must finish its deploy job successfully; Pages should use GitHub
+  Actions as its publishing source. Do not manually publish `dist/` or assets.
+- Verify the actual deployed app at
+  `https://hcussatt.github.io/RH_Fever_Browser/`, including the new catalog entry
+  and ISO import path, before calling it shipped. A service-worker update waits
+  for existing app tabs to close; reopen the app to see the new shell. Runtime
+  or converter changes may require ISO reimport through the compatibility check.
+  Do not clear the user's imported data merely to refresh the UI.

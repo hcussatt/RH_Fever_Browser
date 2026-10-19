@@ -17,6 +17,10 @@ def common_key():
     digits in $RHF_WII_COMMON_KEY or local/wii-common-key.txt, or point
     $RHF_DOLPHIN_IOSC at a Dolphin source checkout's Core/IOS/IOSC.cpp."""
     text = os.environ.get('RHF_WII_COMMON_KEY') or (KEY_FILE.read_text() if KEY_FILE.exists() else '')
+    bundled=ROOT/'web/import/common-key.mjs'
+    if not text and bundled.exists():
+        match=re.search(r"WII_COMMON_KEY\s*=\s*['\"]([0-9a-fA-F]{32})['\"]",bundled.read_text())
+        if match:text=match.group(1)
     if not text and os.environ.get('RHF_DOLPHIN_IOSC'):
         iosc = pathlib.Path(os.environ['RHF_DOLPHIN_IOSC']).read_text()
         block = iosc.split('case ConsoleType::Retail:',1)[1].split('m_key_entries[HANDLE_COMMON_KEY]',1)[1].split('m_root_key_entry',1)[0]

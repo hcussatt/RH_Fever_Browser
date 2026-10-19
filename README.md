@@ -52,7 +52,7 @@ can require reimport. There is no built-in Internet Archive downloader.
 
 - Your own **Rhythm Heaven Fever (USA)** disc as a raw `.iso` (game ID SOME01,
   4,699,979,776 bytes). RVZ/WBFS images must be converted to ISO first.
-- The Wii common key (see below).
+- The Wii common key is bundled for the Pages importer; local builds use it by default too.
 - Python 3.10+ with `numpy`, `Pillow` and `cryptography`, Node.js 18+, git.
 - Emscripten 5.0.7 and PowerPC binutils: `tools/setup-toolchain.sh` downloads both into `.toolchain/`.
 
@@ -81,8 +81,9 @@ with an old-Python error, rerun `tools/setup-toolchain.sh` after fixing Python.
 
 ## Wii common key
 
-The ISO's game partition is encrypted with the Wii common key, which is not
-included here. Provide it in one of these ways:
+The Pages importer includes the Wii common key, so visitors only select their
+ISO. Its publication was explicitly authorized by the user. The same bundled
+module is the local builder's default. To override it:
 
 - put the 32 hex digits in `local/wii-common-key.txt` (git-ignored),
 - set `RHF_WII_COMMON_KEY`, or
@@ -111,6 +112,7 @@ included here. Provide it in one of these ways:
 This is a proof of concept, not a certified 1:1 port. Original timing windows
 and Perfect rules are kept; nothing widens windows or forces scores. Audio uses
 the original samples, note envelopes and volume rules; pitch interpolation, LFO
-and filters are still approximated by Web Audio. Love Rap's lyric captions are
-not drawn yet. See `docs/golf-notes.md`,
+and filters are still approximated by Web Audio. Original grading and epilogue screens are implemented for the three ports; see
+[results behavior and verification](docs/results.md). Love Rap's lyric captions
+use the original layout. See `docs/golf-notes.md`,
 `docs/tap-notes.md` and `docs/handoff-START_HERE.md` for the full list.

@@ -56,6 +56,7 @@ if [ "$skip_tests" != "--skip-tests" ]; then
     node tests/test-runtime.mjs "$game" >/dev/null
     node tests/test-runtime.mjs "$game" --auto >/dev/null
   done
+  node tests/test-grading.mjs >/dev/null
   echo "All tests passed."
 fi
 echo "Done. Start the games with ./serve.sh --open"

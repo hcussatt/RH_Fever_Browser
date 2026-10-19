@@ -8,11 +8,11 @@ and an offline service worker. It never includes `dist/<game>/assets/`.
 
 The first import runs existing Python converters through Pyodide 0.27.7 in a
 module worker. NumPy, Pillow, and cryptography are loaded from its pinned CDN.
-The user supplies a raw SOME01 ISO and a key (typed or selected as a text file).
+The user supplies a raw SOME01 ISO. The public Wii common key is bundled in
+`web/import/common-key.mjs` and its generated Pages copy; no key entry is needed.
 The converter validates the game ID and known main.dol SHA1. JavaScript File
 slices handle large offsets that exceed WASM CPython's 32-bit seek limit.
-All decryption, conversion, chart dry runs, and caching happen locally. The key
-is cleared from the form and worker environment and is not persisted.
+All decryption, conversion, chart dry runs, and caching happen locally. The worker clears its temporary key environment variable after disc extraction.
 
 The converter extracts data sections and scripts as well as audiovisual assets.
 It runs each chart silently through its precompiled core before making the game
@@ -22,7 +22,7 @@ Cache Storage holds only prepared runtime files. Each game has a unique cache;
 the library pointer is updated after all files are written. Cancellation leaves
 previously committed games available. Remove local game data clears only this
 project's asset-cache namespace. Other Pages projects on the origin are isolated
-by URL path. The ISO and key are not cached.
+by URL path. The ISO is not cached. The common-key module is part of the public offline shell.
 
 The shell version covers all deployed files. The asset-compatibility version
 covers converter code, game manifests, and WASM; changing only the UI does not
@@ -54,7 +54,7 @@ Serve `site/` through a static HTTP server, ideally mounted at
 The browser integration test starts a server under that prefix and exercises
 invalid ISO handling, direct game links without data, local-cache readiness,
 project-scoped removal, and offline shell loading. These CI tests contain no
-disc or key. For end-to-end qualification, import a real ISO locally and check
+disc data. For end-to-end qualification, import a real ISO locally and check
 all games, reload/offline behavior, pause, restart, and input. Keep test audio
 out of the user's gameplay.
 
@@ -63,8 +63,9 @@ out of the user's gameplay.
 `.github/workflows/pages.yml` runs for PRs, pushes to `main`, and manual dispatch.
 It checks source policy and syntax, installs pinned Emscripten 5.0.7, compiles
 the approved snapshots, stages and audits the site, and runs Chromium tests.
-Only a successful non-PR workflow reaches deployment. No ISO/key is put into
-Actions, repository secrets, caches, or artifacts. The normal tracked-source
+Only a successful non-PR workflow reaches deployment. The public common-key module is included in the repository and shell artifact.
+No ISO, original data segments, charts, or extracted media are put into Actions,
+repository secrets, caches, or public artifacts. The normal tracked-source
 policy check remains in its own workflow as well.
 
 A repository administrator must enable **Settings → Pages → Build and deployment
