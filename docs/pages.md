@@ -92,3 +92,12 @@ checks, and cancellation/resume handling. A normal browser download followed by
 local ISO selection already uses the same import path.
 
 The public release currently includes the three games with approved `runtime-src/` snapshots. Additional upstream game manifests remain available to local builds; publish them after preparing and validating their runtime snapshots.
+
+## Game-select artwork
+
+The launcher follows the original game-select layout and uses its game icons
+after local import. `web.icon` in each source manifest names a texture in
+`EN/content2/layout/layout_gameSelect.szs`. Extraction converts that texture to
+`menu-icon.png` in the game’s private asset cache. The public site contains only
+CSS and numbered placeholders; Nintendo menu artwork is never published.
+Existing imports without icons remain usable; reimport adds the artwork.

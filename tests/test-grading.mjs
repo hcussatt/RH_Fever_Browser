@@ -1,9 +1,10 @@
 // Original grading instruction regression checks, independent reference predicates,
 // and the complete results -> release-confirm -> epilogue -> library lifecycle.
 import assert from 'node:assert/strict';
-import {readFile} from 'node:fs/promises';
+import {readFile,readdir} from 'node:fs/promises';
 import {loadGame} from '../dist/engine/runtime.mjs';
-const ids=process.argv.slice(2).length?process.argv.slice(2):['golf','tap','rap'];
+const manifests=await Promise.all((await readdir(new URL('../games/',import.meta.url))).map(async id=>JSON.parse(await readFile(new URL(`../games/${id}/game.json`,import.meta.url)))));
+const ids=process.argv.slice(2).length?process.argv.slice(2):manifests.filter(m=>m.web.enabled).map(m=>m.id);
 const load=id=>loadGame(new URL(`../dist/${id}/`,import.meta.url),readFile);
 const below=(threshold,count,percent)=>threshold&0x8000?percent<(threshold&0x7fff):count<threshold;
 function referenceGrade(criteria,states){
@@ -65,7 +66,10 @@ for(const id of ids){
  for(const auto of [false,true]){
   const game=await load(id);let frame=0,cue=0;
   while(!game.ended){const tick=game.tickAtSeconds(++frame/60),press=auto&&tick>=game.timeline.cues[cue]?game.timeline.cueInputs?.[cue++]??true:false;game.step(tick,press);}
-  const result=game.result();assert.equal(result.grade,auto?0:2);assert.equal(result.perfectFailed,auto||id==='agbghost'?0:2);
+  const result=game.result();assert.equal(result.grade,auto?0:2);
+  // Sneaky Spirits' original misses do not set the diagnostic Perfect-fail
+  // flag (also covered by test-runtime); they still produce Try Again.
+  assert.equal(result.perfectFailed,auto||id==='agbghost'?0:2);
   assert.ok(result.comments.length>0);assert.ok(result.comments.every(s=>s&&!s.includes('???')));
   game.startGrading();
   const events=[];

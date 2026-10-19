@@ -44,7 +44,11 @@ def web_games(root=ROOT, *, validate=True, require_runtime=True):
     if validate:
         if not games:
             raise ValueError('Enable at least one web game')
+        enabled = {g['id'] for g in games}
         for game in games:
+            for scene in game['wii'].get('scenes', []):
+                if scene['game'] not in enabled:
+                    raise ValueError(f'{game["id"]}: remix scene {scene["game"]} must also be web-enabled')
             required = [f'adapters/{game["id"]}/game.h']
             if require_runtime:
                 required.append(f'runtime-src/{game["id"]}/original-functions.inc')

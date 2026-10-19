@@ -4,6 +4,7 @@
 // The game's code drives it through layout events (11) from the platform backend: play or stop
 // an animation, set a text box's message, or offset a pane (see adapters/<game>/game.h).
 import {assetResponse,assetImage} from './assets.mjs';
+import {windowPixels} from './layout-window.mjs';
 export async function createLayout(g,{spec=g.manifest.wii.layout,file='layout.json',fontFile='layout-font.png',data:given,events=g.layoutEvents}={}){
  if(!spec)return null;
  const asset=n=>new URL('assets/'+n,g.base);
@@ -201,41 +202,25 @@ export async function createLayout(g,{spec=g.manifest.wii.layout,file='layout.js
   else ctx.drawImage(img,0,0);
   ctx.restore();
  }
- const opaqueWindows=new Map();
+ const windows=new WeakMap();
  function drawWindow(ctx,p,m,alpha){
   if(p.frames.length!==1)throw new Error('Unsupported original window frame count');
   const material=data.materials[p.frames[0].material],img=tint(images[data.textures[material.texture]],material),r=rect(p);
-  const w=img.width,h=img.height;
-  // The content is the content material's colour 1 (no texture) times the vertex colour: white for
-  // a speech balloon, clear for Hole in One's screen frame.
+  if(r.w<=0||r.h<=0)return;
+  // Keep the content material separate: a speech balloon is white inside,
+  // whereas Hole in One's frame has a transparent centre.
   const c=data.materials[p.material].color1,v=p.vertexColors?.[0]||[255,255,255,255];
-  if(c.every(value=>value===255)&&v.every(value=>value===255)){
-   // Bake opaque balloons into one surface, so filtering adjacent mirrored
-   // corner/edge quads cannot leave seams. Transparent game frames use the
-   // separate content and border path below.
-   const key=p.material+'|'+p.size+'|'+material.color0+'|'+material.color1;let surface=opaqueWindows.get(key);
-   if(!surface){
-    surface=document.createElement('canvas');surface.width=Math.ceil(r.w);surface.height=Math.ceil(r.h);
-    const x=surface.getContext('2d'),dst=x.createImageData(surface.width,surface.height),src=img.getContext('2d').getImageData(0,0,w,h).data;
-    for(let y=0;y<surface.height;y++)for(let x=0;x<surface.width;x++){
-     const sx=Math.min(x,surface.width-1-x,w-1),sy=Math.min(y,surface.height-1-y,h-1),a=(sy*w+sx)*4,b=(y*surface.width+x)*4;
-     dst.data.set(src.subarray(a,a+4),b);
-    }
-    x.putImageData(dst,0,0);opaqueWindows.set(key,surface);
-   }
-   ctx.setTransform(...m);ctx.globalAlpha=alpha;ctx.drawImage(surface,r.left,-r.top,r.w,r.h);return;
+  const fill=c.map((channel,i)=>Math.round(channel*v[i]/255)),width=Math.ceil(r.w),height=Math.ceil(r.h),key=[width,height,...fill].join(',');
+  if(!windows.has(img))windows.set(img,new Map());
+  const cache=windows.get(img);let surface=cache.get(key);
+  if(!surface){
+   surface=document.createElement('canvas');surface.width=width;surface.height=height;
+   const corner=img.getContext('2d').getImageData(0,0,img.width,img.height);
+   surface.getContext('2d').putImageData(new ImageData(windowPixels(corner,width,height,fill),width,height),0,0);
+   // Animated window sizes must not retain an unbounded set of surfaces.
+   if(cache.size>=32)cache.clear();cache.set(key,surface);
   }
-  ctx.setTransform(...m);ctx.globalAlpha=alpha*c[3]*v[3]/255/255;ctx.fillStyle=`rgb(${c[0]*v[0]/255},${c[1]*v[1]/255},${c[2]*v[2]/255})`;ctx.fillRect(r.left+w,-r.top,r.w-2*w,r.h);if(r.h>2*h)ctx.fillRect(r.left,-r.top+h,r.w,r.h-2*h);
-  ctx.globalAlpha=alpha;
-  // NW4R's one-frame window mirrors its single corner into all four corners.
-  for(const [right,bottom] of [[0,0],[1,0],[0,1],[1,1]]){
-   ctx.save();ctx.translate(r.left+(right?r.w:0),-r.top+(bottom?r.h:0));ctx.scale(right?-1:1,bottom?-1:1);ctx.drawImage(img,0,0);ctx.restore();
-  }
-  ctx.drawImage(img,w-1,0,1,h,r.left+w,-r.top,r.w-2*w,h);
-  ctx.save();ctx.translate(0,-r.top*2+r.h);ctx.scale(1,-1);ctx.drawImage(img,w-1,0,1,h,r.left+w,-r.top,r.w-2*w,h);ctx.restore();
-  // The left and right edges stretch the corner's last row, mirrored for the right.
-  ctx.drawImage(img,0,h-1,w,1,r.left,-r.top+h,w,r.h-2*h);
-  ctx.save();ctx.translate(r.left*2+r.w,0);ctx.scale(-1,1);ctx.drawImage(img,0,h-1,w,1,r.left,-r.top+h,w,r.h-2*h);ctx.restore();
+  ctx.setTransform(...m);ctx.globalAlpha=alpha;ctx.drawImage(surface,r.left,-r.top,r.w,r.h);
  }
  function drawText(ctx,p,m,alpha){
   if(!p.text)return;

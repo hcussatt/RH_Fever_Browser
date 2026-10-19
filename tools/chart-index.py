@@ -135,10 +135,9 @@ def tempo_segments(sound):
 
 def music_sound(music):
     """The wave sound whose tempo table is the decomp's waveTempo_<music> symbol."""
-    for name in GAMES:
-        for sid, label in manifest(name)['wii'].get('soundNames', {}).items():
-            if label == music:
-                return int(sid)
+    provided = manifest(game())['wii'].get('musicSound')
+    if provided is not None:
+        return provided
     symbols = (DECOMP/'config/SOME01/symbols.txt').read_text()
     found = re.search(rf'^waveTempo_{music} = \.data:0x([0-9A-Fa-f]+);', symbols, re.M)
     if not found:
@@ -193,7 +192,7 @@ def main():
     name = game()
     profile = manifest(name)['wii']
     if 'scenes' in profile:
-        ids = scene_ids()
+        ids = profile.get('sceneIds') or scene_ids()
         for s in profile['scenes']:
             s['game_scene'] = manifest(s['game'])['wii']['scene']
         start, music, first, version, loads = remix_chart(profile, ids)

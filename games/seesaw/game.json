@@ -25,7 +25,8 @@
   },
   "web": {
     "enabled": true,
-    "order": 44,
+    "icon": "game_01_3.00.tpl",
+    "order": 30,
     "expectedCues": 60
   }
 }

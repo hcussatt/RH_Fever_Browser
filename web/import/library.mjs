@@ -3,9 +3,11 @@ import {WII_COMMON_KEY} from './common-key.mjs';
 import {groupGames} from '../engine/menu.mjs';
 const $=s=>document.querySelector(s);
 let worker,build,games,selected;
+const iconURLs=new Map();
 const status=(message,error=false)=>{$('#progress').textContent=message;$('#progress').classList.toggle('error',error);};
 function busy(value){$('#import').disabled=value;$('#iso').disabled=value;$('#remove').disabled=value;$('#cancel').hidden=!value;$('#busy').hidden=!value;}
 async function render(){
+ const focused=document.activeElement?.dataset.game;
  const library=await readLibrary();$('#games').replaceChildren();
  // Games are listed by remix set (engine/menu.mjs), each set under its title.
  const groups=groupGames(games),titles=new Map(groups.map(g=>[g.games[0].id,g.title]));
@@ -15,22 +17,41 @@ async function render(){
   // Verify that storage eviction has not left just the library pointer.
   const stored=ready&&await (await caches.open(entry.cache)).match(new URL(id+'/assets/original-timeline.json',siteRoot));
   const card=document.createElement('button');card.type='button';card.className='game';card.setAttribute('aria-pressed',String(id===selected));card.onclick=()=>{selected=id;render();};
+  card.dataset.game=id;
+  const art=document.createElement('span');art.className='game-art';art.setAttribute('aria-hidden','true');
+  let icon;
+  if(stored){
+   const key=entry.cache,cache=await caches.open(key),response=await cache.match(new URL(id+'/assets/menu-icon.png',siteRoot));
+   if(response){if(!iconURLs.has(key))iconURLs.set(key,URL.createObjectURL(await response.blob()));icon=iconURLs.get(key);}
+  }
+  if(icon){const img=new Image();img.src=icon;img.alt='';art.append(img);}else art.textContent=String(index+1).padStart(2,'0');
+  card.append(art);
   const number=document.createElement('span');number.className='game-index';number.textContent=String(index+1).padStart(2,'0');card.append(number);
   const h=document.createElement('h3');h.textContent=title;
   const p=document.createElement('p');p.textContent=stored?'● READY TO PLAY':entry?'UPDATE REQUIRED':'○ INSERT DISC';card.append(h,p);
   if(id===selected){
    $('#selected-number').textContent=String(index+1).padStart(2,'0');$('#selected-title').textContent=title;$('#selected-art').dataset.game=id;
+   $('#selected-art').replaceChildren(art.cloneNode(true));$('#selected-art').hidden=false;
    $('#selected-status').textContent=stored?'Ready on this device.':entry?'Import your disc for this update.':'Import your disc to play.';
    $('#selected-action').replaceChildren();
    if(stored){const a=document.createElement('a');a.className='play';a.textContent='LET’S PLAY →';a.href=new URL(id+'/',siteRoot);$('#selected-action').append(a);}
-   else{const button=document.createElement('button');button.className='screen-button';button.textContent='INSERT YOUR DISC ↗';button.onclick=openImport;$('#selected-action').append(button);}
+   else{const button=document.createElement('button');button.className='screen-button';button.textContent='Load disc';button.onclick=openImport;$('#selected-action').append(button);}
   }
   $('#games').append(card);
  }
+ if(focused)$('#games').querySelector(`[data-game="${focused}"]`)?.focus({preventScroll:true});
  const estimate=await navigator.storage?.estimate?.();
  $('#storage').textContent=estimate?`${Math.round((estimate.usage||0)/1048576)} MB stored by this origin. Clearing site data removes your games.`:'Clearing site data removes your imported games.';
 }
 function openImport(){if(!$('#import-dialog').open)$('#import-dialog').showModal();}
+$('#games').onkeydown=e=>{
+ const direction={ArrowLeft:-1,ArrowRight:1,ArrowUp:-1,ArrowDown:1}[e.key];
+ if(!direction||!e.target.matches('.game'))return;
+ e.preventDefault();
+ const cards=[...$('#games').querySelectorAll('.game')],columns=getComputedStyle($('#games')).gridTemplateColumns.split(' ').length;
+ const offset=direction*(e.key==='ArrowUp'||e.key==='ArrowDown'?columns:1),next=cards[(cards.indexOf(e.target)+offset+cards.length)%cards.length];
+ next.focus();selected=next.dataset.game;render();
+};
 $('#open-import').onclick=openImport;
 $('#screen-import').onclick=openImport;
 $('#close-import').onclick=()=>$('#import-dialog').close();
@@ -40,6 +61,7 @@ try{
  if(!isSecureContext||!globalThis.caches)throw new Error('Use HTTPS or localhost in a browser with site storage enabled.');
  [build,games]=await Promise.all([deployment(),fetch(new URL('games.json',siteRoot)).then(r=>r.json())]);
  if(!games.length)throw new Error('No web games are available in this deployment.');
+ $('#games').style.setProperty('--columns',Math.min(4,games.length));
  selected=groupGames(games)[0].games[0].id;$('#game-count').textContent=String(games.length).padStart(2,'0');
  $('#version').textContent=build.version;await render();
  if('serviceWorker' in navigator)navigator.serviceWorker.register(new URL('sw.js',siteRoot),{scope:siteRoot.pathname}).catch(console.warn);

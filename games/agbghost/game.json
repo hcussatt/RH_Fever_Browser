@@ -24,7 +24,7 @@
   },
   "web": {
     "enabled": true,
-    "order": 40,
+    "order": 80,
     "expectedCues": 12
   }
 }

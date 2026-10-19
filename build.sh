@@ -42,6 +42,7 @@ for game in $games; do
   RHF_GAME=$game "$RHF_PYTHON" tools/extract-assets.py >/dev/null
   RHF_GAME=$game "$RHF_PYTHON" tools/extract-sfx.py >/dev/null
   RHF_GAME=$game "$RHF_PYTHON" tools/extract-layout.py >/dev/null
+  RHF_GAME=$game "$RHF_PYTHON" tools/extract-menu.py
   RHF_GAME=$game "$RHF_PYTHON" tools/extract-results.py
   RHF_GAME=$game "$RHF_PYTHON" tools/decode-music.py
   tools/stage-web.sh "$game"
