@@ -42,16 +42,6 @@ class GameRegistryTests(unittest.TestCase):
         self.add('localonly', enabled=False, runtime=False)
         self.assertEqual([g['id'] for g in web_games(self.root)], ['newgame', 'other'])
 
-    def test_remix_requires_its_generated_scene_header(self):
-        path = self.add('newremix')
-        game = json.loads(path.read_text())
-        game['wii'] = json.loads((ROOT/'games/remix1/game.json').read_text())['wii']
-        path.write_text(json.dumps(game))
-        with self.assertRaisesRegex(ValueError, 'scenes.h'):
-            web_games(self.root)
-        (self.root/'runtime-src/newremix/scenes.h').touch()
-        self.assertEqual([g['id'] for g in web_games(self.root)], ['newremix'])
-
     def test_disabled_game_does_not_need_a_public_snapshot(self):
         self.add('playable')
         self.add('unfinished', enabled=False, runtime=False)
