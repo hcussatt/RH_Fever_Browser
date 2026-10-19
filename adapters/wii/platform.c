@@ -334,16 +334,17 @@ EMSCRIPTEN_KEEPALIVE uint32_t envelope_curve(int attack,int hold,int decay,int s
 // Historical timestamp correction / rollback is FUTURE USE ONLY and inactive.
 // See research/timing/FUTURE-USE.md before any later experiment.
 // One input of the original's input types (EInputType): 4 A, 5 B, 6 A and B together.
+// The hit and miss handlers get the input type (Screwbot Factory picks the claw's reaction from it).
 static void press(uint32_t type){
   if(!rd8(rd32(0x80320170)+0x429))return; // CInputCheckManager::mAllowInput, set by the chart.
-  uint32_t consumed=0;
+  uint32_t consumed=0;type=input_map[type&255]; // the chart's remap applies to every use below
   for(int i=(int)checker_count-1;i>=0;i--){
     uint32_t c=checkers[i];if(rd8(c+0x71))continue;
-    r[3]=c;r[4]=input_map[type&255];call(0x801e7e28);if(!(r[3]&0xff))continue; // checker waits for this input type
+    r[3]=c;r[4]=type;call(0x801e7e28);if(!(r[3]&0xff))continue; // checker waits for this input type
     uint32_t quality=0x80400000;r[3]=c;r[4]=quality;r[5]=wrong_timer>0;f[1].d=0;
     call(rd32(rd32(c)+0x20));uint32_t judgment=r[3];
     if(judgment<=1){
-      consumed=1;r[3]=c;r[4]=4;call(rd32(rd32(c)+(judgment==0?0x24:0x28)));
+      consumed=1;r[3]=c;r[4]=type;call(rd32(rd32(c)+(judgment==0?0x24:0x28)));
       if(r[3]){uint32_t grade=rd8(quality);score_sum+=grade;score_count++;wrong_count=0;checkpoint(rd8(c+0x78),judgment);
 #if GAME_END_CHECKER_ON_HIT
         if(rd8(c+0x70)){invoke1(rd32(rd32(c)+0x14),c);checker_count--;memmove(checkers+i,checkers+i+1,(checker_count-i)*4);}
