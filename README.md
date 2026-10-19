@@ -8,7 +8,8 @@ is a real-time multiplayer mod.
 > (Anthropic) through Claude Code. A human tests every major build. This project
 > is primarily a work of AI.
 
-Playable today: **Hole in One**, **Tap Trial**, **Love Rap** and **Sneaky Spirits**.
+Playable today: **Hole in One**, **Tap Trial**, **Love Rap**, **Sneaky Spirits** and
+**Screwbot Factory**.
 
 ## No game files in this repository
 
@@ -45,8 +46,10 @@ tools/setup-toolchain.sh
 ./serve.sh --open
 ```
 
-Open the printed URL in Chrome and pick a game. Space, X, click or gamepad A
-plays; Escape pauses. Click once first so the browser allows sound.
+Open the printed URL in Chrome and pick a game. A is Space, Left Shift, X, left
+click or gamepad A; B is Right Shift, right click or gamepad B (Screwbot Factory
+wants A and B together). Escape pauses. Click once first so the browser allows
+sound.
 
 ## Wii common key
 

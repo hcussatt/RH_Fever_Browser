@@ -27,9 +27,22 @@ built games for the picker page.
 - The frame loop advances the original code one 60 Hz frame at a time up to the
   frame of the audio the player is hearing (`heardTime()`), so audio drives the
   game, not the other way round.
-- `input.mjs` turns each press into `{player, frame, at}` in a queue. The
-  simulation reads only that queue. Original timing windows and Perfect rules
-  are untouched: no widened windows, score forcing or rollback.
+- `input.mjs` turns each press and release of A or B into `{player, frame, at,
+  button, down}` in a queue. The simulation reads only that queue. Original
+  timing windows and Perfect rules are untouched: no widened windows, score
+  forcing or rollback.
+- Keys: A is Space, Left Shift, X, left click or gamepad A; B is Right Shift,
+  right click or gamepad B.
+- Each frame the backend (`buttons()` in `adapters/wii/platform.c`) turns the
+  buttons into the original input types like the original controller and
+  input check: A (4), B (5), A and B pressed together (6) and their releases
+  (18, 19, 20). A lone A or B is held back 3 frames when an A+B checker is
+  within 12 ticks, as in the original. A checker only answers the input types
+  it lists; a chart can remap one type to another.
+- A hit can re-arm a checker for a later beat with another input (Screwbot
+  Factory: press A+B, let go two beats later), so cues are re-read whenever a
+  checker's target moves, and the timeline keeps each cue's input
+  (`cueInputs`).
 
 ## Charts
 
@@ -129,7 +142,9 @@ Nothing on the frame loop or audio path ever waits on the network.
    `banks` are the cell-animation banks in the order the scene registers them;
    `scene` names the
    decomp's scene (`sceneVariant` picks one main chart when the scene has
-   several); `perfectActive`, `projection` and `endsWithMusic`
+   several); `input` is the input the game's cues wait for (4 A, the default,
+   or 6 A and B together), for the controls shown on the page;
+   `perfectActive`, `projection` and `endsWithMusic`
    cover how the game plays and ends.
 2. `adapters/<id>/game.h`: the scene constructor, init, update, flow command and
    wrong-input addresses and the flow constructor, plus any extra platform calls the game makes

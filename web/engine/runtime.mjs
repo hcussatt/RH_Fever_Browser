@@ -35,14 +35,22 @@ export async function loadGame(gameUrl,load=fetchBytes,{timeline:withTimeline=tr
  const f32bits=new DataView(new ArrayBuffer(4));
  const rest=bits=>(f32bits.setUint32(0,bits),f32bits.getFloat32(0));
  let tick=0,ended=false,endTick=null;
- const sounds=[],chartSounds=[],gameSounds=[],commands=[],cues=[];const options={chartAudioScheduled:false};
+ const sounds=[],chartSounds=[],gameSounds=[],commands=[],cues=[],cueInputs=[];const options={chartAudioScheduled:false};
  // Each event: kind, value, extra, frame, sound handle (see platform.c emit_handle).
  function drain(){const n=core._events_count(),p=core._events_ptr();const out=[];for(let i=0;i<n;i++)out.push(Array.from(core.HEAPU32.subarray(p/4+i*5,p/4+i*5+5)));core._events_clear();return out;}
+ let tapped=0;
  function frame(ticks,press){
   core._set_delta(ticks);core._set_frame_ticks(ticks);
   core._set_tempo(clock.tempoAtTick(tick));
   core._begin_frame();
-  if(press)core._press_a();
+  // press: {trig, release} button masks (1 A, 2 B); an input type a checker waits for (4 A,
+  // 5 B, 6 A and B together, 18-20 their releases), with A or B let go the next frame; or true
+  // for an A tap.
+  let trig=0,release=tapped;tapped=0;
+  if(press===true)press=4;
+  if(typeof press==='number'){const b={4:1,5:2,6:3,18:1,19:2,20:3}[press]||0;if(press<16){trig=b;if(press<6)tapped=b;}else release|=b;}
+  else if(press){trig=press.trig|0;release|=press.release|0;}
+  core._buttons(trig,release);
   core._finish_frame();
   return drain();
  }
@@ -115,10 +123,17 @@ export async function loadGame(gameUrl,load=fetchBytes,{timeline:withTimeline=tr
  options.chartAudioScheduled=!!timeline;
  preroll.forEach((events,n)=>handle(events,tick-(preroll.length-1-n)*nominal));
  options.chartAudioScheduled=false;
+ const live=new Map(); // checker address -> the target its last cue was read from
  function step(nextTick,press=false){
   const events=frame(nextTick-tick,press);tick=nextTick;
-  // A new checker's perfect tick: its target (mTickJust, +0x58) less the ticks it has counted (mTickPass, +0x54).
-  for(const e of events)if(e[0]===9)cues.push(tick+f32(e[1]+0x58)-f32(e[1]+0x54));
+  // A checker's perfect tick: its target (mTickJust, +0x58) less the ticks it has counted (mTickPass,
+  // +0x54), read when it is created. A hit can re-arm a checker for a later target (Screwbot
+  // Factory's release after its press), which is a new cue; the input it waits for is its first
+  // input type (+0x0c).
+  for(const e of events)if(e[0]===9){const c=e[1];live.set(c,f32(c+0x58));cues.push(tick+f32(c+0x58)-f32(c+0x54));cueInputs.push(u32(c+0x0c));}
+  for(let i=0,c;(c=core._checker_at(i)>>>0);i++)if(live.has(c)&&live.get(c)!==f32(c+0x58)){
+   live.set(c,f32(c+0x58));cues.push(tick+f32(c+0x58)-f32(c+0x54));cueInputs.push(u32(c+0x0c));
+  }
   handle(events,tick);
   steps++;
   return events;
@@ -133,5 +148,5 @@ export async function loadGame(gameUrl,load=fetchBytes,{timeline:withTimeline=tr
  // Judgment counters kept by the platform backend (adapters/wii/platform.c stat()).
  const stats=()=>Array.from({length:9},(_,i)=>core._stat(i));
  function result(){const s=stats();return {hits:s[0],misses:s[1],through:s[2],stray:s[3],perfectFailed:s[4]};}
- return {manifest,base,core,options,assets,chart,clock,secondsAtTick:clock.secondsAtTick,tickAtSeconds:clock.tickAtSeconds,banks,timeline,step,drain,sounds,chartSounds,gameSounds,commands,cues,layoutEvents,tunes,speeds,musicVolumes,get steps(){return steps;},envelope,stats,result,u8,u16,u32,f32,w8,w16,w32,wf,alloc,offset,get tick(){return tick;},get ended(){return ended;},get endTick(){return endTick;}};
+ return {manifest,base,core,options,assets,chart,clock,secondsAtTick:clock.secondsAtTick,tickAtSeconds:clock.tickAtSeconds,banks,timeline,step,drain,sounds,chartSounds,gameSounds,commands,cues,cueInputs,layoutEvents,tunes,speeds,musicVolumes,get steps(){return steps;},envelope,stats,result,u8,u16,u32,f32,w8,w16,w32,wf,alloc,offset,get tick(){return tick;},get ended(){return ended;},get endTick(){return endTick;}};
 }

@@ -16,7 +16,7 @@ try{
  const musicData=fetch(new URL('assets/music.wav',gameUrl)).then(r=>r.arrayBuffer()).then(b=>audio.decodeAudioData(b));
  g=await loadGame(gameUrl);
  const {title,action}=g.manifest;document.title=title;canvas.setAttribute('aria-label',title+' game');
- document.querySelector('h1').textContent=title;for(const e of document.querySelectorAll('.controls'))e.textContent='Space / X / click · '+action;
+ document.querySelector('h1').textContent=title;const controls=g.manifest.wii.input===6?`A + B together · ${action} (A: Space / Left Shift / click, B: Right Shift / right click)`:'Space / X / click · '+action;for(const e of document.querySelectorAll('.controls'))e.textContent=controls;
  renderer=await createRenderer(g,canvas);renderer.draw();music=await musicData;sfx=await createAudio(audio,gameUrl,{envelope:g.envelope});
  window.rhf={g,renderer,audio,sfx,inputs:input.presses,metrics,heardTime,stats:g.stats,result:null,get frame(){return frame;},get track(){return track;}};
  play.disabled=false;play.textContent='Play';
@@ -61,7 +61,7 @@ function heardTime(){
  if(t&&t.performanceTime>0&&performance.now()-t.performanceTime<100)return Math.min(audio.currentTime,t.contextTime+(performance.now()-t.performanceTime)/1000);
  return audio.currentTime-(audio.outputLatency||0)-(audio.baseLatency||0);
 }
-function press(){if(!running)return;input.push(Math.max(frame+1,Math.floor(Math.max(0,heardTime()-startTime)*60)+1));}
+function press(button,down){if(!running)return;input.push(Math.max(frame+1,Math.floor(Math.max(0,heardTime()-startTime)*60)+1),button,down);}
 const pollGamepad=bindControls(canvas,{press,
  pause(){if(running)pause();else if(paused)play.click();},
  start(){if(!running&&!play.disabled){play.click();return true;}return false;}});

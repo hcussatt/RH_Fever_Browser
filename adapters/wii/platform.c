@@ -18,6 +18,11 @@ static FPR f[32];
 static uint32_t trace[256];
 static uint32_t heap=0x80500000,call_depth;
 static uint32_t actors[2048],actor_active[2048],actor_count;
+// CInputCheckManager::unk4A4: the chart can remap an input type (fn_801E9D58), e.g. A to the
+// A+B type (6) a checker waits for.
+static uint32_t input_map[256];
+// A+B detection state (CController::unk1370, unk1374, unk136C, unk136D) and lone presses held back.
+static uint32_t combo_state,combo_frames,combo_down,combo_was_down,held_a,held_b,release_a,release_b;
 static uint32_t checkers[128],checker_count,events[5120],event_count,frame_number;
 static uint32_t scene,layout[8],layout_count,canvas[10],base_canvas;
 static uint32_t canvas_timing[10][2];
@@ -173,6 +178,8 @@ static void call(uint32_t address){
   case 0x801e9158:if(checker_count>=128)panic(checker_count,7);checkers[checker_count++]=r[4];emit(9,r[4],0);break; // new input checker (9): the dry run reads its target tick
   case 0x801e9488:score_sum+=(r[4]?r[4]:wrong_count*5);score_count++;wrong_count=0;break;
   case 0x801eaf2c:checkpoint(r[4],r[5]);break;
+  case 0x801e9d58:input_map[r[4]&255]=r[5];break;
+  case 0x801e9c40:for(int i=0;i<256;i++)input_map[i]=i;break;
   case 0x801e9d68:r[3]=0;break; // Single-controller statistics channel.
   // CSoundManager::play(id, start, handle): a chart sound (5), a game sound a chart command
   // played (12) or one from a press or the scene's own update (1).
@@ -234,7 +241,7 @@ static void call(uint32_t address){
   case 0x801e38cc:case 0x801e7334:r[3]=0;break; // stream playing / sound data loading
   case 0x801e6e08:case 0x801e6e4c:case 0x801e6ecc:case 0x801e7114:case 0x801e71c0:break; // player volumes
   // Input-check settings (forced inputs, offsets, input recording) and button cooldown: normal play.
-  case 0x801e923c:case 0x801e9c30:case 0x801e9c38:case 0x801e9c40:case 0x801e9d58:case 0x801e9d80:case 0x801e9d84:case 0x801d5500:break;
+  case 0x801e923c:case 0x801e9c30:case 0x801e9c38:case 0x801e9d7c:case 0x801e9d80:case 0x801e9d84:case 0x801d5500:break;
   case 0x8010a084:r[3]=0;break; // sprintf (only for input recording file names)
   case 0x80039e00:case 0x8003a1d0:break; // Balloon text placement is presentation-only.
   case 0x801e73d4:{uint32_t found=0;for(uint32_t i=0;i<162&&!found;i++)if(rd16(0x802e8210+i*8)==(r[4]&0xffff))found=0x802e8210+i*8;r[3]=found;break;} // CSoundManager::find_wave_info over the DOL's wave table
@@ -268,6 +275,8 @@ EMSCRIPTEN_KEEPALIVE void events_clear(void){event_count=0;}
 EMSCRIPTEN_KEEPALIVE uint32_t allocate(uint32_t size){return alloc(size);}
 EMSCRIPTEN_KEEPALIVE void install_bank(uint32_t id,uint32_t count,uint32_t animations,uint32_t cells){banks[id]=(Bank){count,animations,cells};}
 EMSCRIPTEN_KEEPALIVE void reset_runtime(void){
+  combo_state=combo_frames=combo_down=combo_was_down=held_a=held_b=release_a=release_b=0;
+  for(int i=0;i<256;i++)input_map[i]=i;
   memset(ram,0,sizeof(ram));memset(r,0,sizeof(r));memset(f,0,sizeof(f));memset(cr,0,sizeof(cr));memset(banks,0,sizeof(banks));
   memset(tf_values,0,sizeof(tf_values));sound_handle=envelope=0;speed=1;anim_tempo_update=anim_tempo=handle_count=0;
   chart_flow_count=chart_rerun=chart_instances=current_flow=music_started=song_ended=0;music_sound=0xffffffff;frame_ticks=0;heap=0x80500000;call_depth=actor_count=checker_count=event_count=frame_number=layout_count=0;
@@ -324,11 +333,13 @@ EMSCRIPTEN_KEEPALIVE uint32_t envelope_curve(int attack,int hold,int decay,int s
 // Vanilla fixed-frame A sampling: original checker receives inputAge=0.
 // Historical timestamp correction / rollback is FUTURE USE ONLY and inactive.
 // See research/timing/FUTURE-USE.md before any later experiment.
-EMSCRIPTEN_KEEPALIVE void press_a(void){
+// One input of the original's input types (EInputType): 4 A, 5 B, 6 A and B together.
+static void press(uint32_t type){
   if(!rd8(rd32(0x80320170)+0x429))return; // CInputCheckManager::mAllowInput, set by the chart.
   uint32_t consumed=0;
   for(int i=(int)checker_count-1;i>=0;i--){
     uint32_t c=checkers[i];if(rd8(c+0x71))continue;
+    r[3]=c;r[4]=input_map[type&255];call(0x801e7e28);if(!(r[3]&0xff))continue; // checker waits for this input type
     uint32_t quality=0x80400000;r[3]=c;r[4]=quality;r[5]=wrong_timer>0;f[1].d=0;
     call(rd32(rd32(c)+0x20));uint32_t judgment=r[3];
     if(judgment<=1){
@@ -340,7 +351,53 @@ EMSCRIPTEN_KEEPALIVE void press_a(void){
       }
     }
   }
-  if(!consumed){r[3]=4;call(GAME_WRONG_INPUT);stray++;wrong_timer=48;wrong_count=wrong_count<6?wrong_count+1:6;}
+  if(!consumed){
+    r[3]=type;call(GAME_WRONG_INPUT);
+    // CInputCheckManager::fn_801E94E8 and the stray count only follow A and A+B (unk430).
+    if(type==4||type==6){stray++;wrong_timer=48;wrong_count=wrong_count<6?wrong_count+1:6;}
+  }
+}
+// The buttons pressed (trig) and let go (release) this frame: bit 0 A, bit 1 B.
+// CController::fn_801D4FD8 finds A and B pressed together (within 4 frames) and let go together;
+// the input check in CInputCheckManager (InputCheckManager.cpp, top) then raises A+B (6) or its
+// release (20) once, or holds a lone A or B (4, 5) or its release (18, 19) back 3 frames when a
+// checker for the pair is within 12 ticks, in case the other button follows.
+static uint32_t pair_near(uint32_t type){
+  for(uint32_t i=0;i<checker_count;i++){
+    r[3]=checkers[i];r[4]=input_map[type];call(0x801e7e5c);if(!(r[3]&0xff))continue;
+    r[3]=checkers[i];f[1].d=-12;f[2].d=12;call(0x801e8018);if(r[3]&0xff)return 1;
+  }
+  return 0;
+}
+static void single(uint32_t *held,uint32_t pressed,uint32_t type,uint32_t pair,uint32_t wait_flag){
+  if(*held){if(!--*held)press(type);return;}
+  if(!pressed)return;
+  if(rd8(rd32(0x80320170)+wait_flag)||pair_near(pair))*held=3;else press(type);
+}
+EMSCRIPTEN_KEEPALIVE void buttons(uint32_t trig,uint32_t release){
+  combo_was_down=combo_down;
+  if(!combo_was_down){
+    if(combo_state==0){
+      if((trig&3)==3){combo_state=3;combo_down=1;}
+      else if(trig&1){combo_state=1;combo_frames=0;}
+      else if(trig&2){combo_state=2;combo_frames=0;}
+    }else if(combo_state==1||combo_state==2){
+      if(++combo_frames>=4)combo_state=0;
+      else if(trig&3){combo_state=3;combo_down=1;}
+    }
+  }else if(combo_state==3){
+    if((release&3)==3){combo_state=0;combo_down=0;}
+    else if(release&1){combo_state=2;combo_frames=0;}
+    else if(release&2){combo_state=1;combo_frames=0;}
+  }else if(combo_state==1||combo_state==2){
+    if(++combo_frames>=4){combo_state=0;combo_was_down=combo_down=0;}
+    else if(release&3){combo_state=0;combo_down=0;}
+  }
+  uint32_t pairs=rd8(rd32(0x80320170)+0x42e);
+  if(combo_down&&!combo_was_down&&pairs){press(6);held_a=held_b=0;}
+  else{single(&held_a,trig&1,4,6,0x498);single(&held_b,trig&2,5,6,0x499);}
+  if(!combo_down&&combo_was_down&&pairs){press(20);release_a=release_b=0;}
+  else{single(&release_a,release&1,18,20,0x49a);single(&release_b,release&2,19,20,0x49b);}
 }
 EMSCRIPTEN_KEEPALIVE void finish_frame(void){
   for(int i=(int)checker_count-1;i>=0;i--){
@@ -357,5 +414,6 @@ EMSCRIPTEN_KEEPALIVE void finish_frame(void){
   GAME_AFTER_UPDATE
   frame_number++;
 }
+EMSCRIPTEN_KEEPALIVE uint32_t checker_at(uint32_t i){return i<checker_count?checkers[i]:0;}
 EMSCRIPTEN_KEEPALIVE uint32_t stat(uint32_t id){switch(id){case 0:return hits;case 1:return misses;case 2:return through;case 3:return stray;case 4:return perfect_failed;case 5:return frame_number;case 6:return checker_count;case 7:return score_sum;case 8:return score_count;}return 0;}
 EMSCRIPTEN_KEEPALIVE uint32_t invoke_original(uint32_t address,uint32_t a,uint32_t b,uint32_t c,uint32_t d,float f1,float f2,float f3){r[3]=a;r[4]=b;r[5]=c;r[6]=d;f[1].d=f1;f[2].d=f2;f[3].d=f3;call(address);return r[3];}
