@@ -1,4 +1,6 @@
 {
+  "$schema": "../../schemas/game.schema.json",
+  "schemaVersion": 1,
   "id": "golf",
   "title": "Hole in One",
   "action": "Swing",
@@ -7,9 +9,32 @@
     "scene": "Baseball",
     "sceneVariant": 1,
     "cellanim": "EN/content2/cellanim/baseball/ver0/cellanim.szs",
-    "units": ["Game/Baseball/SceneBaseball.cpp", "Game/Baseball/MyChecker.cpp", "Game/Baseball/MyFlow.cpp", "Game/Pseudo3D.cpp"],
-    "banks": ["golfman", "golf_bg", "golf_monkey", "golf_bg_effect"],
-    "projection": [854, 480],
+    "messageLayout": {
+      "archive": "EN/content2/layout/layout_baseball.szs",
+      "file": "baseball.brlyt"
+    },
+    "units": [
+      "Game/Baseball/SceneBaseball.cpp",
+      "Game/Baseball/MyChecker.cpp",
+      "Game/Baseball/MyFlow.cpp",
+      "Game/Pseudo3D.cpp"
+    ],
+    "banks": [
+      "golfman",
+      "golf_bg",
+      "golf_monkey",
+      "golf_bg_effect"
+    ],
+    "projection": [
+      854,
+      480
+    ],
     "endsWithMusic": false
+  },
+  "web": {
+    "enabled": true,
+    "order": 10,
+    "expectedCues": 64,
+    "icon": "game_01_1.00.tpl"
   }
 }

@@ -1,0 +1,33 @@
+{
+  "$schema": "../../schemas/game.schema.json",
+  "schemaVersion": 1,
+  "id": "robot",
+  "title": "Screwbot Factory",
+  "action": "Screw",
+  "platform": "wii",
+  "wii": {
+    "scene": "Robot",
+    "sceneVariant": 0,
+    "input": 6,
+    "cellanim": "EN/content2/cellanim/robot/ver0/cellanim.szs",
+    "units": [
+      "Game/Robot/SceneRobot.cpp",
+      "Game/Robot/MyChecker.cpp",
+      "Game/Robot/MyFlow.cpp"
+    ],
+    "banks": [
+      "robot"
+    ],
+    "projection": [
+      854,
+      480
+    ],
+    "endsWithMusic": true
+  },
+  "web": {
+    "enabled": true,
+    "icon": "game_01_2.00.tpl",
+    "order": 20,
+    "expectedCues": 66
+  }
+}

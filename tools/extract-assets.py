@@ -10,7 +10,7 @@ import sys
 import numpy as np
 from PIL import Image
 
-from paths import BRSAR, DECOMP, DOL_SHA1, assets, game, manifest, require, source
+from paths import DECOMP, DOL_SHA1, assets, game, manifest, read_sound_archive, require, source
 
 GAME = game()
 SOURCE = require(source(GAME))
@@ -22,7 +22,7 @@ CHART = json.loads(require(OUT/'original-chart.json').read_text())
 u16 = lambda b,o=0: struct.unpack_from('>H', b,o)[0]
 u32 = lambda b,o=0: struct.unpack_from('>I', b,o)[0]
 
-def textures():
+def textures(prefix=''):
     data = (SOURCE/'cellanim.tpl').read_bytes()
     assert u32(data) == 0x20af30
     paths = []
@@ -30,7 +30,7 @@ def textures():
         header = u32(data,u32(data,8)+i*8)
         h,w,fmt,start = struct.unpack_from('>HHII',data,header)
         assert fmt in (5,6), f'Unsupported texture format {fmt}'
-        name=f'texture-{i}.png'
+        name=f'{prefix}texture-{i}.png'
         if fmt == 6:
             # RGBA8: 4x4 tiles of 64 bytes, alpha/red pairs then green/blue pairs.
             tiles = np.frombuffer(data,dtype=np.uint8,count=w*h*4,offset=start).reshape(h//4,w//4,2,16,2)
@@ -85,7 +85,10 @@ def audio_groups():
     """The system sound group, the sound groups the game loads with its main chart (minus groups
     holding only other music, the tutorial's), every sound stored in those groups, and the
     chart's backing track."""
-    b=require(BRSAR).read_bytes();base=u32(b,0x18)+8
+    header=read_sound_archive(0,0x28)
+    # All references below are in INFO. Audio payloads live much farther into
+    # the archive: leave unrelated games on disc instead of copying 319 MB.
+    b=read_sound_archive(0,u32(header,0x18)+u32(header,0x1c));base=u32(b,0x18)+8
     table=lambda off:base+u32(b,base+off+4)
     ref=lambda t,i:base+u32(b,t+8+i*8)
     sounds=table(0);banks=table(8);groups=table(0x20)
@@ -104,12 +107,13 @@ def audio_groups():
         g,group_items=items(gi);found={}
         for item in group_items:
             fid,off,size,woff,wsize=struct.unpack_from('>5I',b,item)
-            metadata=b[u32(b,g+16)+off:u32(b,g+16)+off+size]
-            found[fid]=(metadata,b[u32(b,g+24)+woff:u32(b,g+24)+woff+wsize])
+            metadata=read_sound_archive(u32(b,g+16)+off,size)
+            found[fid]=(metadata,read_sound_archive(u32(b,g+24)+woff,wsize) if wsize else b'')
         if gi not in (162,163) and music_file not in found and not any(m[:4] in (b'RBNK',b'RSEQ') for m,_ in found.values()):
             continue
         for fid,(metadata,wave_data) in found.items():
-            files[fid]={'magic':metadata[:4].decode('ascii'),'metadata':f'file-{fid}.bin','waves':f'wave-{fid}.bin' if wave_data else None}
+            persistent=gi==0 or files.get(fid,{}).get('persistent',False)
+            files[fid]={'magic':metadata[:4].decode('ascii'),'metadata':f'file-{fid}.bin','waves':f'wave-{fid}.bin' if wave_data else None,'persistent':persistent}
             (OUT/f'file-{fid}.bin').write_bytes(metadata)
             if wave_data:(OUT/f'wave-{fid}.bin').write_bytes(wave_data)
     labels=DECOMP/'build_default/SOME01/include/rev_tengoku.rsid'
@@ -118,13 +122,31 @@ def audio_groups():
     for sid in range(u32(b,sounds)):
         if file_of(sid) not in files:continue
         s=ref(sounds,sid);sub=base+u32(b,s+0x1c)
-        records[sid]={'name':names.get(sid),'fileId':file_of(sid),'type':b[s+22],'volume':b[s+20],'player':u32(b,s+8),'data':list(struct.unpack_from('>4I',b,sub))}
+        records[sid]={'name':names.get(sid),'fileId':file_of(sid),'type':b[s+22],'volume':b[s+20],'player':u32(b,s+8),'data':list(struct.unpack_from('>4I',b,sub)),'persistent':files[file_of(sid)]['persistent']}
         # A sequence sound plays its notes with the instruments of one bank (SeqSoundInfo bankId).
-        if records[sid]['type']==1:records[sid]['bankFile']=u32(b,ref(banks,records[sid]['data'][1])+4)
+        if records[sid]['type']==1:
+            records[sid]['bankFile']=u32(b,ref(banks,records[sid]['data'][1])+4)
+            records[sid]['persistent'] &= files.get(records[sid]['bankFile'],{}).get('persistent',False)
     return {'sounds':records,'files':files,'musicFile':music_file}
 
+def remix():
+    """A remix's scenes each load their own archive (the remix version of each game's graphics).
+    Every bank in it is kept, since a scene's version picks which ones it registers; textures are
+    numbered across all scenes."""
+    global SOURCE
+    out={'textures':[],'banks':{},'scenes':[]}
+    for scene in PROFILE['scenes']:
+        SOURCE=require(source(GAME)/scene['game'])
+        first=len(out['textures']);out['textures']+=textures(scene['game']+'-')
+        names=sorted(p.stem for p in SOURCE.glob('*.brcad'))
+        for n in names:
+            b=bank(n);b['texture']+=first;out['banks'][scene['game']+'/'+n]=b
+        out['scenes'].append({'game':scene['game'],'banks':names})
+    return out
+
 if __name__=='__main__':
-    out={'textures':textures(),'banks':{n:bank(n) for n in PROFILE['banks']},'audio':audio_groups()}
+    out=remix() if 'scenes' in PROFILE else {'textures':textures(),'banks':{n:bank(n) for n in PROFILE['banks']}}
+    out['audio']=audio_groups()
     out['provenance']={'game':'Rhythm Heaven Fever SOME01','dolSha1':DOL_SHA1}
     (OUT/'original-assets.json').write_text(json.dumps(out,separators=(',',':'))+'\n')
     print(json.dumps({'banks':{n:{'cells':len(b['cells']),'animations':len(b['animations'])} for n,b in out['banks'].items()},'textures':out['textures'],'audioFiles':out['audio']['files']},indent=2))

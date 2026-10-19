@@ -4,7 +4,7 @@ import {loadGame} from './runtime.mjs';
 import {createAudio} from './audio.mjs';
 import {createRenderer} from './renderer.mjs';
 import {createResults} from './results.mjs';
-import {createInputQueue,bindControls} from './input.mjs';
+import {A,createInputQueue,bindControls} from './input.mjs';
 import {createTrack} from './clock.mjs';
 import {assetResponse,requireAssets} from './assets.mjs';
 const gameUrl=new URL('./',location.href);
@@ -19,7 +19,10 @@ try{
  const musicData=assetResponse(new URL('assets/music.wav',gameUrl)).then(r=>r.arrayBuffer()).then(b=>audio.decodeAudioData(b));
  g=await loadGame(gameUrl);
  const {title,action}=g.manifest;document.title=title;canvas.setAttribute('aria-label',title+' game');
- document.querySelector('h1').textContent=title;for(const e of document.querySelectorAll('.controls'))e.textContent='Space / X / click · '+action;
+ document.querySelector('h1').textContent=title;
+ // What the cues wait for: A (4), A and B together (6), or both in a remix.
+ const inputs=new Set(g.timeline.cueInputs);
+ const controls=!inputs.has(6)?'Space / X / click · '+action:!inputs.has(4)?`A + B together · ${action} (A: Space / Left Shift / click, B: Right Shift / right click)`:`${action} · A: Space / X / Left Shift / click · B: Right Shift / right click · some cues need A + B together`;for(const e of document.querySelectorAll('.controls'))e.textContent=controls;
  renderer=await createRenderer(g,canvas);renderer.draw();music=await musicData;sfx=await createAudio(audio,gameUrl,{envelope:g.envelope});
  results=await createResults(g,canvas);
  window.rhf={g,renderer,audio,sfx,results,inputs:input.presses,metrics,heardTime,stats:g.stats,result:null,get startTime(){return startTime;},get track(){return track;},get phase(){return phase;},get frame(){return frame;}};
@@ -88,13 +91,41 @@ function heardTime(){
  return audio.currentTime-(audio.outputLatency||0)-(audio.baseLatency||0);
 }
 function press(){if(!running||heardTime()<startTime)return;if(phase==='results'){results.input(true);return;}input.push(Math.max(frame+1,Math.floor(Math.max(0,heardTime()-startTime)*60)+1));}
+// An input belongs to the first frame after the audio heard when it happened, as the original
+// reads the controller once a frame. That frame runs as soon as its time is heard, not at the
+// next screen refresh, so the game's answer (a hit sound) is not held back by up to a frame.
+function press(button,down,at=performance.now()){
+ if(!running)return;
+ if(phase==='results'){if(button===A)results.input(down);return;}
+ const heard=heardTime()-Math.max(0,performance.now()-at)/1000;
+ const due=Math.max(frame+1,Math.floor(Math.max(0,heard-startTime)*60)+1);
+ input.push(due,button,down,at);runWhenHeard(due);
+}
+function runWhenHeard(due){
+ if(!running||phase!=='game'||frame>=due)return;
+ const wait=(startTime+due/60-heardTime())*1000;
+ if(wait>0)setTimeout(()=>runWhenHeard(due),wait+.5);else advance(Math.floor((heardTime()-startTime)*60));
+}
+// Runs the game up to this frame.
+function advance(target){
+ while(frame<target&&!g.ended){frame++;
+  const pressed=input.take(frame);
+  g.step(g.tickAtSeconds(track.posAt(frame/60)),pressed);
+  liveEvents();
+ }
+}
 const pollGamepad=bindControls(canvas,{press,
- release(){if(running&&phase==='results')results.input(false);},
  pause(){if(running)pause();else if(paused)play.click();},
  start(){if(!running&&!play.disabled){play.click();return true;}return false;}});
 // Starts solo shortly ahead, or at the multiplayer deadline on the monotonic clock.
 async function start(at){
  needsReset=true;startTime=at===undefined?audio.currentTime+.1:heardTime()+(at-performance.now())/1000;track=createTrack();backing=sfx.playMusic(music,startTime);
+// Starts the song. A later versus mode calls this when both players are ready.
+async function start(){
+ // A scene can sound a lead-in before the music (Double Date's count-in from tick -144), so the
+ // music waits for it.
+ const first=Math.min(0,...g.timeline.sounds.map(s=>s.tick),...g.sounds.map(s=>s.tick));
+ startTime=audio.currentTime+.1-g.secondsAtTick(first);track=createTrack();backing=sfx.playMusic(music,startTime);
  // The chart's own sounds, then the scene's setup and lead-in sounds (before the music start).
  pending.push(...g.timeline.sounds);g.options.chartAudioScheduled=true;liveEvents();
  running=true;window.rhf.source=backing.source;requestAnimationFrame(loop);
@@ -106,8 +137,11 @@ play.onclick=async()=>{
 document.querySelector('#restart').onclick=()=>{if(multiplayer?.active){multiplayer.interrupt('Restart interrupted the round.');return;}location.reload();};
 // The song ends at this second of the backing track.
 const endSeconds=()=>g.manifest.wii.endsWithMusic?Math.max(music.duration,g.secondsAtTick(g.timeline.endTick)):g.secondsAtTick(g.timeline.endTick);
+document.querySelector('#restart').onclick=()=>location.reload();
+// The original chart owns the outro; a longer backing wave must not delay grading.
+const endSeconds=()=>g.secondsAtTick(g.timeline.endTick);
 function finish(){
- phase='results';sfx.stop();resultsStart=audio.currentTime+.06;
+ phase='results';resultsStart=atTick(g.timeline.endTick);
  const result=results.begin(sfx,resultsStart);window.rhf.result=result;status.textContent='';
  window.dispatchEvent(new CustomEvent('rhf-result',{detail:result}));
  multiplayer?.finish(result);
@@ -126,6 +160,8 @@ function loop(){if(!running)return;try{
   g.step(g.tickAtSeconds(track.posAt(frame/60)),pressed);
   liveEvents();
  }
+ const target=Math.floor(elapsed*60);
+ advance(target);
  schedule();
  renderer.draw();metrics.push({frame,ms:performance.now()-began,catchUp:Math.max(0,target-frame)});
  if(track.posAt(elapsed)>=endSeconds())finish();

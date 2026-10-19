@@ -1,0 +1,41 @@
+{
+  "$schema": "../../schemas/game.schema.json",
+  "schemaVersion": 1,
+  "id": "remix1",
+  "title": "Remix 1",
+  "action": "Play each game",
+  "platform": "wii",
+  "wii": {
+    "music": "WSD_REMIX1",
+    "scenes": [
+      {
+        "game": "golf",
+        "cellanim": "EN/content2/cellanim/baseball/remix01/cellanim.szs"
+      },
+      {
+        "game": "robot",
+        "cellanim": "EN/content2/cellanim/robot/remix01/cellanim.szs"
+      },
+      {
+        "game": "date",
+        "cellanim": "EN/content2/cellanim/date/remix01/cellanim.szs"
+      },
+      {
+        "game": "seesaw",
+        "cellanim": "EN/content2/cellanim/seesaw/remix01/cellanim.szs"
+      }
+    ],
+    "epilogue": "EN/content2/cellanim/remix/ver1/cellanim_epilogue.szs",
+    "projection": [
+      854,
+      480
+    ],
+    "endsWithMusic": true
+  },
+  "web": {
+    "enabled": true,
+    "icon": "game_01_5.00.tpl",
+    "order": 50,
+    "expectedCues": 54
+  }
+}

@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hcussatt.github.io/RH_Fever_Browser/schemas/game.schema.json",
+  "title": "Rhythm Heaven browser game manifest v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "id", "title", "action", "platform", "web", "wii"],
+  "properties": {
+    "$schema": {"type": "string"},
+    "schemaVersion": {"const": 1},
+    "id": {"type": "string", "pattern": "^[a-z][a-z0-9_-]{0,47}$"},
+    "title": {"type": "string", "minLength": 1},
+    "action": {"type": "string", "minLength": 1},
+    "platform": {"const": "wii"},
+    "web": {
+      "type": "object", "additionalProperties": false, "required": ["enabled"],
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "order": {"type": "integer", "minimum": 0},
+        "expectedCues": {"type": "integer", "minimum": 1},
+        "icon": {"description": "Original game-select texture, imported locally from layout_gameSelect.szs.", "type": "string", "pattern": "^game_[0-9]{2}_[1-5]\\.00\\.tpl$"}
+      },
+      "if": {"properties": {"enabled": {"const": true}}},
+      "then": {"required": ["expectedCues"]}
+    },
+    "wii": {
+      "type": "object", "additionalProperties": false,
+      "required": ["projection", "endsWithMusic"],
+      "oneOf": [
+        {"required": ["scene", "cellanim", "units", "banks"], "not": {"anyOf": [{"required": ["music"]}, {"required": ["scenes"]}]}},
+        {"required": ["music", "scenes"], "not": {"anyOf": [{"required": ["scene"]}, {"required": ["cellanim"]}, {"required": ["units"]}, {"required": ["banks"]}, {"required": ["layout"]}]}}
+      ],
+      "properties": {
+        "scene": {"$ref": "#/$defs/name"},
+        "sceneVariant": {"type": "integer", "minimum": 0},
+        "input": {"description": "Input type the cues wait for (EInputType): 4 A (default), 6 A and B together.", "enum": [4, 6]},
+        "cellanim": {"$ref": "#/$defs/discPath"},
+        "units": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/sourcePath"}},
+        "banks": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/name"}},
+        "projection": {"type": "array", "minItems": 2, "maxItems": 2, "items": {"type": "integer", "minimum": 1}},
+        "music": {"description": "A remix: the backing track (wave sound name) whose chart switches between scenes.", "$ref": "#/$defs/name"},
+        "scenes": {
+          "description": "A remix's scenes: each another manifest's game (its code, banks and profile), with the cellanim archive the remix version loads.",
+          "type": "array", "minItems": 1,
+          "items": {
+            "type": "object", "additionalProperties": false, "required": ["game", "cellanim"],
+            "properties": {"game": {"type": "string", "pattern": "^[a-z][a-z0-9_-]{0,47}$"}, "cellanim": {"$ref": "#/$defs/discPath"}}
+          }
+        },
+        "epilogue": {"description": "The epilogue cell animation archive, when not beside the game's cellanim.", "$ref": "#/$defs/discPath"},
+        "perfectActive": {"type": "boolean"},
+        "endsWithMusic": {"type": "boolean"},
+        "messageLayout": {
+          "description": "The game's own layout whose text boxes the chart's message panes use (Hole in One's CMyLayout); the shared speech balloon needs no entry.",
+          "type": "object", "additionalProperties": false, "required": ["archive", "file"],
+          "properties": {
+            "archive": {"$ref": "#/$defs/discPath"},
+            "file": {"type": "string", "pattern": "^[A-Za-z0-9_-]+\\.brlyt$"}
+          }
+        },
+        "layout": {
+          "type": "object", "additionalProperties": false,
+          "required": ["archive", "file", "animations", "startAtEnd", "texts", "panes"],
+          "properties": {
+            "archive": {"$ref": "#/$defs/discPath"},
+            "file": {"type": "string", "pattern": "^[A-Za-z0-9_-]+\\.brlyt$"},
+            "animations": {"type": "array", "items": {"type": "array", "minItems": 2, "maxItems": 2, "items": {"$ref": "#/$defs/name"}}},
+            "startAtEnd": {"type": "array", "uniqueItems": true, "items": {"type": "integer", "minimum": 0}},
+            "texts": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/name"}},
+            "panes": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/name"}}
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "name": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"},
+    "discPath": {"type": "string", "pattern": "^EN/(?:[A-Za-z0-9_-]+/)*[A-Za-z0-9_-]+\\.szs$"},
+    "sourcePath": {"type": "string", "pattern": "^Game/(?:[A-Za-z0-9_-]+/)*[A-Za-z0-9_-]+\\.cpp$"}
+  }
+}

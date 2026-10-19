@@ -10,28 +10,32 @@ from pathlib import Path
 import re
 import shutil
 import zipfile
+from game_registry import web_games
 
 ROOT = Path(__file__).resolve().parents[1]
 TOOLS = ['paths.py', 'wii_files.py', 'extract-disc.py', 'prepare-data.py',
          'chart-index.py', 'extract-assets.py', 'extract-sfx.py',
-         'extract-layout.py', 'extract-results.py', 'decode-music.py', 'nintendo_audio.py']
+         'extract-layout.py', 'extract-results.py', 'extract-menu.py', 'decode-music.py', 'nintendo_audio.py']
 
 
 def stage(snapshot=False, output='site'):
-    games = sorted(p.parent.name for p in (ROOT/'runtime-src').glob('*/original-functions.inc'))
+    registered = web_games(ROOT, require_runtime=not snapshot)
+    games = [m['id'] for m in registered]
     if snapshot:
         for game in games:
             target = ROOT/'runtime-src'/game
             target.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(ROOT/'build'/game/'original-functions.inc', target/'original-functions.inc')
+            if 'scenes' in next(m for m in registered if m['id'] == game)['wii']:
+                shutil.copyfile(ROOT/'build'/game/'scenes.h', target/'scenes.h')
     out = ROOT/output
     if out.resolve() != ROOT/'site':
         raise SystemExit('Public output must be site/ (avoids deleting source directories).')
     if out.exists():
         shutil.rmtree(out)
     out.mkdir()
-    shutil.copytree(ROOT/'web/engine', out/'engine', ignore=shutil.ignore_patterns('qa', 'index.html'))
-    shutil.copytree(ROOT/'web/import', out/'import')
+    shutil.copytree(ROOT/'web/engine', out/'engine', ignore=shutil.ignore_patterns('qa', 'index.html', '.DS_Store'))
+    shutil.copytree(ROOT/'web/import', out/'import', ignore=shutil.ignore_patterns('.DS_Store'))
     shutil.copyfile(ROOT/'web/library.html', out/'index.html')
     (out/'.nojekyll').touch()
     manifests = []
@@ -40,13 +44,25 @@ def stage(snapshot=False, output='site'):
     names = re.findall(r'eScene_(\w+)', text.split('enum ESceneID', 1)[1].split('};', 1)[0])
     scenes = {name: i for i, name in enumerate(names) if name not in ('Count', 'Null')}
     labels = (ROOT/'third_party/rhf-decomp/build_default/SOME01/include/rev_tengoku.rsid').read_text()
+    sound_ids = {name: int(number) for name, number in re.findall(r'unsigned int (\w+) = (\d+);', labels)}
     result_sounds = {i: n for n, i in re.findall(r'unsigned int (\w+) = (\d+);', labels)
                      if n.startswith(('WSD_RESULT_', 'WSD_EPILOGUE_'))}
     for game in games:
         d = out/game
         d.mkdir()
-        manifest = json.loads((ROOT/'games'/game/'game.json').read_text())
-        manifest['wii']['sceneId'] = scenes[manifest['wii']['scene']]
+        manifest = next(m for m in registered if m['id'] == game)
+        manifest.pop('$schema', None)
+        profile = manifest['wii']
+        if 'scenes' in profile:
+            # Numeric IDs are public metadata; discover all chart/data addresses
+            # later from the user's ISO, without a browser decomp checkout.
+            profiles = {m['id']: m['wii'] for m in registered}
+            profile['sceneIds'] = {profiles[s['game']]['scene']: scenes[profiles[s['game']]['scene']] for s in profile['scenes']}
+            profile['musicSound'] = sound_ids[profile['music']]
+        else:
+            if profile['scene'] not in scenes:
+                raise ValueError(f'{game}: unknown Wii scene {profile["scene"]}')
+            profile['sceneId'] = scenes[profile['scene']]
         manifest['wii']['soundNames'] = result_sounds
         (d/'game.json').write_text(json.dumps(manifest)+'\n')
         shutil.copyfile(ROOT/'web/engine/index.html', d/'index.html')
@@ -62,7 +78,7 @@ def stage(snapshot=False, output='site'):
             info = zipfile.ZipInfo(f'games/{manifest["id"]}/game.json', date_time=(2020, 1, 1, 0, 0, 0))
             info.compress_type = zipfile.ZIP_DEFLATED
             archive.writestr(info, json.dumps(manifest))
-    (out/'games.json').write_text(json.dumps([{'id': m['id'], 'title': m['title']} for m in manifests])+'\n')
+    (out/'games.json').write_text(json.dumps([{'id': m['id'], 'title': m['title'], 'expectedCues': m['web']['expectedCues']} for m in manifests])+'\n')
     files = sorted(p for p in out.rglob('*') if p.is_file())
     checksums = {str(p.relative_to(out)): hashlib.sha256(p.read_bytes()).hexdigest() for p in files}
     version = hashlib.sha256(json.dumps(checksums, sort_keys=True).encode()).hexdigest()[:20]

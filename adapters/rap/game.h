@@ -9,8 +9,7 @@
 // Lyric captions (Rap::CMyLayout, src/Game/Rap/MyLayout.cpp) become layout events (11) for the
 // browser's layout renderer (web/engine/layout.mjs). The animation, text box and pane numbers
 // index the "layout" lists in games/rap/game.json, in the order CMyLayout::_10 sets them up.
-// The message id string is seven digits (CMessageManager::fn_80087708); 0xffffffff if not.
-#define MESSAGE_ID(s) ({uint32_t v=0;for(int i=0;i<7&&v!=0xffffffff;i++){uint8_t c=rd8((s)+i);v=c<'0'||c>'9'?0xffffffff:v*10+c-'0';}v;})
+#define MESSAGE_ID(s) bmg_id(s)
 #define LAYOUT_PLAY(a) emit(11,0x100|(a),0)
 #define LAYOUT_STOP(a) emit(11,0x200|(a),0)
 #define LAYOUT_TEXT(t,s) emit(11,0x300|(t),MESSAGE_ID(s))

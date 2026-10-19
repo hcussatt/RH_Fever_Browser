@@ -7,20 +7,23 @@ community decompilation and from your own copy of the game. Private two-player v
 > (Anthropic) through Claude Code. A human tests every major build. This project
 > is primarily a work of AI.
 
-Playable today: **Hole in One**, **Tap Trial**, **Love Rap** and **Sneaky Spirits**.
+Playable today: **Hole in One**, **Tap Trial**, **Love Rap**, **Sneaky Spirits**,
+**Screwbot Factory**, **See-Saw**, **Double Date** and **Remix 1**. The game picker
+lists them by remix set, as the original song select does.
 
 ## Runtime code here; assets stay local
 
 The hosted player publishes the engine and compiled game runtime. Approved
 translated C snapshots in `runtime-src/` let CI compile that runtime without an
-ISO. Graphics, charts, sound, original data sections, the original executable,
-and the Wii common key are not published. Players select their own ISO and key;
+ISO. Graphics, charts, sound, original data sections, the original executable
+are not published. The public Wii common key is bundled as authorized; players
+select only their own ISO.
 an asset converter runs in a browser worker and stores prepared games locally.
 The ISO is read in slices, never uploaded or copied wholesale into browser storage.
 
 `scripts/check-clean.py` blocks commits that contain disc images, executables,
 Nintendo formats, decoded media, the Wii common key, and original binary data.
-Only the three named `runtime-src/<game>/original-functions.inc` code snapshots
+Only registered web games’ `runtime-src/<game>/original-functions.inc` code snapshots
 are exempt from the generated-code rule. A separate deployment audit checks the
 public output, allowing only the compiled per-game WASM artifacts. Turn the hook on once per clone:
 
@@ -37,7 +40,7 @@ public player, audit its contents, and deploy it to Pages. Pull requests build
 and test the same artifact without deploying. A repository administrator must
 select **Settings → Pages → Source → GitHub Actions** once.
 
-The hosted player needs a desktop browser, your ISO and your key; no local Python,
+The hosted player needs a desktop browser, your ISO; no local Python,
 Node or compiler is needed. The first import downloads pinned Pyodide 0.27.7 and
 its NumPy/Pillow/cryptography packages. Prepared assets use browser Cache Storage.
 After import and successful service worker installation, the runtime can load
@@ -49,7 +52,7 @@ can require reimport. There is no built-in Internet Archive downloader.
 
 - Your own **Rhythm Heaven Fever (USA)** disc as a raw `.iso` (game ID SOME01,
   4,699,979,776 bytes). RVZ/WBFS images must be converted to ISO first.
-- The Wii common key (see below).
+- The Wii common key is bundled for the Pages importer; local builds use it by default too.
 - Python 3.10+ with `numpy`, `Pillow` and `cryptography`, Node.js 18+, git.
 - Emscripten 5.0.7 and PowerPC binutils: `tools/setup-toolchain.sh` downloads both into `.toolchain/`.
 
@@ -66,8 +69,10 @@ tools/setup-toolchain.sh
 ./serve.sh --open
 ```
 
-Open the printed URL in Chrome and pick a game. Space, X, click or gamepad A
-plays; Escape pauses. Click once first so the browser allows sound.
+Open the printed URL in Chrome and pick a game. A is Space, Left Shift, X, left
+click or gamepad A; B is Right Shift, right click or gamepad B (Screwbot Factory,
+and its part of Remix 1, wants A and B together). Escape pauses. Click once first so the browser allows
+sound.
 
 The build and installer automatically use `.venv` when present, otherwise they
 look for Python 3.10+ on PATH. `RHF_PYTHON=/path/to/python3` overrides that choice;
@@ -76,8 +81,9 @@ with an old-Python error, rerun `tools/setup-toolchain.sh` after fixing Python.
 
 ## Wii common key
 
-The ISO's game partition is encrypted with the Wii common key, which is not
-included here. Provide it in one of these ways:
+The Pages importer includes the Wii common key, so visitors only select their
+ISO. Its publication was explicitly authorized by the user. The same bundled
+module is the local builder's default. To override it:
 
 - put the 32 hex digits in `local/wii-common-key.txt` (git-ignored),
 - set `RHF_WII_COMMON_KEY`, or
@@ -106,6 +112,7 @@ included here. Provide it in one of these ways:
 This is a proof of concept, not a certified 1:1 port. Original timing windows
 and Perfect rules are kept; nothing widens windows or forces scores. Audio uses
 the original samples, note envelopes and volume rules; pitch interpolation, LFO
-and filters are still approximated by Web Audio. Love Rap's lyric captions
-(a message layout) are not drawn yet. See `docs/golf-notes.md`,
+and filters are still approximated by Web Audio. Original grading and epilogue screens are implemented for the registered ports; see
+[results behavior and verification](docs/results.md). Love Rap's lyric captions
+use the original layout. See `docs/golf-notes.md`,
 `docs/tap-notes.md` and `docs/handoff-START_HERE.md` for the full list.

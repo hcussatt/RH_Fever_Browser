@@ -6,7 +6,8 @@ They are not a completed readable decompilation. No original executable data
 sections, charts, textures, or sound banks belong here.
 
 CI compiles these snapshots with `adapters/wii/platform.c` and the per-game
-profiles, using Emscripten 5.0.7. This needs neither an ISO nor a key.
+profiles, using Emscripten 5.0.7. Remix snapshots also include their generated
+`scenes.h` profile table; the registry requires this build dependency. This needs neither an ISO nor a key.
 
 After changing the translation or its selected functions, regenerate all games
 with the user's disc through `build.sh`, run the full-level checks, then run:
