@@ -9,7 +9,8 @@ is a real-time multiplayer mod.
 > is primarily a work of AI.
 
 Playable today: **Hole in One**, **Tap Trial**, **Love Rap**, **Sneaky Spirits**,
-**Screwbot Factory**, **See-Saw** and **Double Date**.
+**Screwbot Factory**, **See-Saw**, **Double Date** and **Remix 1**. The game picker
+lists them by remix set, as the original song select does.
 
 ## Runtime code here; assets stay local
 
@@ -69,8 +70,8 @@ tools/setup-toolchain.sh
 ```
 
 Open the printed URL in Chrome and pick a game. A is Space, Left Shift, X, left
-click or gamepad A; B is Right Shift, right click or gamepad B (Screwbot Factory
-wants A and B together). Escape pauses. Click once first so the browser allows
+click or gamepad A; B is Right Shift, right click or gamepad B (Screwbot Factory,
+and its part of Remix 1, wants A and B together). Escape pauses. Click once first so the browser allows
 sound.
 
 The build and installer automatically use `.venv` when present, otherwise they
@@ -111,5 +112,5 @@ This is a proof of concept, not a certified 1:1 port. Original timing windows
 and Perfect rules are kept; nothing widens windows or forces scores. Audio uses
 the original samples, note envelopes and volume rules; pitch interpolation, LFO
 and filters are still approximated by Web Audio. Love Rap's lyric captions
-(a message layout) are not drawn yet. See `docs/golf-notes.md`,
+and Remix 1's opening message (message layouts) are not drawn yet. See `docs/golf-notes.md`,
 `docs/tap-notes.md` and `docs/handoff-START_HERE.md` for the full list.

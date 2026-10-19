@@ -25,6 +25,8 @@ h1{font:800 clamp(30px,6vw,53px)/1 'Barlow Condensed','Arial Narrow',Impact,sans
 .game{position:relative;text-align:left;color:#cbd4cb;background:transparent;border:1px solid #546159;padding:18px 16px 18px 46px;min-height:80px}
 .game[aria-pressed=true]{color:#252b25;background:#e4dca8;border-color:#e4dca8}
 .game-index{position:absolute;left:16px;top:19px;font-size:10px;opacity:.6}
+.set-title{font-size:9px;letter-spacing:.13em;text-transform:uppercase;color:#a0b2a5;margin:10px 0 0}
+.set-title:first-child{margin-top:0}
 .game h3{font:700 27px/1 'Barlow Condensed','Arial Narrow',Impact,sans-serif;margin:0}
 .game p{font-size:8px;letter-spacing:.08em;margin:10px 0 0;opacity:.65}
 .game-preview{display:flex;flex-direction:column;justify-content:center;align-items:flex-start;padding:36px}

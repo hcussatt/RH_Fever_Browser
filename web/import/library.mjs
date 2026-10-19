@@ -1,11 +1,15 @@
 import {siteRoot,readLibrary,writeLibrary,deployment} from '../engine/assets.mjs';
+import {groupGames} from '../engine/menu.mjs';
 const $=s=>document.querySelector(s);
 let worker,build,games,selected;
 const status=(message,error=false)=>{$('#progress').textContent=message;$('#progress').classList.toggle('error',error);};
 function busy(value){$('#import').disabled=value;$('#iso').disabled=value;$('#key').disabled=value;$('#key-file').disabled=value;$('#remove').disabled=value;$('#cancel').hidden=!value;$('#busy').hidden=!value;}
 async function render(){
  const library=await readLibrary();$('#games').replaceChildren();
- for(const [index,{id,title}] of games.entries()){
+ // Games are listed by remix set (engine/menu.mjs), each set under its title.
+ const groups=groupGames(games),titles=new Map(groups.map(g=>[g.games[0].id,g.title]));
+ for(const [index,{id,title}] of groups.flatMap(g=>g.games).entries()){
+  if(titles.has(id)){const h=document.createElement('h4');h.className='set-title';h.textContent=titles.get(id);$('#games').append(h);}
   const entry=library.games[id],ready=entry?.version===(build.assetVersion||build.version);
   // Verify that storage eviction has not left just the library pointer.
   const stored=ready&&await (await caches.open(entry.cache)).match(new URL(id+'/assets/original-timeline.json',siteRoot));
@@ -35,7 +39,7 @@ try{
  if(!isSecureContext||!globalThis.caches)throw new Error('Use HTTPS or localhost in a browser with site storage enabled.');
  [build,games]=await Promise.all([deployment(),fetch(new URL('games.json',siteRoot)).then(r=>r.json())]);
  if(!games.length)throw new Error('No web games are available in this deployment.');
- selected=games[0].id;$('#game-count').textContent=String(games.length).padStart(2,'0');
+ selected=groupGames(games)[0].games[0].id;$('#game-count').textContent=String(games.length).padStart(2,'0');
  $('#version').textContent=build.version;await render();
  if('serviceWorker' in navigator)navigator.serviceWorker.register(new URL('sw.js',siteRoot),{scope:siteRoot.pathname}).catch(console.warn);
 }catch(e){status(e.message,true);$('#import').disabled=true;}

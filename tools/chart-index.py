@@ -129,9 +129,77 @@ def tempo_segments(sound):
             return segments, table
 
 
+def music_sound(music):
+    """The wave sound whose tempo table is the decomp's waveTempo_<music> symbol."""
+    symbols = (DECOMP/'config/SOME01/symbols.txt').read_text()
+    found = re.search(rf'^waveTempo_{music} = \.data:0x([0-9A-Fa-f]+);', symbols, re.M)
+    if not found:
+        raise SystemExit(f'No tempo table symbol for {music}')
+    for i in range(WAVE_INFO_COUNT):
+        sid, _, table = struct.unpack('>HHI', read(WAVE_INFO_TABLE+i*8, 8))
+        if table == int(found[1], 16):
+            return sid
+    raise SystemExit(f'{music} is not in the wave info table')
+
+
+def remix_chart(profile, ids):
+    """A remix's music starts after its first scene change: TF_SET_SCENE(scene, 0) keeps running the
+    same chart, which then prepares the music (TF_PREPARE_WAVE). The chart starts after that scene
+    change; the scene loads before it pass the first scene's version, and the sound groups it loads
+    come from the entry chart and the charts it starts alongside itself (op 0)."""
+    music = music_sound(profile['music'])
+    prepares = [start+o-offset for offset, start, size in SECTIONS for o in range(offset, offset+size, 4)
+                if u32o(o) & 0x3fff == 0x37 and u32o(o) >> 14 == music]
+    if len(prepares) != 1:
+        raise SystemExit(f'Expected one TF_PREPARE_WAVE for sound {music}, found {len(prepares)}')
+    scenes = [ids[s['game_scene']] for s in profile['scenes']]
+    change = (2 << 10) | 0x100
+    o = prepares[0]-4
+    while not (u32(o) == change and u32(o+4) in scenes and u32(o+8) == 0):
+        o -= 4
+        if prepares[0]-o > 64:
+            raise SystemExit('No scene change before the music')
+    start, scene = o+12, u32(o+4)
+    if not any(a == prepares[0] for a, *_ in commands(start)):
+        raise SystemExit(f'Chart {start:#x} does not reach TF_PREPARE_WAVE')
+    if u32(o-12) & 0x3fff != (2 << 10) | 0x101 or u32(o-8) != scene:
+        raise SystemExit(f'No scene version before {o:#x}')
+    entry = o
+    while u32(entry) != (1 << 10) | 0x004:  # the entry chart's first command
+        entry -= 4
+    loads, todo, seen = [], [entry], set()
+    while todo:
+        address = todo.pop(0)
+        if address in seen:
+            continue
+        seen.add(address)
+        for _, op, arg0, args in commands(address, 1):
+            if op == 0x12c:
+                loads.append(args[0])
+            elif op == 0:
+                todo.append(args[0])
+    return start, music, scenes.index(scene), {'address': scene_version_address(scene), 'value': u32(o-4)}, [loads]
+
+
 def main():
     name = game()
     profile = manifest(name)['wii']
+    if 'scenes' in profile:
+        ids = scene_ids()
+        for s in profile['scenes']:
+            s['game_scene'] = manifest(s['game'])['wii']['scene']
+        start, music, first, version, loads = remix_chart(profile, ids)
+        segments, table = tempo_segments(music)
+        out = {'scenes': [ids[s['game_scene']] for s in profile['scenes']], 'firstScene': first, 'start': start,
+               'musicSound': music, 'tempoAddress': table, 'beatCount': sum(s['beats'] for s in segments),
+               'sampleCount': sum(s['samples'] for s in segments), 'sampleRate': segments[0]['rate'],
+               'groupLoads': loads, 'secondsPerTick': segments[0]['samples']/segments[0]['rate']/(segments[0]['beats']*48),
+               'sceneVersion': version}
+        if len(segments) > 1:
+            out['tempoSegments'] = segments
+        (assets(name)/'original-chart.json').write_text(json.dumps(out, indent=2)+'\n')
+        print(f'{name}: chart {start:#x}, music sound {music}, first scene {first}, sound groups {loads[0]}')
+        return
     scene = profile['sceneId'] if 'sceneId' in profile else scene_ids()[profile['scene']]
     mains = [(t, v) for t, v in scene_changes(scene) if any(op == 0x118 and arg0 == 1 for _, op, arg0, _ in commands(t))]
     if 'sceneVariant' in profile:

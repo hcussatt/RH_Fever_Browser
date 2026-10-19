@@ -53,6 +53,9 @@ export async function createRenderer(g,canvas){
  }
  function draw(){
   ctx.setTransform(1,0,0,1,0,0);ctx.globalAlpha=1;ctx.fillStyle='#000';ctx.fillRect(0,0,canvas.width,canvas.height);
+  // Between a remix's scenes nothing draws, and the fader covers the screen while it waits
+  // (CScene::fn_801D8554, CFaderFlash::_0C).
+  if(core._screen_state()!==1)return;
   const pool=core.HEAPU32.subarray(core._pool_ptr()/4,core._pool_ptr()/4+core._pool_count()),active=core.HEAPU32.subarray(core._active_ptr()/4,core._active_ptr()/4+core._pool_count());
   // Bank 255 stands in for the platform's own placeholder animations: never drawn, but
   // they can be bases for others.
