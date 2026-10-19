@@ -85,7 +85,8 @@ then explicitly enable it as part of completing the port.
   Wii-identical behavior. Keep automated audio silent during user gameplay.
 - Refresh the approved translated snapshot with
   `python3 tools/prepare-pages.py --snapshot` after a local build. A web-enabled
-  game needs `runtime-src/<id>/original-functions.inc`; CI compiles its WASM
+  game needs `runtime-src/<id>/original-functions.inc`; remixes also need the
+  generated `runtime-src/<id>/scenes.h`. CI compiles their WASM
   without an ISO. Keep importer dependencies in the source archive current and
   verify a fresh import works without a decomp checkout or local build files.
 - Validate registration with `python3 tools/game_registry.py` and

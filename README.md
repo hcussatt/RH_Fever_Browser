@@ -16,8 +16,9 @@ lists them by remix set, as the original song select does.
 
 The hosted player publishes the engine and compiled game runtime. Approved
 translated C snapshots in `runtime-src/` let CI compile that runtime without an
-ISO. Graphics, charts, sound, original data sections, the original executable,
-and the Wii common key are not published. Players select their own ISO and key;
+ISO. Graphics, charts, sound, original data sections, the original executable
+are not published. The public Wii common key is bundled as authorized; players
+select only their own ISO.
 an asset converter runs in a browser worker and stores prepared games locally.
 The ISO is read in slices, never uploaded or copied wholesale into browser storage.
 
@@ -40,7 +41,7 @@ public player, audit its contents, and deploy it to Pages. Pull requests build
 and test the same artifact without deploying. A repository administrator must
 select **Settings → Pages → Source → GitHub Actions** once.
 
-The hosted player needs a desktop browser, your ISO and your key; no local Python,
+The hosted player needs a desktop browser, your ISO; no local Python,
 Node or compiler is needed. The first import downloads pinned Pyodide 0.27.7 and
 its NumPy/Pillow/cryptography packages. Prepared assets use browser Cache Storage.
 After import and successful service worker installation, the runtime can load
@@ -112,7 +113,7 @@ module is the local builder's default. To override it:
 This is a proof of concept, not a certified 1:1 port. Original timing windows
 and Perfect rules are kept; nothing widens windows or forces scores. Audio uses
 the original samples, note envelopes and volume rules; pitch interpolation, LFO
-and filters are still approximated by Web Audio. Original grading and epilogue screens are implemented for the three ports; see
+and filters are still approximated by Web Audio. Original grading and epilogue screens are implemented for the registered ports; see
 [results behavior and verification](docs/results.md). Love Rap's lyric captions
 use the original layout. See `docs/golf-notes.md`,
 `docs/tap-notes.md` and `docs/handoff-START_HERE.md` for the full list.
