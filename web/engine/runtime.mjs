@@ -31,6 +31,8 @@ export async function loadGame(gameUrl,load=fetchBytes,{timeline:withTimeline=tr
   b.cells.forEach((objects,i)=>{const p=alloc(objects.length*32);w16(cp+i*8,objects.length);w32(cp+i*8+4,p);objects.forEach((o,j)=>{const a=p+j*32;[o.sx,o.sy,o.w,o.h,o.palette,o.reserved,o.x,o.y].forEach((v,k)=>w16(a+k*2,v));wf(a+16,o.scaleX);wf(a+20,o.scaleY);wf(a+24,o.angle);w8(a+28,o.flipX);w8(a+29,o.flipY);w8(a+30,o.alpha);});});
   core._install_bank(id,b.animations.length,ap,cp);
  });
+ // The scene's version, as the scene load before the chart sets it (see tools/chart-index.py).
+ if(chart.sceneVersion)w32(chart.sceneVersion.address,chart.sceneVersion.value);
  core._set_tempo(clock.tempoAtTick(0));core._initialize_scene();
  // Original grading routines operate on Wii UTF-16 strings and original criteria
  // pointers. Message lookup is the platform adapter; no grading is done in JS.

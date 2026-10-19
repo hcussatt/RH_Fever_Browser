@@ -9,7 +9,7 @@ is a real-time multiplayer mod.
 > is primarily a work of AI.
 
 Playable today: **Hole in One**, **Tap Trial**, **Love Rap**, **Sneaky Spirits**,
-**Screwbot Factory** and **See-Saw**.
+**Screwbot Factory**, **See-Saw** and **Double Date**.
 
 ## Runtime code here; assets stay local
 

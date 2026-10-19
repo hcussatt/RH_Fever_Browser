@@ -151,9 +151,10 @@ def generate(a,size,name):
         elif m in ['mulhw','mulhwu']:
             cast='int64_t)(int32_t' if m=='mulhw' else 'uint64_t)(uint32_t'
             c=f'{q[0]}=((({cast}){q[1]})*(({cast}){q[2]}))>>32;'
-        elif m in ['addc','adde','addze','subfc','subfe','subfic']:
+        elif m in ['addc','adde','addic','addze','subfc','subfe','subfic']:
             if m=='addze':v=f'(uint64_t){q[1]}+carry'
             elif m in ['addc','adde']:v=f'(uint64_t){q[1]}+{q[2]}' + ('+carry' if m=='adde' else '')
+            elif m=='addic':v=f'(uint64_t){q[1]}+(uint32_t)({q[2]})'
             elif m=='subfic':v=f'(uint64_t)(uint32_t)({q[2]})+(uint32_t)~{q[1]}+1'
             else:v=f'(uint64_t){q[2]}+(uint32_t)~{q[1]}+'+('carry' if m=='subfe' else '1')
             c=f'{{uint64_t v={v};{q[0]}=(uint32_t)v;carry=v>>32;}}'

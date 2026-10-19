@@ -78,6 +78,20 @@ def scene_changes(scene):
     return sorted(targets)
 
 
+SCENE_VERSION_TABLE = 0x802ed02c  # jump table of CSceneManager::fn_8008A4DC(scene, version), 65 scenes
+SDA_BASE = 0x80326ec0  # r13
+
+
+def scene_version_address(scene):
+    """The static where CSceneManager::fn_8008A4DC keeps this scene's version (Date::sceneVer, for
+    example): its jump table case is a single stw r5,offset(r13) and blr."""
+    case = struct.unpack('>I', read(SCENE_VERSION_TABLE+scene*4, 4))[0]
+    store, ret = struct.unpack('>2I', read(case, 8))
+    if store >> 16 != 0x90ad or ret != 0x4e800020:
+        raise SystemExit(f'Scene {scene}: unexpected version setter at {case:#x}')
+    return SDA_BASE+struct.unpack('>h', struct.pack('>H', store & 0xffff))[0]
+
+
 def group_loads(scene):
     """Sound groups loaded (op 0x12c) by each chart that then prepares the scene (0x101, 0x102).
     Remixes prepare the same scene with their own loads; tools/extract-assets.py keeps the
@@ -133,6 +147,10 @@ def main():
            'beatCount': sum(s['beats'] for s in segments), 'sampleCount': sum(s['samples'] for s in segments),
            'sampleRate': segments[0]['rate'], 'groupLoads': group_loads(scene),
            'secondsPerTick': segments[0]['samples']/segments[0]['rate']/(segments[0]['beats']*48)}
+    # The scene load before the chart (op 0x101) passes the scene's version, which the scene reads
+    # to pick its setup (Double Date seats the girl beside the boy in version 1).
+    if mains[0][1]:
+        out['sceneVersion'] = {'address': scene_version_address(scene), 'value': mains[0][1]}
     if len(segments) > 1:
         out['tempoSegments'] = segments
     (assets(name)/'original-chart.json').write_text(json.dumps(out, indent=2)+'\n')
