@@ -61,7 +61,28 @@ function heardTime(){
  if(t&&t.performanceTime>0&&performance.now()-t.performanceTime<100)return Math.min(audio.currentTime,t.contextTime+(performance.now()-t.performanceTime)/1000);
  return audio.currentTime-(audio.outputLatency||0)-(audio.baseLatency||0);
 }
-function press(button,down){if(!running)return;input.push(Math.max(frame+1,Math.floor(Math.max(0,heardTime()-startTime)*60)+1),button,down);}
+// An input belongs to the first frame after the audio heard when it happened, as the original
+// reads the controller once a frame. That frame runs as soon as its time is heard, not at the
+// next screen refresh, so the game's answer (a hit sound) is not held back by up to a frame.
+function press(button,down,at=performance.now()){
+ if(!running)return;
+ const heard=heardTime()-Math.max(0,performance.now()-at)/1000;
+ const due=Math.max(frame+1,Math.floor(Math.max(0,heard-startTime)*60)+1);
+ input.push(due,button,down,at);runWhenHeard(due);
+}
+function runWhenHeard(due){
+ if(!running||frame>=due)return;
+ const wait=(startTime+due/60-heardTime())*1000;
+ if(wait>0)setTimeout(()=>runWhenHeard(due),wait+.5);else advance(Math.floor((heardTime()-startTime)*60));
+}
+// Runs the game up to this frame.
+function advance(target){
+ while(frame<target){frame++;
+  const pressed=input.take(frame);
+  g.step(g.tickAtSeconds(track.posAt(frame/60)),pressed);
+  liveEvents();
+ }
+}
 const pollGamepad=bindControls(canvas,{press,
  pause(){if(running)pause();else if(paused)play.click();},
  start(){if(!running&&!play.disabled){play.click();return true;}return false;}});
@@ -88,11 +109,7 @@ function loop(){if(!running)return;try{
  pollGamepad();
  const began=performance.now();const elapsed=Math.max(0,heardTime()-startTime);
  const target=Math.floor(elapsed*60);
- while(frame<target){frame++;
-  const pressed=input.take(frame);
-  g.step(g.tickAtSeconds(track.posAt(frame/60)),pressed);
-  liveEvents();
- }
+ advance(target);
  schedule();
  renderer.draw();metrics.push({frame,ms:performance.now()-began,catchUp:Math.max(0,target-frame)});
  if(track.posAt(elapsed)>=endSeconds())finish();

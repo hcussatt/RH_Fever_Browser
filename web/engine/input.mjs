@@ -16,16 +16,25 @@ export function createInputQueue(player=0){
 // Escape pauses. Space or X also starts.
 const KEYS={Space:A,KeyX:A,ShiftLeft:A,ShiftRight:B};
 export function bindControls(canvas,{press,pause,start}){
+ // Each event passes its own timestamp, so a busy page does not make an input late.
  window.addEventListener('keydown',e=>{
   if(e.code==='Escape'&&!e.repeat){e.preventDefault();pause();return;}
   const button=KEYS[e.code];if(!button)return;e.preventDefault();if(e.repeat)return;
   if(button===A&&e.code!=='ShiftLeft'&&start())return;
-  press(button,true);
+  press(button,true,e.timeStamp);
  });
- window.addEventListener('keyup',e=>{const button=KEYS[e.code];if(button){e.preventDefault();press(button,false);}});
- const mouse=e=>e.button===0?A:e.button===2?B:0;
- canvas.addEventListener('pointerdown',e=>{const button=mouse(e);if(button){e.preventDefault();press(button,true);}});
- window.addEventListener('pointerup',e=>{const button=mouse(e);if(button)press(button,false);});
+ window.addEventListener('keyup',e=>{const button=KEYS[e.code];if(button){e.preventDefault();press(button,false,e.timeStamp);}});
+ // Mouse: a second button pressed or let go while another is held raises no pointerdown or
+ // pointerup (only pointermove), so the held buttons are compared on every pointer event.
+ let mouseDown=0;
+ const mouse=e=>{
+  const down=(e.buttons&1?A:0)|(e.buttons&2?B:0);
+  for(const button of [A,B])if((down^mouseDown)&button)press(button,!!(down&button),e.timeStamp);
+  mouseDown=down;
+ };
+ canvas.addEventListener('pointerdown',e=>{if(e.button===0||e.button===2)e.preventDefault();mouse(e);});
+ window.addEventListener('pointermove',e=>{if(mouseDown)mouse(e);});
+ window.addEventListener('pointerup',mouse);
  canvas.addEventListener('contextmenu',e=>e.preventDefault());
  let lastPad=0;
  // Called once per animation frame; gamepads have no press events.

@@ -32,7 +32,12 @@ built games for the picker page.
   timing windows and Perfect rules are untouched: no widened windows, score
   forcing or rollback.
 - Keys: A is Space, Left Shift, X, left click or gamepad A; B is Right Shift,
-  right click or gamepad B.
+  right click or gamepad B. Mouse buttons are read from the held-button mask on
+  every pointer event, since a second button pressed or let go while another is
+  held raises only a pointermove.
+- Each input is stamped with its own event time and belongs to the first frame
+  after the audio heard then. That frame runs as soon as its time is heard (a
+  timer), not at the next screen refresh, so hit sounds are not held back.
 - Each frame the backend (`buttons()` in `adapters/wii/platform.c`) turns the
   buttons into the original input types like the original controller and
   input check: A (4), B (5), A and B pressed together (6) and their releases
