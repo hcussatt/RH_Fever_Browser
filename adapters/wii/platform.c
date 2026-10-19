@@ -38,6 +38,9 @@ static uint32_t anim_tempo_update,anim_tempo;
 // Sound handles the game keeps (an SNDHandle in its own data): each gets a stand-in sound object
 // so the game sees it attached; the browser plays and tunes the real sound by handle address.
 static uint32_t handle_sounds[64][2],handle_count,chart_handles;
+static uint32_t grading,grading_ready,grading_pressed,message_table,message_count,grading_scene,grading_done,prompt_press,prompt_release;
+static uint32_t prompt_exit_frames,prompt_exit_remaining;
+void finish_frame(void);
 typedef struct {uint32_t count,animations,cells;} Bank;
 static Bank banks[256];
 EM_JS(void,panic_js,(uint32_t address,uint32_t kind,uint32_t pc,uint32_t stack,uint32_t depth),{console.error(Array.from(HEAPU32.subarray(stack/4,stack/4+depth)).map(x=>x.toString(16)));throw new Error('Original code '+kind+' at 0x'+address.toString(16)+' after 0x'+pc.toString(16));});
@@ -108,11 +111,20 @@ static void checkpoint(uint32_t category,uint32_t type){
   if(type==0)hits++;else if(type==1)misses++;else through++;
   emit(2,type,category);
 }
+static uint32_t message(uint32_t id){
+  for(uint32_t i=0;i<message_count;i++)if(rd32(message_table+i*8)==id)return rd32(message_table+i*8+4);
+  panic(id,12);return 0;
+}
+static uint32_t message_id(uint32_t p){uint32_t id=0;for(;rd8(p);p++){uint32_t c=rd8(p);if(c<'0'||c>'9')panic(p,12);id=id*10+c-'0';}return id;}
+static void enter_grading(void){
+  uint32_t cp=rd32(0x8032016c),gs=alloc(256);grading_scene=gs;grading=1;grading_ready=grading_pressed=0;
+  wr32(rd32(0x80320180)+4,gs);wr32(gs+0x34,alloc(256));wr32(gs+0x38,rd32(cp+0x2fc));wr8(gs+0x3c,rd8(cp+0xdf));
+}
 // CTickFlowManager::fn_801E1CC0: create a flow with the game's own flow class
 // and push it at the head of the list, as the original does.
 static uint32_t create_flow(uint32_t code,double rest){
   if(chart_flow_count>=256)panic(code,11);
-  uint32_t block=alloc(512);r[3]=block;r[4]=code;f[1].d=rest;call(GAME_FLOW_CREATE);
+  uint32_t block=alloc(512);r[3]=block;r[4]=code;f[1].d=rest;call(grading?0x8000b888:GAME_FLOW_CREATE);
   memmove(chart_flows+1,chart_flows,chart_flow_count*4);chart_flows[0]=block;chart_flow_count++;chart_rerun=1;
   return block;
 }
@@ -133,13 +145,39 @@ static void run_flows(void){
 // grading and scene changes are outside the minigame; only what gameplay
 // needs is kept. Everything below 0x100 is the original CTickFlow::_1C.
 static void exflow_command(void){
-  uint32_t self=r[3],op=r[4],arg0=r[5];
+  uint32_t self=r[3],op=r[4],arg0=r[5],args=r[6],cp=rd32(0x8032016c);
   if(op<0x100){
+    if(grading&&op==0x46){if(arg0==1){grading_ready=1;grading_pressed=0;prompt_press=rd32(args+4);prompt_release=rd32(args+8);emit(20,5,rd32(self+0x1c));}else if(arg0==2)wr32(self+0x24,grading_pressed==2?0:1);r[3]=0;return;}
     if(op==0x40||op==0x41){r[3]=0;return;} // Message panes: layout UI is not ported.
     chart_sound=op==0x22||op==0x23;call(0x801ddb84);chart_sound=0;return;
   }
-  if(op==0x12a)wr8(0x803201b9,arg0);
-  else if(op==0x118&&music_started&&!song_ended){song_ended=1;emit(7,0,rd32(self+0x1c));} // Grading starts: the song is over.
+  if(op==0x118&&arg0<=1){
+    uint32_t criteria=rd32(args);
+    if(arg0==1){uint32_t copy=alloc(9*16);for(uint32_t i=0;i<9;i++){
+      memcpy(ram+idx(copy+i*16),ram+idx(criteria+i*16),16);
+      if(rd16(copy+i*16+14)&0x8000)break;
+      for(int j=0;j<2;j++){uint32_t id=rd32(copy+i*16+j*4);if(id)wr32(copy+i*16+j*4,message(message_id(id)));}
+    }criteria=copy;}
+    r[3]=cp;r[4]=criteria;call(0x801eae6c);invoke1(0x801eaea4,cp);
+  }
+  else if(op==0x118&&arg0==2&&music_started&&!song_ended){song_ended=1;emit(7,0,rd32(self+0x1c));}
+  else if(op==0x119)wr8(cp+0xc5,rd32(args));
+  else if(op==0x11a)wr8(cp+0xdd,rd32(args)!=0);
+  else if(op==0x11b){wr32(cp+0xcc,rd32(args));wr32(cp+0xd0,rd32(args));}
+  else if(op==0x11c){r[3]=cp;f[1].d=(int32_t)rd32(args);call(0x801eb10c);}
+  else if(op==0x11d){if(arg0==0)invoke1(0x801eb130,cp);else wr32(self+0x24,rd32(cp+0x2fc));}
+  else if(song_ended&&op==0x100&&arg0==0&&rd32(args)==0x39){enter_grading();emit(20,9,rd32(self+0x1c));}
+  else if(song_ended&&op==0x100&&arg0==0&&rd32(args)==0x38){grading=2;grading_ready=0;emit(20,10,rd32(self+0x1c));}
+  else if(grading==2&&op==0x100&&arg0==1){grading_done=1;emit(20,11,rd32(self+0x1c));}
+  else if(grading&&op==0x104)wr32(self+0x24,1);
+  else if(grading&&op==0x12f&&arg0==1)wr32(self+0x24,0);
+  else if(grading&&op==0x123){
+    if(arg0==0)emit(16,0,rd32(args));
+    else if(arg0==1){prompt_exit_remaining=prompt_exit_frames;emit(16,1,prompt_exit_frames);}
+    else if(arg0==2)wr32(self+0x24,prompt_exit_remaining==0);
+  }
+  else if(song_ended&&op==0x10a){emit(20,arg0?6:7,rd32(self+0x1c));emit(22,arg0,rd32(args)?rd32(args+4):(uint32_t)((float)rd32(args+4)*60/(current_tempo*.8f)));}
+  else if(op==0x12a)wr8(0x803201b9,arg0);
   else if(op==0x121||op==0x131)wr32(self+0x24,0); // Scene version / play-mode queries: normal play.
   r[3]=0;
 }
@@ -148,6 +186,8 @@ static void call(uint32_t address){
   if(++call_depth>128)panic(address,6);
   // Game chart commands, with the issuing flow's rest (its tick is the frame's end tick plus that rest).
   if(address==GAME_FLOW_COMMAND&&music_started&&r[4]>=0x200)emit(8,r[4],rd32(r[3]+0x1c));
+  if(address==GAME_FLOW_COMMAND&&grading){wr32(r[3]+0xfc,grading_scene);call(0x8000b930);call_depth--;return;}
+  if(address==0x801eaf2c)checkpoint(r[4],r[5]);
   if(dispatch_original(address)){call_depth--;return;}
   // Compiler ABI register save/restore helpers.
   if(address>=0x80104100 && address<=0x801041d0){
@@ -177,9 +217,15 @@ static void call(uint32_t address){
   case 0x801e4178:r[3]=1;break;
   case 0x801e9158:if(checker_count>=128)panic(checker_count,7);checkers[checker_count++]=r[4];emit(9,r[4],0);break; // new input checker (9): the dry run reads its target tick
   case 0x801e9488:score_sum+=(r[4]?r[4]:wrong_count*5);score_count++;wrong_count=0;break;
-  case 0x801eaf2c:checkpoint(r[4],r[5]);break;
   case 0x801e9d58:input_map[r[4]&255]=r[5];break;
   case 0x801e9c40:for(int i=0;i<256;i++)input_map[i]=i;break;
+  case 0x80004714:memset(ram+idx(r[3]),r[4],r[5]);break;
+  case 0x8010ce1c:{uint32_t n=0;while(rd16(r[3]+n*2))n++;r[3]=n;break;}
+  case 0x8010ce98:{uint32_t dest=r[3],src=r[4],n=0;while(rd16(dest+n*2))n++;for(uint32_t j=0;;j++){uint16_t c=rd16(src+j*2);wr16(dest+(n+j)*2,c);if(!c)break;}break;}
+  case 0x8000c088:emit(20,0,rd32(current_flow+0x1c));break;
+  case 0x8000c0b4:emit(20,1,rd32(current_flow+0x1c));break;
+  case 0x8000c15c:emit(20,2,rd32(current_flow+0x1c));break;
+  case 0x8000c0f4:emit(20,4,rd32(current_flow+0x1c));break;
   case 0x801e9d68:r[3]=0;break; // Single-controller statistics channel.
   // CSoundManager::play(id, start, handle): a chart sound (5), a game sound a chart command
   // played (12) or one from a press or the scene's own update (1).
@@ -222,13 +268,15 @@ static void call(uint32_t address){
   // CTickFlowManager services used by the interpreter.
   case 0x801e4124:r[3]=++chart_instances;break;
   case 0x801e2928:f[1].d=(float)(frame_ticks*f[1].d);break;
-  case 0x801e2b9c:case 0x801e26a8:break; // Tempo follows the backing track (set by the browser clock).
+  case 0x801e2b9c:if(song_ended){current_tempo=f[1].d;frame_ticks=current_tempo*.8f/60.0f;}break;
+  case 0x801e26a8:break; // Tempo follows the backing track.
   // Speed (14): the chart and the backing track slow down or speed up together (the track's pitch with them).
   case 0x801e2c04:speed=f[1].d;wrf32(r[3]+0x60,speed);emit(14,fbits(speed),flow_rest());break;
   case 0x801e3938:music_sound=r[4];wr32(rd32(0x80320174)+0x1c,3);break; // prepareWave (the music is a wave sound)
   case 0x801e3960:music_sound=r[4];wr32(rd32(0x80320174)+0x1c,3); // playWave
-  case 0x801e3a5c:if(!music_started){music_started=1;emit(6,music_sound,rd32(current_flow+0x1c));}break; // playPreparedWave: chart tick 0, overshot by -rest
+  case 0x801e3a5c:if(grading)emit(21,music_sound,rd32(current_flow+0x1c));else if(!music_started){music_started=1;emit(6,music_sound,rd32(current_flow+0x1c));}break; // playPreparedWave: chart tick 0, overshot by -rest
   case 0x801e3e3c:r[3]=1;break; // wave prepared
+  case 0x801e3c00:if(grading)emit(23,r[4],rd32(current_flow+0x1c));break;
   case 0x801e4134:tf_values[r[4]&15]=r[5]&0xffff;break; // rest-length slots (TF 0x0a)
   case 0x801e4144:r[3]=tf_values[r[4]&15];break;
   case 0x801e4154:sound_handle=r[4];break;
@@ -236,7 +284,7 @@ static void call(uint32_t address){
   case 0x801e7b30:r[3]=chart_handles+(r[4]&63)*8;break; // CSoundManager's numbered handles (TickFlow 0x2a)
   // Sequence/stream music, music stop and fades: the browser plays the one backing track.
   case 0x801e2ed8:case 0x801e2f00:case 0x801e300c:case 0x801e3120:case 0x801e334c:case 0x801e33c0:
-  case 0x801e33c8:case 0x801e33f0:case 0x801e34ec:case 0x801e3690:case 0x801e38bc:case 0x801e3c00:break;
+  case 0x801e33c8:case 0x801e33f0:case 0x801e34ec:case 0x801e3690:case 0x801e38bc:break;
   case 0x801e3e2c:emit(13,r[4],fbits(f[1].d));break; // Backing track volume (13): fade frames, volume
   case 0x801e38cc:case 0x801e7334:r[3]=0;break; // stream playing / sound data loading
   case 0x801e6e08:case 0x801e6e4c:case 0x801e6ecc:case 0x801e7114:case 0x801e71c0:break; // player volumes
@@ -279,7 +327,7 @@ EMSCRIPTEN_KEEPALIVE void reset_runtime(void){
   for(int i=0;i<256;i++)input_map[i]=i;
   memset(ram,0,sizeof(ram));memset(r,0,sizeof(r));memset(f,0,sizeof(f));memset(cr,0,sizeof(cr));memset(banks,0,sizeof(banks));
   memset(tf_values,0,sizeof(tf_values));sound_handle=envelope=0;speed=1;anim_tempo_update=anim_tempo=handle_count=0;
-  chart_flow_count=chart_rerun=chart_instances=current_flow=music_started=song_ended=0;music_sound=0xffffffff;frame_ticks=0;heap=0x80500000;call_depth=actor_count=checker_count=event_count=frame_number=layout_count=0;
+  chart_flow_count=chart_rerun=chart_instances=current_flow=music_started=song_ended=0;grading=grading_scene=grading_ready=grading_pressed=grading_done=prompt_press=prompt_release=prompt_exit_remaining=message_table=message_count=0;prompt_exit_frames=5;music_sound=0xffffffff;frame_ticks=0;heap=0x80500000;call_depth=actor_count=checker_count=event_count=frame_number=layout_count=0;
   hits=misses=through=stray=perfect_failed=score_sum=score_count=wrong_count=0;wrong_timer=0;
   memset(canvas_timing,0,sizeof(canvas_timing));base_canvas=0;
   r[1]=0x81800000;r[2]=0x80328fe0;r[13]=0x80326ec0;
@@ -289,6 +337,7 @@ EMSCRIPTEN_KEEPALIVE void initialize_scene(void){
   uint32_t globals[]={0x80320148,0x8032016c,0x80320170,0x80320174,0x80320178,0x80320180,0x80320184,0x80320188,0x8032018c,0x80320194};
   uint32_t vtable=alloc(256);for(int i=0;i<64;i++)wr32(vtable+i*4,0x8fff0000);
   for(int i=0;i<10;i++){uint32_t obj=alloc(4096);wr32(globals[i],obj);wr32(obj,vtable);}
+  invoke1(0x801ead4c,rd32(0x8032016c));
   wrf32(rd32(0x80320174)+0x60,1.0f); // CTickFlowManager::mSpeed
   chart_handles=alloc(64*8);
   r[3]=2;call(GAME_SCENE_CREATE);scene=r[3];wr32(rd32(0x80320180)+4,scene);wr32(0x80320380,1);
@@ -310,8 +359,27 @@ EMSCRIPTEN_KEEPALIVE void set_delta(float ticks){delta_ticks=ticks;}
 EMSCRIPTEN_KEEPALIVE void set_perfect_active(uint32_t enabled){wr8(0x803201b9,enabled);}
 // Start the minigame's chart at its first command.
 EMSCRIPTEN_KEEPALIVE void start_chart(uint32_t code){create_flow(code,0);}
+EMSCRIPTEN_KEEPALIVE void install_messages(uint32_t table,uint32_t count){
+  message_table=table;message_count=count;uint32_t cp=rd32(0x8032016c);
+  wr32(cp+0x2e8,message(0));wr32(cp+0x2ec,message(101));wr32(cp+0x2f0,message(102));wr32(cp+0x2f4,message(103));wr32(cp+0x2f8,message(100));
+}
+EMSCRIPTEN_KEEPALIVE void calculate_grade(void){invoke1(0x801eb130,rd32(0x8032016c));}
+EMSCRIPTEN_KEEPALIVE void start_grading(void){
+  grading_ready=grading_pressed=0;
+}
+EMSCRIPTEN_KEEPALIVE void configure_grading_prompt(uint32_t frames){prompt_exit_frames=frames;}
+EMSCRIPTEN_KEEPALIVE void grading_input(uint32_t down){
+  if(!grading_ready)return;
+  if(down&&!grading_pressed){grading_pressed=1;if((int32_t)prompt_press>=0)emit(1,prompt_press,0);}
+  else if(!down&&grading_pressed==1){grading_pressed=2;grading_ready=0;if((int32_t)prompt_release>=0)emit(1,prompt_release,0);}
+}
+EMSCRIPTEN_KEEPALIVE uint32_t grading_state(void){return grading_ready|(grading<<2)|(grading_done<<4);}
+EMSCRIPTEN_KEEPALIVE float grading_tempo(void){return current_tempo;}
+EMSCRIPTEN_KEEPALIVE void grading_frame(void){delta_ticks=frame_ticks=current_tempo*.8f/60.0f;run_flows();if(prompt_exit_remaining)prompt_exit_remaining--;if(grading==2&&!chart_flow_count&&!grading_done){grading_done=1;emit(20,11,0);}if(grading)frame_number++;else finish_frame();}
 EMSCRIPTEN_KEEPALIVE void set_frame_ticks(float ticks){frame_ticks=ticks;}
 EMSCRIPTEN_KEEPALIVE uint32_t chart_state(void){return music_started|(song_ended<<1);}
+EMSCRIPTEN_KEEPALIVE uint32_t chart_flow_count_value(void){return chart_flow_count;}
+EMSCRIPTEN_KEEPALIVE uint32_t chart_flow_at(uint32_t i){return i<chart_flow_count?chart_flows[i]:0;}
 EMSCRIPTEN_KEEPALIVE void begin_frame(void){run_flows();}
 // One note's volume envelope from the original nw4r EnvGenerator, as the mixer would apply it:
 // amplitude ratios at each 3 ms update, released after release_ms (negative: never). Returns the count.
@@ -345,7 +413,7 @@ static void press(uint32_t type){
     call(rd32(rd32(c)+0x20));uint32_t judgment=r[3];
     if(judgment<=1){
       consumed=1;r[3]=c;r[4]=type;call(rd32(rd32(c)+(judgment==0?0x24:0x28)));
-      if(r[3]){uint32_t grade=rd8(quality);score_sum+=grade;score_count++;wrong_count=0;checkpoint(rd8(c+0x78),judgment);
+      if(r[3]){uint32_t grade=rd8(quality);score_sum+=grade;score_count++;wrong_count=0;r[3]=rd32(0x8032016c);r[4]=rd8(c+0x78);r[5]=judgment;call(0x801eaf2c);
 #if GAME_END_CHECKER_ON_HIT
         if(rd8(c+0x70)){invoke1(rd32(rd32(c)+0x14),c);checker_count--;memmove(checkers+i,checkers+i+1,(checker_count-i)*4);}
 #endif
@@ -401,6 +469,7 @@ EMSCRIPTEN_KEEPALIVE void buttons(uint32_t trig,uint32_t release){
   else{single(&release_a,release&1,18,20,0x49a);single(&release_b,release&2,19,20,0x49b);}
 }
 EMSCRIPTEN_KEEPALIVE void finish_frame(void){
+  invoke1(0x801eae20,rd32(0x8032016c));
   for(int i=(int)checker_count-1;i>=0;i--){
     uint32_t c=checkers[i];invoke1(rd32(rd32(c)+0x18),c);
     if(r[3]){invoke1(rd32(rd32(c)+0x14),c);checker_count--;memmove(checkers+i,checkers+i+1,(checker_count-i)*4);}

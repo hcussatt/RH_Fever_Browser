@@ -34,7 +34,7 @@ export function bindControls(canvas,{press,pause,start}){
  };
  canvas.addEventListener('pointerdown',e=>{if(e.button===0||e.button===2)e.preventDefault();mouse(e);});
  window.addEventListener('pointermove',e=>{if(mouseDown)mouse(e);});
- window.addEventListener('pointerup',mouse);
+ window.addEventListener('pointerup',mouse);window.addEventListener('pointercancel',mouse);
  canvas.addEventListener('contextmenu',e=>e.preventDefault());
  let lastPad=0;
  // Called once per animation frame; gamepads have no press events.

@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hcussatt.github.io/RH_Fever_Browser/schemas/game.schema.json",
+  "title": "Rhythm Heaven browser game manifest v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "id", "title", "action", "platform", "web", "wii"],
+  "properties": {
+    "$schema": {"type": "string"},
+    "schemaVersion": {"const": 1},
+    "id": {"type": "string", "pattern": "^[a-z][a-z0-9_-]{0,47}$"},
+    "title": {"type": "string", "minLength": 1},
+    "action": {"type": "string", "minLength": 1},
+    "platform": {"const": "wii"},
+    "web": {
+      "type": "object", "additionalProperties": false, "required": ["enabled"],
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "order": {"type": "integer", "minimum": 0},
+        "expectedCues": {"type": "integer", "minimum": 1}
+      },
+      "if": {"properties": {"enabled": {"const": true}}},
+      "then": {"required": ["expectedCues"]}
+    },
+    "wii": {
+      "type": "object", "additionalProperties": false,
+      "required": ["scene", "cellanim", "units", "banks", "projection", "endsWithMusic"],
+      "properties": {
+        "scene": {"$ref": "#/$defs/name"},
+        "sceneVariant": {"type": "integer", "minimum": 0},
+        "input": {"description": "Input type the cues wait for (EInputType): 4 A (default), 6 A and B together.", "enum": [4, 6]},
+        "cellanim": {"$ref": "#/$defs/discPath"},
+        "units": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/sourcePath"}},
+        "banks": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/name"}},
+        "projection": {"type": "array", "minItems": 2, "maxItems": 2, "items": {"type": "integer", "minimum": 1}},
+        "perfectActive": {"type": "boolean"},
+        "endsWithMusic": {"type": "boolean"},
+        "layout": {
+          "type": "object", "additionalProperties": false,
+          "required": ["archive", "file", "animations", "startAtEnd", "texts", "panes"],
+          "properties": {
+            "archive": {"$ref": "#/$defs/discPath"},
+            "file": {"type": "string", "pattern": "^[A-Za-z0-9_-]+\\.brlyt$"},
+            "animations": {"type": "array", "items": {"type": "array", "minItems": 2, "maxItems": 2, "items": {"$ref": "#/$defs/name"}}},
+            "startAtEnd": {"type": "array", "uniqueItems": true, "items": {"type": "integer", "minimum": 0}},
+            "texts": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/name"}},
+            "panes": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/name"}}
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "name": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"},
+    "discPath": {"type": "string", "pattern": "^EN/(?:[A-Za-z0-9_-]+/)*[A-Za-z0-9_-]+\\.szs$"},
+    "sourcePath": {"type": "string", "pattern": "^Game/(?:[A-Za-z0-9_-]+/)*[A-Za-z0-9_-]+\\.cpp$"}
+  }
+}

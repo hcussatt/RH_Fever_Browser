@@ -3,22 +3,26 @@
 import {loadGame} from './runtime.mjs';
 import {createAudio} from './audio.mjs';
 import {createRenderer} from './renderer.mjs';
-import {createInputQueue,bindControls} from './input.mjs';
+import {createResults} from './results.mjs';
+import {A,createInputQueue,bindControls} from './input.mjs';
 import {createTrack} from './clock.mjs';
+import {assetResponse,requireAssets} from './assets.mjs';
 const gameUrl=new URL('./',location.href);
 const canvas=document.querySelector('canvas'),overlay=document.querySelector('#overlay'),play=document.querySelector('#play'),status=document.querySelector('#status');
-let g,renderer,audio,music,startTime,running=false,frame=0,sfx,paused=false,track,backing;const input=createInputQueue(),metrics=[];
+let g,renderer,audio,music,startTime,running=false,frame=0,sfx,paused=false,results,resultsStart,phase='game',track,backing;const input=createInputQueue(),metrics=[];
 // Debug and QA handle (tests and audio checks read it).
 window.rhf={};
 function fail(e){running=false;audio?.suspend();overlay.hidden=false;play.disabled=true;play.textContent='Runtime error';status.textContent=e.message;console.error(e);window.rhf.error=e.stack;}
 try{
+ await requireAssets(gameUrl.pathname.split('/').filter(Boolean).at(-1));
  const context=new AudioContext({latencyHint:'interactive'});audio=context;
- const musicData=fetch(new URL('assets/music.wav',gameUrl)).then(r=>r.arrayBuffer()).then(b=>audio.decodeAudioData(b));
+ const musicData=assetResponse(new URL('assets/music.wav',gameUrl)).then(r=>r.arrayBuffer()).then(b=>audio.decodeAudioData(b));
  g=await loadGame(gameUrl);
  const {title,action}=g.manifest;document.title=title;canvas.setAttribute('aria-label',title+' game');
  document.querySelector('h1').textContent=title;const controls=g.manifest.wii.input===6?`A + B together · ${action} (A: Space / Left Shift / click, B: Right Shift / right click)`:'Space / X / click · '+action;for(const e of document.querySelectorAll('.controls'))e.textContent=controls;
  renderer=await createRenderer(g,canvas);renderer.draw();music=await musicData;sfx=await createAudio(audio,gameUrl,{envelope:g.envelope});
- window.rhf={g,renderer,audio,sfx,inputs:input.presses,metrics,heardTime,stats:g.stats,result:null,get frame(){return frame;},get track(){return track;}};
+ results=await createResults(g,canvas);
+ window.rhf={g,renderer,audio,sfx,results,inputs:input.presses,metrics,heardTime,stats:g.stats,result:null,get track(){return track;},get phase(){return phase;},get frame(){return frame;}};
  play.disabled=false;play.textContent='Play';
 }catch(e){fail(e);}
 // Every sound plays at its chart tick on the audio clock: the chart's own sounds from the build's
@@ -66,12 +70,13 @@ function heardTime(){
 // next screen refresh, so the game's answer (a hit sound) is not held back by up to a frame.
 function press(button,down,at=performance.now()){
  if(!running)return;
+ if(phase==='results'){if(button===A)results.input(down);return;}
  const heard=heardTime()-Math.max(0,performance.now()-at)/1000;
  const due=Math.max(frame+1,Math.floor(Math.max(0,heard-startTime)*60)+1);
  input.push(due,button,down,at);runWhenHeard(due);
 }
 function runWhenHeard(due){
- if(!running||frame>=due)return;
+ if(!running||phase!=='game'||frame>=due)return;
  const wait=(startTime+due/60-heardTime())*1000;
  if(wait>0)setTimeout(()=>runWhenHeard(due),wait+.5);else advance(Math.floor((heardTime()-startTime)*60));
 }
@@ -101,19 +106,24 @@ document.querySelector('#restart').onclick=()=>location.reload();
 // The song ends at this second of the backing track.
 const endSeconds=()=>g.manifest.wii.endsWithMusic?Math.max(music.duration,g.secondsAtTick(g.timeline.endTick)):g.secondsAtTick(g.timeline.endTick);
 function finish(){
- running=false;const result=g.result();window.rhf.result=result;
- status.textContent=`${result.hits} hits · ${result.misses} misses · ${result.through} through`;overlay.hidden=false;play.textContent='Play again';play.onclick=()=>location.reload();
+ phase='results';sfx.stop();resultsStart=audio.currentTime+.06;
+ const result=results.begin(sfx,resultsStart);window.rhf.result=result;status.textContent='';
  window.dispatchEvent(new CustomEvent('rhf-result',{detail:result}));
 }
 function loop(){if(!running)return;try{
  pollGamepad();
+ if(phase==='results'){
+  results.draw(heardTime()-resultsStart);
+  if(results.done){running=false;sfx.stop();audio.suspend();location.href=new URL('../',gameUrl).href;return;}
+  requestAnimationFrame(loop);return;
+ }
  const began=performance.now();const elapsed=Math.max(0,heardTime()-startTime);
  const target=Math.floor(elapsed*60);
  advance(target);
  schedule();
  renderer.draw();metrics.push({frame,ms:performance.now()-began,catchUp:Math.max(0,target-frame)});
  if(track.posAt(elapsed)>=endSeconds())finish();
- else requestAnimationFrame(loop);
+ requestAnimationFrame(loop);
  }catch(e){fail(e);}}
 
 async function pause(){if(!running)return;running=false;paused=true;await audio.suspend();overlay.hidden=false;play.textContent='Resume';}

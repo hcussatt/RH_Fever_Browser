@@ -5,8 +5,9 @@
 // drawn with its base (mBaseAnimDraw) is drawn right after that object, not by layer.
 // A game's 2D layout (layout.mjs) is drawn over the cell animations.
 import {createLayout} from './layout.mjs';
+import {assetImage} from './assets.mjs';
 export async function createRenderer(g,canvas){
- const images=await Promise.all(g.assets.textures.map(async n=>{const i=new Image();i.src=new URL('assets/'+n,g.base);await i.decode();return i;}));
+ const images=await Promise.all(g.assets.textures.map(n=>assetImage(new URL('assets/'+n,g.base))));
  const ctx=canvas.getContext('2d',{alpha:false});
  const layout=await createLayout(g);
  const {u8,u16,u32,f32,core,banks}=g;

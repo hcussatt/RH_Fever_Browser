@@ -6,7 +6,7 @@ otherwise all tracked files) for:
   * paths under build/, dist/, local/ or .toolchain/ (generated or private)
   * disc images, executables, Nintendo archive/sound/graphics formats,
     compiled WASM, and decoded media, by extension and by file signature
-  * translated original code (generated p_8xxxxxxx functions)
+  * translated original code outside the explicitly approved runtime-src snapshots
   * the Wii common key, by hash
   * any 64-byte run copied from main.dol or the cellanim files, when a local
     build/disc/ exists to compare against
@@ -19,7 +19,12 @@ import subprocess
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT/'tools'))
+from game_registry import web_games
 BLOCKED_DIRS = ('build/', 'dist/', 'local/', '.toolchain/')
+# Runtime code publication is authorized; assets and original data are not.
+# Keep the allowance exact, not a blanket exception for generated files.
+RUNTIME_SOURCES = {f'runtime-src/{game["id"]}/original-functions.inc' for game in web_games(ROOT, validate=False)}
 BLOCKED_EXT = {
     '.iso', '.wbfs', '.rvz', '.ciso', '.gcz', '.wia', '.nkit', '.wad', '.tik', '.tmd',
     '.dol', '.elf', '.rel', '.o', '.a', '.map',
@@ -74,7 +79,7 @@ def check(name, data, blocks):
     lower = name.lower()
     if lower.startswith(BLOCKED_DIRS):
         problems.append('generated or private folder')
-    if pathlib.PurePosixPath(lower).suffix in BLOCKED_EXT:
+    if pathlib.PurePosixPath(lower).suffix in BLOCKED_EXT and name not in RUNTIME_SOURCES:
         problems.append('blocked file type')
     if 'rhythm heaven' in lower and lower.endswith(('.iso', '.zip')):
         problems.append('looks like a game image')
@@ -86,7 +91,7 @@ def check(name, data, blocks):
     if len(data) > MAX_BYTES:
         problems.append(f'larger than {MAX_BYTES} bytes')
     text = data.decode('latin-1')
-    if re.search(r'static void p_8[0-9a-f]{7}\(void\)', text):
+    if re.search(r'static void p_8[0-9a-f]{7}\(void\)', text) and name not in RUNTIME_SOURCES:
         problems.append('translated original code')
     for candidate in re.findall(r'(?:0x)?[0-9a-fA-F]{2}(?:[\s,]*(?:0x)?[0-9a-fA-F]{2}){15}', text):
         digits = re.sub(r'0x|[^0-9a-fA-F]', '', candidate)

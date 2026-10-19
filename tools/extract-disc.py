@@ -14,6 +14,8 @@ from wii_files import WiiFiles, u8_files, yaz0
 CELLANIM = {game: manifest(game)['wii']['cellanim'] for game in GAMES}
 # 2D layout archive for games that draw one (Love Rap's lyric captions).
 LAYOUT = {game: manifest(game)['wii']['layout'] for game in GAMES if 'layout' in manifest(game)['wii']}
+LAYOUT['results'] = {'archive': 'EN/content2/layout/layout_grading.szs', 'file': 'grading.brlyt'}
+LAYOUT['epilogue'] = {'archive': 'EN/content2/layout/layout_epilogue.szs', 'file': 'epilogue.brlyt'}
 MESSAGES = 'EN/content2/message/riq_E.szs'
 
 
@@ -31,7 +33,7 @@ def layout_fonts(brlyt):
     return names
 
 
-def main(iso):
+def main(iso, *, sound_archive=True):
     disc = WiiFiles(iso)
     if disc.raw(0, 6) != b'SOME01':
         raise SystemExit(f'Expected Rhythm Heaven Fever USA (SOME01), found {disc.raw(0, 6)!r}')
@@ -41,12 +43,23 @@ def main(iso):
         raise SystemExit('main.dol does not match the known USA executable; this build expects an unmodified SOME01 disc.')
     DOL.write_bytes(dol)
     report = {'dolSha1': DOL_SHA1, 'files': {}}
+    for name,data in u8_files(disc.get('EN/content2/cellanim/permanent/cellanim.szs')).items():
+        out=DISC/'permanent'/name
+        out.parent.mkdir(parents=True,exist_ok=True)
+        out.write_bytes(data)
+        report['files'][f'permanent/{name}']=hashlib.sha256(data).hexdigest()
     for game, path in CELLANIM.items():
         for name, data in u8_files(disc.get(path)).items():
             out = DISC/game/name
             out.parent.mkdir(parents=True, exist_ok=True)
             out.write_bytes(data)
             report['files'][f'{game}/{name}'] = hashlib.sha256(data).hexdigest()
+        epilogue = path.rsplit('/',1)[0]+'/cellanim_epilogue.szs'
+        for name,data in u8_files(disc.get(epilogue)).items():
+            out=DISC/game/'epilogue'/name
+            out.parent.mkdir(parents=True,exist_ok=True)
+            out.write_bytes(data)
+            report['files'][f'{game}/epilogue/{name}']=hashlib.sha256(data).hexdigest()
     for game, layout in LAYOUT.items():
         files = u8_files(disc.get(layout['archive']))
         for name, data in files.items():
@@ -66,10 +79,11 @@ def main(iso):
             (DISC/'message').mkdir(exist_ok=True)
             (DISC/'message'/name).write_bytes(data)
             report['files'][f'message/{name}'] = hashlib.sha256(data).hexdigest()
-    if not BRSAR.exists() or BRSAR.stat().st_size != disc.files['EN/content2/rev_tengoku.brsar'][1]:
+    if sound_archive and (not BRSAR.exists() or BRSAR.stat().st_size != disc.files['EN/content2/rev_tengoku.brsar'][1]):
         BRSAR.write_bytes(disc.get('EN/content2/rev_tengoku.brsar'))
     (DISC/'extract-report.json').write_text(json.dumps(report, indent=2)+'\n')
-    print(f'Read main.dol, {len(report["files"])} cellanim, layout and message files and the sound archive into {DISC}')
+    print(f'Read main.dol, {len(report["files"])} cellanim, layout and message files into {DISC}')
+    return disc
 
 
 if __name__ == '__main__':

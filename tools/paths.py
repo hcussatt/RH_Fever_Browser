@@ -15,6 +15,19 @@ GAMES = tuple(sorted(p.parent.name for p in (ROOT/'games').glob('*/game.json')))
 DOL_SHA1 = 'd96d2c7e50b0c713cb8fcb18835258351ada5576'   # USA SOME01 main.dol
 
 
+def read_sound_archive(offset, length):
+    """Read just the requested sound metadata/sample range.
+
+    The browser replaces this reader with direct decrypted ISO range reads.
+    """
+    with require(BRSAR).open('rb') as source:
+        source.seek(offset)
+        data = source.read(length)
+    if len(data) != length:
+        raise ValueError('Incomplete sound archive')
+    return data
+
+
 def game():
     name = os.environ.get('RHF_GAME', 'golf')
     if name not in GAMES:

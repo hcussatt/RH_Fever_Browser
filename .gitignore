@@ -1,8 +1,12 @@
 # Everything generated from the user's disc image. Never commit these.
 /build/
 /dist/
+/site/
+/node_modules/
+/test-results/
 /local/
 /.toolchain/
+/.venv/
 *.iso
 *.wbfs
 *.rvz

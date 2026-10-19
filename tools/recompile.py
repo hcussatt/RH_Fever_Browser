@@ -16,7 +16,7 @@ def read(a,n):
         if start<=a and a+n<=start+size:return blob[off+a-start:off+a-start+n]
     raise ValueError(hex(a))
 
-SHARED={'GameUtil/TickFlow.cpp','nw4r/snd/snd_EnvGenerator.cpp','GameUtil/TimeRatio.cpp','GameUtil/InputChecker.cpp','Game/ExChecker.cpp','GameUtil/CellAnim.cpp','GameUtil/Random.cpp'}
+SHARED={'GameUtil/TickFlow.cpp','nw4r/snd/snd_EnvGenerator.cpp','GameUtil/TimeRatio.cpp','GameUtil/InputChecker.cpp','Game/ExChecker.cpp','GameUtil/CellAnim.cpp','GameUtil/Random.cpp','GameUtil/CheckPointManager.cpp','Game/Grading/MyFlow.cpp'}
 # Single pure functions outside those units that the chart interpreter needs.
 SHARED_FUNCTIONS={'calc_initial_wave_tempo__13CSoundManagerFP8WaveInfo',
   'fn_80009950__8CExSceneFll','fn_80009A40__8CExSceneFb', # the "you" marker's position and visibility
@@ -143,6 +143,11 @@ def generate(a,size,name):
                 if i==me:break
                 i=(i+1)%32
             c=f'{q[0]}=(rotl({q[1]},{q[2]})&{hex(mask)}u)|({q[0]}&{hex(~mask&0xffffffff)}u);'
+        elif m in ['divw','divwu']:
+            # PPC division truncates toward zero. Use 64 bits for INT_MIN/-1;
+            # zero division is undefined by PPC and must not silently score.
+            signed='(int32_t)' if m=='divw' else '(uint32_t)'
+            c=f'if(!{q[2]})panic({hex(x.address)},13);{q[0]}=(uint32_t)((int64_t){signed}{q[1]}/{signed}{q[2]});'
         elif m in ['mulhw','mulhwu']:
             cast='int64_t)(int32_t' if m=='mulhw' else 'uint64_t)(uint32_t'
             c=f'{q[0]}=((({cast}){q[1]})*(({cast}){q[2]}))>>32;'
@@ -159,6 +164,8 @@ def generate(a,size,name):
         elif m in ['fcmpo','fcmpu']:
             if p[0].startswith('cr'):field=int(p[0][2:]);q=q[1:]
             c=f'fcmp({field},{q[0]},{q[1]});'
+        elif m=='mfcr':
+            c=f'{q[0]}=0;for(unsigned bit=0;bit<32;bit++){q[0]}|=(uint32_t)cr[bit]<<(31-bit);'
         elif m in ['cror','crclr']:
             bits=[crbit(s) for s in p]
             assert min(bits)>=0,(m,p)

@@ -1,0 +1,116 @@
+name: Build test and deploy Pages
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.games.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r requirements-ci.txt
+      - name: Validate game contracts and plugin registration
+        run: |
+          python tools/game_registry.py
+          python tests/test_game_registry.py
+      - name: Discover enabled game modules
+        id: games
+        run: echo "matrix=$(python tools/game_registry.py --matrix)" >> "$GITHUB_OUTPUT"
+
+  compile:
+    needs: discover
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.discover.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned Emscripten
+        uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: '5.0.7'
+          actions-cache-folder: emsdk-cache
+      - name: Compile approved runtime snapshot
+        env:
+          RHF_GAME: ${{ matrix.game }}
+          RHF_RUNTIME_SOURCE: runtime-src
+        run: tools/build-core.sh "$RHF_GAME"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: core-${{ matrix.game }}
+          path: dist/
+          if-no-files-found: error
+          retention-days: 1
+
+  build:
+    needs: [discover, compile]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r requirements-ci.txt
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Verify source policy
+        run: |
+          python scripts/check-clean.py
+          python tests/test-public-policy.py
+          python -m compileall -q tools scripts tests
+          find web tools tests -name '*.mjs' -exec node --check {} \;
+          sh -n build.sh serve.sh tools/build-core.sh
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: core-*
+          path: dist
+          merge-multiple: true
+      - name: Assemble registered web games and audit deployment
+        run: |
+          python tools/prepare-pages.py
+          python scripts/check-pages.py
+      - name: Browser integration tests
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+          npm test
+      - name: Upload reviewed deployment artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4
