@@ -341,7 +341,24 @@ static void exflow_command(void){
   // to (x, y) or is shown or hidden. Donk-Donk's chart hides its marker when the ship takes off.
   else if(op==0x110&&arg0<=2){uint32_t you=rd32(0x80320200+arg0*4);wrf32(you+0x84,(float)(int32_t)rd32(args));wrf32(you+0x88,(float)(int32_t)rd32(args+4));}
   else if(op==0x111&&arg0<=2)wr8(rd32(0x80320200+arg0*4)+0xa7,rd32(args)!=0);
-  else if(op==0x121||op==0x131)wr32(self+0x24,0); // Scene version / play-mode queries: normal play.
+  // CExFlow 0x121 (0x8008da44): a per-section miss record. 0/1 reset its counter (lbl_803201A4) and
+  // the missed flag (lbl_803201A0) that a Perfect fail (fn_80009ABC) sets; 2 counts the section when
+  // nothing was missed; 3 and 7 read them back; 4 fails Perfect; 5-9 set or read two more flags
+  // (fn_80009D60..D7C; 5 also prints a debug line). Tap Troupe clears the flag before each combo
+  // and cheers only when it is clear, so leaving it set stopped every cheer after the first miss.
+  else if(op==0x121){switch(arg0){
+    case 0:wr32(0x803201a4,0);break;
+    case 1:wr8(0x803201a0,0);break;
+    case 2:if(!rd8(0x803201a0))wr32(0x803201a4,rd32(0x803201a4)+1);break;
+    case 3:wr32(self+0x24,rd32(0x803201a4));break;
+    case 4:call(0x80009abc);break;
+    case 5:wr8(0x803201c0,1);break;
+    case 6:wr32(self+0x24,rd8(0x803201c0));break;
+    case 7:wr32(self+0x24,rd8(0x803201a0));break;
+    case 8:wr8(0x803201a2,rd32(args)!=0);break;
+    case 9:wr32(self+0x24,rd8(0x803201a2));break;
+  }}
+  else if(op==0x131)wr32(self+0x24,0); // Scene version / play-mode query: normal play.
   r[3]=0;
 }
 // The game's sequence user procedure (F0 E0 in a sound's program): it sets sequence variables from
