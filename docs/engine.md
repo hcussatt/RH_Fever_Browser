@@ -226,6 +226,10 @@ original nw4r sound code where it matters for how a game sounds:
   variable is traced again by `web/engine/sequence.mjs` when it plays; the others play the notes
   `tools/extract-sfx.py` traced and apply the globals they set. `tests/test-sequence.mjs` checks
   that both tracers agree.
+- A track's volume, pan and pitch bend reach the notes it is still playing, as in nw4r's
+  SeqTrack: each traced note carries `changes`, the later sets and timed moves (0xa3, one step
+  a sequence tick) of its track, and `web/engine/audio.mjs` follows them on the note's gains,
+  pan and detune (Built to Scale's siren, Tap Trial's falling triple-tap call). A random parameter (0xa0) is drawn once per play for each range.
 - Pitch interpolation, LFO and filters are approximated.
 
 `web/engine/qa/audio-check.mjs` renders a whole autoplay run offline and reports
