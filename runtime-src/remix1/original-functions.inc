@@ -181,6 +181,7 @@ static void p_8008e89c(void);
 static void p_8008ea9c(void);
 static void p_8008eb08(void);
 static void p_8008eb10(void);
+static void p_801a7af0(void);
 static void p_801b0940(void);
 static void p_801b0990(void);
 static void p_801b09d0(void);
@@ -14025,6 +14026,118 @@ case 0x8008eb1c:goto L_8008eb1c;
 case 0x8008eb20:goto L_8008eb20;
 default:call(ctr);return;}
 }
+static void p_801a7af0(void) {
+L_801a7af0: f[0].d=rdf32((r[2]+(596)));
+L_801a7af4: wr32((r[1]+(-32)),r[1]);r[1]=(r[1]+(-32));
+L_801a7af8: fcmp(0,f[0].d,f[2].d);
+L_801a7afc: if(!cr[2]){goto L_801a7b10;}
+L_801a7b00: fcmp(0,f[0].d,f[1].d);
+L_801a7b04: if(!cr[2]){goto L_801a7b10;}
+L_801a7b08: f[1].d=f[0].d;
+L_801a7b0c: goto L_801a7ca0;
+L_801a7b10: f[4].d=rdf32((r[2]+(596)));
+L_801a7b14: fcmp(0,f[2].d,f[4].d);
+L_801a7b18: cr[2]=cr[1]|cr[2];
+L_801a7b1c: if(!cr[2]){goto L_801a7b88;}
+L_801a7b20: fcmp(0,f[1].d,f[4].d);
+L_801a7b24: cr[2]=cr[1]|cr[2];
+L_801a7b28: if(!cr[2]){goto L_801a7b58;}
+L_801a7b2c: fcmp(0,f[2].d,f[1].d);
+L_801a7b30: cr[2]=cr[1]|cr[2];
+L_801a7b34: if(!cr[2]){goto L_801a7b44;}
+L_801a7b38: f[3].d=f[2].d;
+L_801a7b3c: r[0]=0;
+L_801a7b40: goto L_801a7bfc;
+L_801a7b44: f[3].d=f[1].d;
+L_801a7b48: f[4].d=rdf32((r[2]+(604)));
+L_801a7b4c: f[1].d=f[2].d;
+L_801a7b50: r[0]=1;
+L_801a7b54: goto L_801a7bfc;
+L_801a7b58: f[1].d=-f[1].d;
+L_801a7b5c: fcmp(0,f[2].d,f[1].d);
+L_801a7b60: cr[2]=cr[1]|cr[2];
+L_801a7b64: if(!cr[2]){goto L_801a7b74;}
+L_801a7b68: f[3].d=f[2].d;
+L_801a7b6c: r[0]=1;
+L_801a7b70: goto L_801a7bfc;
+L_801a7b74: f[3].d=f[1].d;
+L_801a7b78: f[4].d=rdf32((r[2]+(608)));
+L_801a7b7c: f[1].d=f[2].d;
+L_801a7b80: r[0]=0;
+L_801a7b84: goto L_801a7bfc;
+L_801a7b88: fcmp(0,f[1].d,f[4].d);
+L_801a7b8c: cr[2]=cr[1]|cr[2];
+L_801a7b90: if(!cr[2]){goto L_801a7bc8;}
+L_801a7b94: f[0].d=-f[2].d;
+L_801a7b98: fcmp(0,f[0].d,f[1].d);
+L_801a7b9c: cr[2]=cr[1]|cr[2];
+L_801a7ba0: if(!cr[2]){goto L_801a7bb4;}
+L_801a7ba4: f[3].d=f[0].d;
+L_801a7ba8: f[4].d=rdf32((r[2]+(612)));
+L_801a7bac: r[0]=1;
+L_801a7bb0: goto L_801a7bfc;
+L_801a7bb4: f[3].d=f[1].d;
+L_801a7bb8: f[4].d=rdf32((r[2]+(604)));
+L_801a7bbc: f[1].d=f[0].d;
+L_801a7bc0: r[0]=0;
+L_801a7bc4: goto L_801a7bfc;
+L_801a7bc8: f[0].d=-f[2].d;
+L_801a7bcc: f[1].d=-f[1].d;
+L_801a7bd0: fcmp(0,f[0].d,f[1].d);
+L_801a7bd4: cr[2]=cr[1]|cr[2];
+L_801a7bd8: if(!cr[2]){goto L_801a7bec;}
+L_801a7bdc: f[3].d=f[0].d;
+L_801a7be0: f[4].d=rdf32((r[2]+(616)));
+L_801a7be4: r[0]=0;
+L_801a7be8: goto L_801a7bfc;
+L_801a7bec: f[3].d=f[1].d;
+L_801a7bf0: f[4].d=rdf32((r[2]+(608)));
+L_801a7bf4: f[1].d=f[0].d;
+L_801a7bf8: r[0]=1;
+L_801a7bfc: cmp(0,(int32_t)r[0],(int32_t)(0));
+L_801a7c00: if(cr[2]){goto L_801a7c54;}
+L_801a7c04: f[1].d=(float)(f[1].d/f[3].d);
+L_801a7c08: f[0].d=rdf32((r[2]+(600)));
+L_801a7c0c: r[3]=r[1]+(16);
+L_801a7c10: f[1].d=(float)(f[1].d*f[0].d);
+L_801a7c14: wr16((r[3]+(0)),(uint32_t)(int32_t)fast_cast(f[1].d,0,65535));
+L_801a7c18: r[3]=r[1]+(10);
+L_801a7c1c: r[0]=rd16((r[1]+(16)));
+L_801a7c20: wr16((r[1]+(10)),r[0]);
+L_801a7c24: f[0].d=(float)(uint16_t)rd16((r[3]+(0)));
+L_801a7c28: r[4]=-32719*65536u;
+L_801a7c2c: r[0]=r[0]<<3;
+L_801a7c30: r[4]=r[4]+(21264);
+L_801a7c34: f[2].d=(float)(f[1].d-f[0].d);
+L_801a7c38: r[3]=r[4]+(r[0]);
+L_801a7c3c: f[0].d=rdf32((r[4]+r[0]));
+L_801a7c40: f[1].d=rdf32((r[3]+(4)));
+L_801a7c44: f[1].d=(float)(f[2].d*f[1].d);
+L_801a7c48: f[0].d=(float)(f[0].d+f[1].d);
+L_801a7c4c: f[1].d=(float)(f[4].d-f[0].d);
+L_801a7c50: goto L_801a7ca0;
+L_801a7c54: f[1].d=(float)(f[1].d/f[3].d);
+L_801a7c58: f[0].d=rdf32((r[2]+(600)));
+L_801a7c5c: r[3]=r[1]+(12);
+L_801a7c60: f[1].d=(float)(f[1].d*f[0].d);
+L_801a7c64: wr16((r[3]+(0)),(uint32_t)(int32_t)fast_cast(f[1].d,0,65535));
+L_801a7c68: r[3]=r[1]+(8);
+L_801a7c6c: r[0]=rd16((r[1]+(12)));
+L_801a7c70: wr16((r[1]+(8)),r[0]);
+L_801a7c74: f[0].d=(float)(uint16_t)rd16((r[3]+(0)));
+L_801a7c78: r[4]=-32719*65536u;
+L_801a7c7c: r[0]=r[0]<<3;
+L_801a7c80: r[4]=r[4]+(21264);
+L_801a7c84: f[2].d=(float)(f[1].d-f[0].d);
+L_801a7c88: r[3]=r[4]+(r[0]);
+L_801a7c8c: f[0].d=rdf32((r[4]+r[0]));
+L_801a7c90: f[1].d=rdf32((r[3]+(4)));
+L_801a7c94: f[1].d=(float)(f[2].d*f[1].d);
+L_801a7c98: f[0].d=(float)(f[0].d+f[1].d);
+L_801a7c9c: f[1].d=(float)(f[4].d+f[0].d);
+L_801a7ca0: r[1]=r[1]+(32);
+L_801a7ca4: return;
+}
 static void p_801b0940(void) {
 L_801b0940: f[1].d=rdf32((r[2]+(816)));
 L_801b0944: r[4]=0;
@@ -21996,6 +22109,7 @@ case 0x8008e89c: p_8008e89c(); return 1;
 case 0x8008ea9c: p_8008ea9c(); return 1;
 case 0x8008eb08: p_8008eb08(); return 1;
 case 0x8008eb10: p_8008eb10(); return 1;
+case 0x801a7af0: p_801a7af0(); return 1;
 case 0x801b0940: p_801b0940(); return 1;
 case 0x801b0990: p_801b0990(); return 1;
 case 0x801b09d0: p_801b09d0(); return 1;
