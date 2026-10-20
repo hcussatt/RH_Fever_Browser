@@ -9,7 +9,8 @@ is a real-time multiplayer mod.
 > is primarily a work of AI.
 
 Playable today: **Hole in One**, **Tap Trial**, **Love Rap**, **Sneaky Spirits**,
-**Screwbot Factory**, **See-Saw**, **Double Date**, **Remix 1**, **Launch Party**,
+**Screwbot Factory**, **See-Saw**, **Double Date**, **Remix 1**, **Working Dough**,
+**Built to Scale**, **Air Rally**, **Figure Fighter**, **Remix 3**, **Launch Party**,
 **Donk-Donk**, **Bossa Nova** and **Remix 6**. The game picker
 lists them by remix set, as the original song select does.
 

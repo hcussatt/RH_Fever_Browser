@@ -45,6 +45,8 @@ static uint32_t prompt_exit_frames,prompt_exit_remaining;
 enum{SCENE_INITIAL,SCENE_LOADING,SCENE_READY,SCENE_ACTIVE,SCENE_SCHEDULE_DOWN,SCENE_DOWN,SCENE_DEAD};
 enum{FADER_IDLE=0,FADER_WAIT1=2,FADER_WAIT2=3};
 static uint32_t profile_index,next_profile,next_chart,scene_state,fader_state,fader_wait,flow_create_fn;
+// CFaderFlash's black cover (mAlpha, mAlphaStep): faded by the chart (ExFlow 0x10A), drawn over all.
+static float fader_alpha,fader_step;
 // The platform's own cell animations (canvases, Perfect markers) outlive every scene.
 static uint32_t persistent[16],persistent_count;
 // Cell-animation banks: every bank of every scene is installed up front (install_bank); a scene's
@@ -57,7 +59,8 @@ typedef struct {uint32_t count,animations,cells;} Bank;
 static Bank banks[256];
 // Bank 255 is the platform's never-drawn placeholder; 254 holds the permanent bank (install_permanent).
 #define PERMANENT_BANK 254
-static uint32_t you_animations[3];
+#define MASK_TWEEN 0x8032a1c0 // CExScene's CTRFloat lbl_8032A1C0
+static uint32_t you_animations[3],mask_animation;
 EM_JS(void,panic_js,(uint32_t address,uint32_t kind,uint32_t pc,uint32_t stack,uint32_t depth),{console.error(Array.from(HEAPU32.subarray(stack/4,stack/4+depth)).map(x=>x.toString(16)));throw new Error('Original code '+kind+' at 0x'+address.toString(16)+' after 0x'+pc.toString(16));});
 #define panic(a,k) panic_js(a,k,lr,(uint32_t)(uintptr_t)trace,call_depth)
 static uint32_t idx(uint32_t a){if(a<0x80000000u||a>=0x82000000u)panic(a,1);return a-0x80000000u;}
@@ -290,8 +293,31 @@ static void exflow_command(void){
   // group up front. fn_800836E0 only keeps its flag.
   else if(op>=0x12c&&op<=0x12e){}
   else if(op==0x12f&&arg0==0)wr8(0x80326ec0-27264,rd32(args)!=0);
-  // CExScene::updatePerfectStatus returns at once outside the Perfect campaign, which is not ported.
-  else if(op==0x129&&!rd8(0x80326ec0-27912)){}
+  // CExScene::updatePerfectStatus shows or hides the Perfect campaign's icon and message
+  // (lbl_803201F8/FC), placeholders here: the port tracks Perfect failure but has no campaign.
+  else if(op==0x129){if(rd8(0x803201b8)){wr8(rd32(0x803201f8)+0xa7,arg0!=0);wr8(rd32(0x803201fc)+0xa7,arg0!=0);}}
+  // The screen mask (CExScene::fn_80009A64, 70, 7C, 90 and fn_80008DF8, fn_80008E68).
+  else if(op==0x112)wr8(rd32(0x8032020c)+0xa7,rd32(args)!=0);
+  else if(op==0x113)wr8(rd32(0x8032020c)+0xa6,rd32(args));
+  else if(op==0x114){uint32_t mask=rd32(0x8032020c);wr8(mask+0xa3,rd32(args));wr8(mask+0xa4,rd32(args+4));wr8(mask+0xa5,rd32(args+8));}
+  else if(op==0x115){r[3]=rd32(0x8032020c);r[4]=rd32(args);call(0x801dcf94);}
+  else if(op==0x116&&arg0==0){
+    float v=(float)rd8(rd32(0x8032020c)+0xa6),target=(float)(uint8_t)rd32(args);
+    wrf32(0x8032021c,v);wrf32(0x80320224,target);wrf32(0x80320220,(target-v)/(float)(int32_t)rd32(args+4));
+  }
+  else if(op==0x116&&arg0==1){
+    r[3]=MASK_TWEEN;f[1].d=(float)rd8(rd32(0x8032020c)+0xa6);f[2].d=(float)(uint8_t)rd32(args);call(0x801ea698);
+    r[3]=MASK_TWEEN;f[1].d=0.0f;f[2].d=(float)(int32_t)rd32(args+4);call(0x801ea514);
+  }
+  // The song title card of the scene's lyric layout (CExScene::mLyricLayout, +0x18; CLyricLayout in
+  // LyricLayout.cpp): title and singer from the bonus messages (riq_bonus_E.bmg, fn_800908D8 and
+  // fn_80090934), then lyrics_title_show (fn_80090990). The layout's spec lists T_title_00 and
+  // T_singer_00 as its texts 0 and 1 and lyrics_title_show as its animation 0 (Working Dough).
+  else if(op==0x13b&&arg0<=2){
+    uint32_t lyric=rd32(scene+0x18);
+    if(!lyric||rd32(lyric)!=0x802ed678)panic(lyric,21);
+    if(arg0<2)emit(11,0x300|arg0,bmg_id(rd32(args)));else emit(11,0x100,0);
+  }
   else if(op==0x124)emit(15,(MESG_TEXT<<8)|(arg0&255),bmg_id(rd32(args))); // CMessageManager::fn_80088FEC(pane, fn_80087708(id))
   else if(grading&&op==0x123){
     if(arg0==0)emit(16,0,rd32(args));
@@ -299,6 +325,14 @@ static void exflow_command(void){
     // initializes it to 0 before the five animation frames elapse.
     else if(arg0==1){prompt_exit_remaining=prompt_exit_frames+1;emit(16,1,prompt_exit_frames);}
     else if(arg0==2)wr32(self+0x24,prompt_exit_remaining==0);
+  }
+  // In play the chart fades CFaderFlash's cover (Remix 3's black cuts): over args[1] frames, or
+  // args[1] ticks when args[0] is 0. The steps keep the original's 256 (fn_800080B0, fn_800080C0).
+  else if(!song_ended&&op==0x10a&&arg0<=1){
+    float frames;
+    if(rd32(args))frames=(float)(int32_t)rd32(args+4);
+    else{r[3]=rd32(0x80320174);f[1].d=(float)(int32_t)rd32(args+4);call(0x801e26b4);frames=(float)(int32_t)f[1].d;}
+    fader_step=(arg0?-256.0f:256.0f)/frames;
   }
   else if(song_ended&&op==0x10a){emit(20,arg0?6:7,rd32(self+0x1c));emit(22,arg0,rd32(args)?rd32(args+4):(uint32_t)((float)rd32(args+4)*60/(current_tempo*.8f)));}
   else if(op==0x12a)wr8(0x803201b9,arg0);
@@ -512,8 +546,8 @@ EMSCRIPTEN_KEEPALIVE void events_clear(void){event_count=0;}
 EMSCRIPTEN_KEEPALIVE uint32_t allocate(uint32_t size){return alloc(size);}
 EMSCRIPTEN_KEEPALIVE void install_bank(uint32_t id,uint32_t count,uint32_t animations,uint32_t cells){banks[id]=(Bank){count,animations,cells};}
 // The permanent bank (CExScene::_08's registBank of permanent.brcad) and its "you" animations.
-EMSCRIPTEN_KEEPALIVE void install_permanent(uint32_t count,uint32_t animations,uint32_t cells,uint32_t you,uint32_t you_1p,uint32_t you_2p){
-  banks[PERMANENT_BANK]=(Bank){count,animations,cells};you_animations[0]=you;you_animations[1]=you_1p;you_animations[2]=you_2p;
+EMSCRIPTEN_KEEPALIVE void install_permanent(uint32_t count,uint32_t animations,uint32_t cells,uint32_t you,uint32_t you_1p,uint32_t you_2p,uint32_t mask){
+  banks[PERMANENT_BANK]=(Bank){count,animations,cells};you_animations[0]=you;you_animations[1]=you_1p;you_animations[2]=you_2p;mask_animation=mask;
 }
 // A bank of one scene's archive, registered by name when the scene asks for it (registBank).
 EMSCRIPTEN_KEEPALIVE uint32_t install_named_bank(uint32_t scene_index,uint32_t name,uint32_t count,uint32_t animations,uint32_t cells){
@@ -529,7 +563,7 @@ EMSCRIPTEN_KEEPALIVE void reset_runtime(void){
   memset(tf_values,0,sizeof(tf_values));tf_values[0]=32;tf_values[1]=16;tf_values[2]=16;tf_values[3]=8; // CTickFlowManager::_10's defaults
   sound_handle=envelope=0;speed=1;anim_tempo_update=anim_tempo=handle_count=0;
   chart_flow_count=chart_rerun=chart_instances=current_flow=music_started=song_ended=0;
-  profile_index=next_profile=next_chart=fader_wait=flow_create_fn=persistent_count=named_bank_count=file_count=0;scene_state=SCENE_ACTIVE;fader_state=FADER_IDLE;grading=grading_scene=grading_ready=grading_pressed=grading_done=prompt_press=prompt_release=prompt_exit_remaining=message_table=message_count=0;prompt_exit_frames=5;music_sound=0xffffffff;frame_ticks=0;heap=0x80500000;call_depth=actor_count=checker_count=event_count=frame_number=layout_count=0;
+  profile_index=next_profile=next_chart=fader_wait=flow_create_fn=persistent_count=named_bank_count=file_count=0;scene_state=SCENE_ACTIVE;fader_state=FADER_IDLE;grading=grading_scene=grading_ready=grading_pressed=grading_done=prompt_press=prompt_release=prompt_exit_remaining=message_table=message_count=0;prompt_exit_frames=5;fader_alpha=fader_step=0.0f;music_sound=0xffffffff;frame_ticks=0;heap=0x80500000;call_depth=actor_count=checker_count=event_count=frame_number=layout_count=0;
   hits=misses=through=stray=perfect_failed=score_sum=score_count=wrong_count=0;wrong_timer=0;
   memset(canvas_timing,0,sizeof(canvas_timing));base_canvas=0;
   r[1]=0x81800000;r[2]=0x80328fe0;r[13]=0x80326ec0;
@@ -557,6 +591,13 @@ EMSCRIPTEN_KEEPALIVE void initialize_scene(void){
     wr32(0x80320200+i*4,you);wr32(you+0x98,(uint32_t)-100);wr8(you+0xa7,0);
     r[3]=you;r[4]=canvas[2];r[5]=0;r[6]=0;call(0x801dcfa4);
   }
+  // CExScene::_08's screen mask (lbl_8032020C, permanent_mask) under canvas 1 at layer 0, hidden;
+  // the chart tints and fades it (ExFlow 0x112-0x116: Working Dough's red alarm light). Its fade
+  // tween (lbl_8032A1C0) as _08 sets it up.
+  {uint32_t mask=persistent[persistent_count++]=banks[PERMANENT_BANK].count?create_actor(PERMANENT_BANK,mask_animation):create_actor(255,0);
+   wr32(0x8032020c,mask);wr8(mask+0xa7,0);r[3]=mask;r[4]=canvas[1];r[5]=0;r[6]=0;call(0x801dcfa4);r[3]=mask;r[4]=0;call(0x801dcf94);
+   wrf32(0x80320220,0.0f);invoke1(0x801ea590,MASK_TWEEN);wr32(MASK_TWEEN+12,0);wr8(MASK_TWEEN+16,1);
+   r[3]=MASK_TWEEN;f[1].d=0.0f;f[2].d=1.0f;call(0x801ea698);r[3]=MASK_TWEEN;r[4]=1;f[1].d=0.0f;f[2].d=96.0f;call(0x801ea550);wr8(MASK_TWEEN+37,0);}
   uint32_t other=persistent[persistent_count++]=create_actor(255,0);wr32(0x803201f8,other);wr32(0x803201fc,other);
   invoke1(profiles[profile_index].init,scene);
   wr32(0x803201bc,7);wr8(0x803201b8,1);
@@ -690,8 +731,17 @@ EMSCRIPTEN_KEEPALIVE void buttons(uint32_t trig,uint32_t release){
   else{single(&release_a,release&1,18,20,0x49a);single(&release_b,release&2,19,20,0x49b);}
 }
 // The scene's update (_onCalc) and its cell animations (CCellAnimManager::_18 in CExScene::_18).
+// CExScene::_18 after the game's own update (_28): the screen mask's fade, a step a frame towards
+// its target (fn_80008DF8) or else its tween (fn_80008E68).
+static void mask_frame(void){
+  uint32_t mask=rd32(0x8032020c);float step=rdf32(0x80320220);if(!mask)return;
+  if(step!=0.0f){float v=rdf32(0x8032021c)+step,target=rdf32(0x80320224);
+    if((step>0.0f&&v>=target)||(step<0.0f&&v<=target)){v=target;wrf32(0x80320220,0.0f);}
+    wrf32(0x8032021c,v);wr8(mask+0xa6,(uint8_t)v);}
+  else if(rd8(MASK_TWEEN+37)){r[3]=MASK_TWEEN;r[4]=0;call(0x801e9de8);wr8(mask+0xa6,(uint8_t)rdf32(MASK_TWEEN+40));}
+}
 static void calc_scene(void){
-  invoke1(profiles[profile_index].update,scene);
+  invoke1(profiles[profile_index].update,scene);mask_frame();
   for(uint32_t i=0;i<actor_count;i++)if(actor_active[i]){invoke1(0x801dc314,actors[i]);if(r[3])end_actor_at(i);}
 }
 static int is_persistent(uint32_t actor){for(uint32_t i=0;i<persistent_count;i++)if(persistent[i]==actor)return 1;return 0;}
@@ -716,10 +766,16 @@ static void scene_frame(void){
   }
   if(fader_state==FADER_WAIT1){if(fader_wait)fader_wait--;else{fader_state=FADER_WAIT2;fader_wait=2;}}
   else if(fader_state==FADER_WAIT2&&!--fader_wait)fader_state=FADER_IDLE;
+  // CFaderFlash::_08's fade (the tick flow is never paused here).
+  if(fader_step!=0.0f){fader_alpha+=fader_step;
+    if(fader_step>0.0f&&fader_alpha>=255.0f){fader_alpha=255.0f;fader_step=0.0f;}
+    else if(fader_step<0.0f&&fader_alpha<=0.0f){fader_alpha=0.0f;fader_step=0.0f;}}
 }
 // CScene::fn_801D8554: only these states draw; CFaderFlash::_0C covers the screen while it waits.
 static int scene_drawn(void){return scene_state==SCENE_READY||scene_state==SCENE_ACTIVE||scene_state==SCENE_SCHEDULE_DOWN;}
 EMSCRIPTEN_KEEPALIVE uint32_t screen_state(void){return scene_drawn()|((fader_state!=FADER_IDLE)<<1);}
+// CFaderFlash::fn_80007DD8: the cover's alpha, drawn over the frame when not 0.
+EMSCRIPTEN_KEEPALIVE uint32_t fader_cover(void){return (uint8_t)fader_alpha;}
 EMSCRIPTEN_KEEPALIVE void finish_frame(void){
   for(int i=(int)checker_count-1;i>=0;i--){
     uint32_t c=checkers[i];invoke1(rd32(rd32(c)+0x18),c);

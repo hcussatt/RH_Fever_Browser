@@ -29,6 +29,10 @@ late_tempo=set()
 # notes kept for it here assume globals left at -1 (nw4r's default). A sound that only sets
 # globals keeps what it sets, for the browser to apply when it plays.
 GLOBALS=range(16,32)
+# The track values a playing note follows (see trace).
+LIVE=('volume','volume2','pan','bend','bendRange')
+# The longest a released note can still sound: platform.c envelope_curve's 4096 mixer frames of 3 ms.
+RELEASE=4096*.003
 def s16(x):return (x+0x8000&0xffff)-0x8000
 def trace(seq,start,bank_programs):
  notes=[];queue=[(start,0)];tracks=0;variables=collections.defaultdict(lambda:-1);info={'dynamic':False,'globals':{}}
@@ -43,6 +47,17 @@ def trace(seq,start,bank_programs):
  player={'tempo':120,'timebase':48}
  while queue:
   pc,t=queue.pop(0);state={'program':0,'volume':127,'volume2':127,'pan':64,'transpose':0,'bend':0,'bendRange':2,'noteWait':1,**player};stack=[];loops=[];pending={};steps=0
+  # nw4r SeqTrack applies its volume, pan and pitch bend to the notes it is still playing, and
+  # a timed command (0xa3) moves one there by one step a tick (MoveValue). moves: the moves
+  # under way (name -> from, to, start, seconds); live: this track's notes that may still sound.
+  # A note keeps the values at its start and, in changes, each later [seconds after its start,
+  # name, value, seconds the move takes] (web/engine/audio.mjs plays them).
+  moves={};live=[]
+  def current(name,at):
+   if name not in moves:return state[name]
+   f,to,start,sec=moves[name]
+   if at>=start+sec:return to
+   return f+(to-f)*(at-start)/sec
   def byte():
    nonlocal pc
    x=seq[pc];pc+=1;return x
@@ -83,9 +98,13 @@ def trace(seq,start,bank_programs):
     elif op not in (0xfb,0xfc,0xfd,0xff):raise ValueError(f'unhandled conditional {op:x} at {at:x}')
     continue
    if op<0x80:
-    velocity=byte();length=arg('vlq');p=programs[bank_programs+state['program']];rate=2**((op+state['transpose']-p['key']+state['bend']/128*state['bendRange'])/12)*p['pitch']
+    velocity=byte();length=arg('vlq');p=programs[bank_programs+state['program']];now={name:current(name,t) for name in LIVE}
+    rate=2**((op+state['transpose']-p['key']+now['bend']/128*now['bendRange'])/12)*p['pitch']
     duration=length*60/state['tempo']/state['timebase'] if length else waves[p['wave']]['samples']/waves[p['wave']]['rate']/rate
-    notes.append(dict(state,program=bank_programs+state['program'],time=t,note=op,velocity=velocity,length=length,duration=duration,random=pending.copy()))
+    note=dict(state,**now,program=bank_programs+state['program'],time=t,note=op,velocity=velocity,length=length,duration=duration,random=pending.copy())
+    for name in LIVE:
+     if name in moves and t<moves[name][2]+moves[name][3]:note.setdefault('changes',[]).append([0,name,moves[name][1],moves[name][2]+moves[name][3]-t])
+    notes.append(note);live.append(note)
     if state['noteWait']:t+=duration
    elif op==0xf0:
     # nw4r MmlParser's extended commands: variable math and compares, and the user procedure.
@@ -136,18 +155,26 @@ def trace(seq,start,bank_programs):
     v=arg();ramp=arg('short') if arg2 else 0;used.add(hex(op))
     names={0xb0:'timebase',0xc0:'pan',0xc1:'volume',0xc2:'playerVolume',0xc3:'transpose',0xc4:'bend',0xc5:'bendRange',0xc7:'noteWait',0xd0:'attack',0xd1:'decay',0xd2:'sustain',0xd3:'release',0xd5:'volume2',0xd8:'lpf',0xd9:'fxA',0xda:'fxB',0xdb:'mainSend',0xdd:'mute',0xdf:'damper',0xdc:'initPan',0xc8:'tie',0xc9:'portamento',0xce:'portaSpeed',0xcf:'portaTime',0xca:'lfoDepth',0xcb:'lfoSpeed',0xcc:'lfoTarget',0xcd:'lfoRange',0xb1:'hold',0xb2:'monophonic',0xb3:'velocityRange',0xb4:'biquadType',0xb5:'biquadValue'}
     if op in (0xc3,0xc4) and v>=128:v-=256
+    # Setting the value the player already has changes nothing (Figure Fighter's tracks each set it).
     if op==0xb0:
-     if t or tracks:late_tempo.add(start)
+     if (t or tracks) and v!=player['timebase']:late_tempo.add(start)
      player['timebase']=v
     if op in names:
-     if ramp:pending[names[op]+'Ramp']={'from':state.get(names[op],0),'to':v,'time':t,'seconds':ramp*60/state['tempo']/state['timebase']}
-     state[names[op]]=v
-     if random is not None:pending[names[op]]=random
+     name=names[op]
+     if name in LIVE:
+      seconds=ramp*60/state['tempo']/state['timebase']
+      if ramp:moves[name]=(current(name,t),v,t,seconds)
+      else:moves.pop(name,None)
+      live=[n for n in live if t<n['time']+n['duration']+RELEASE]
+      for n in live:n.setdefault('changes',[]).append([t-n['time'],name,v,seconds])
+     elif ramp:raise ValueError(f'timed {name} at {at:x} is not modelled')
+     state[name]=v
+     if random is not None:pending[name]=random
     elif op not in [0xc6,0xde]:raise ValueError(f'unhandled {op:x} at {at:x}')
    elif 0xe0<=op<=0xe3:
     v=arg('short');used.add(hex(op))
     if op==0xe1:
-     if t or tracks:late_tempo.add(start)
+     if (t or tracks) and v!=player['tempo']:late_tempo.add(start)
      state['tempo']=player['tempo']=v
     elif op in [0xe3,0xe0]:state['sweepPitch' if op==0xe3 else 'lfoDelay']=v
     else:raise ValueError(f'unhandled {op:x} at {at:x}')

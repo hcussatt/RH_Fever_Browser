@@ -52,6 +52,32 @@ export async function createRenderer(g,canvas){
    for(const c of here)makeMatrix(c,om);
   });
  }
+ // CCellAnimManager's TEV stage: colour = fore + (back - fore) * texture (CCellAnim::setBackColor,
+ // fore 0xa0-0xa2, back 0xa3-0xa5). The defaults, black and white, leave the texture as it is.
+ const plain=a=>!(u8(a+0xa0)|u8(a+0xa1)|u8(a+0xa2))&&(u8(a+0xa3)&u8(a+0xa4)&u8(a+0xa5))===255;
+ // A tinted cell is drawn once per colour and kept; when a colour changes every frame (Air
+ // Rally's sky through the day) only the blend reruns, from the cell's pixels read once, into a
+ // canvas reused from the ones dropped.
+ const coloredCells=new Map(),cellPixels=new Map(),spare=[];
+ function colored(texture,o,a){
+  const fore=[u8(a+0xa0),u8(a+0xa1),u8(a+0xa2)],back=[u8(a+0xa3),u8(a+0xa4),u8(a+0xa5)];
+  const region=[texture,o.sx,o.sy,o.w,o.h].join(),id=region+'/'+[...fore,...back].join();
+  const hit=coloredCells.get(id);if(hit){coloredCells.delete(id);coloredCells.set(id,hit);return hit;}
+  let src=cellPixels.get(region);
+  if(!src){
+   const c=document.createElement('canvas');c.width=o.w;c.height=o.h;const x=c.getContext('2d',{willReadFrequently:true});
+   x.drawImage(images[texture],o.sx,o.sy,o.w,o.h,0,0,o.w,o.h);src=x.getImageData(0,0,o.w,o.h).data;cellPixels.set(region,src);
+  }
+  // The least recently drawn tint makes way when too many are kept.
+  if(coloredCells.size>=96){const [old,c]=coloredCells.entries().next().value;coloredCells.delete(old);spare.push(c);}
+  const i=spare.findIndex(c=>c.width===o.w&&c.height===o.h);
+  const c=i>=0?spare.splice(i,1)[0]:Object.assign(document.createElement('canvas'),{width:o.w,height:o.h});
+  if(spare.length>32)spare.shift();
+  const x=c.getContext('2d'),d=x.createImageData(o.w,o.h),p=d.data;
+  const lut=[0,1,2].map(ch=>Uint8ClampedArray.from({length:256},(_,v)=>fore[ch]+(back[ch]-fore[ch])*v/255));
+  for(let i=0;i<p.length;i+=4){p[i]=lut[0][src[i]];p[i+1]=lut[1][src[i+1]];p[i+2]=lut[2][src[i+2]];p[i+3]=src[i+3];}
+  x.putImageData(d,0,0);coloredCells.set(id,c);return c;
+ }
  function drawActor(a,origin){
   const k=key(a),m=matrices.get(a);if(!m)return;
   const bank=banks[u8(a+12)],opacity=u8(a+0xa6),attached=children(a).filter(c=>u8(c+0xc2)&&u8(c+0xa7)&&current.has(c));
@@ -60,7 +86,9 @@ export async function createRenderer(g,canvas){
    if(alpha&&o.w&&o.h){
     ctx.imageSmoothingEnabled=!!u8(a+0xa8);
     const om=mul(mul(origin,m),trs(o.x+o.w*o.scaleX/2,o.y+o.h*o.scaleY/2,o.angle,o.scaleX*(o.flipX?-1:1),o.scaleY*(o.flipY?-1:1)));
-    ctx.setTransform(...om);ctx.globalAlpha=alpha;ctx.drawImage(images[bank.texture],o.sx,o.sy,o.w,o.h,-o.w/2,-o.h/2,o.w,o.h);
+    ctx.setTransform(...om);ctx.globalAlpha=alpha;
+    if(plain(a))ctx.drawImage(images[bank.texture],o.sx,o.sy,o.w,o.h,-o.w/2,-o.h/2,o.w,o.h);
+    else ctx.drawImage(colored(bank.texture,o,a),-o.w/2,-o.h/2,o.w,o.h);
    }
    for(const c of attached)if(u16(c+0xc0)===i&&u8(c+12)!==255)drawActor(c,origin);
   });
@@ -85,6 +113,9 @@ export async function createRenderer(g,canvas){
   const drawn=actors.filter(a=>u8(a+12)!==255&&u8(a+0xa7)&&a!==hiddenYou&&!(u32(a+0xb0)&&u8(a+0xc2))).sort((a,b)=>(u32(b+0x98)|0)-(u32(a+0x98)|0));
   for(const a of drawn)drawActor(a,origin);
   layout?.draw(ctx,canvas);messages.draw(ctx,canvas);
+  // CFaderFlash's black cover over everything (fn_80007DD8), as the chart fades it.
+  const cover=core._fader_cover();
+  if(cover){ctx.setTransform(1,0,0,1,0,0);ctx.globalAlpha=cover/255;ctx.fillStyle='#000';ctx.fillRect(0,0,canvas.width,canvas.height);}
   ctx.globalAlpha=1;
  }
  return {draw,layout,messages};

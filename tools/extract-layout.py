@@ -336,8 +336,15 @@ def game_layout(game, entry, prefix):
     for n in names:
         tpl((root/'timg'/n).read_bytes()).save(OUT/f'{prefix}-{n}.png')
     out['images'] = {n: f'{prefix}-{n}.png' for n in sorted(names)}
-    out['messages'] = messages(require(DISC/'message'/'riq_E.bmg').read_bytes())
+    # The messages its texts show: the main ones, or the bonus ones (riq_bonus_E.bmg, CMessageManager's
+    # source 3: a vocal song's title card in the lyric layout).
+    out['messages'] = messages(require(DISC/'message'/{'main': 'riq_E.bmg', 'bonus': 'riq_bonus_E.bmg'}[entry.get('messages', 'main')]).read_bytes())
     chars = {ord(c) for t in out['messages'].values() for c in t if c not in '\n'}
+    # Its texts are drawn in the layout's first font (the lyric layout's lyric lines, in its second, are not used).
+    for name in entry['texts']:
+        pane = next(p for p in out['panes'] if p['name'] == name)
+        if pane['kind'] == 'text' and pane['font'] != 0:
+            raise SystemExit(f'{game}: text {name} uses font {pane["font"]}; only the first is extracted')
     # A font the archive carries (Bossa Nova's subtitles), else a stand-alone one (see extract-disc.py).
     font_file = root/'font'/out['fonts'][0] if (root/'font'/out['fonts'][0]).exists() else DISC/'font'/out['fonts'][0]
     out['font'], atlas = font(require(font_file).read_bytes(), chars)

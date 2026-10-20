@@ -35,6 +35,39 @@ export async function createAudio(context,gameUrl,{envelope}={}){
   if(!curves.has(key))curves.set(key,envelope(...adsr,Math.round(releaseMs),steps));
   return curves.get(key);
  }
+ // One of a note's parameters (a gain, its pan or its detune: f of the track's volume, pan or
+ // bend) from its start values through the changes its track made while it plays (n.changes,
+ // from the trace): a set reaches the note over one 3 ms mixer frame, as nw4r's AX volume ramp
+ // does, and a timed move (0xa3) steps once a sequence tick (MoveValue), in between linearly.
+ function follow(param,start,changes,names,f,t,n,stretch){
+  param.value=f(start);
+  const cs=(changes||[]).filter(c=>names.includes(c[1]));
+  if(!cs.length)return;
+  const value=(s,m,name,x)=>{const v=m[name];return !v||x>=v[2]+v[3]?s[name]:v[0]+(v[1]-v[0])*(x-v[2])/v[3];};
+  // The track's values at x: after the changes made then, or with before, just before them.
+  const at=(x,before)=>{
+   const s={...start},m={};
+   for(const [time,name,to,sec] of cs){
+    if(before?time>=x:time>x)break;
+    if(sec)m[name]=[value(s,m,name,time),to,time,sec];else delete m[name];
+    s[name]=to;
+   }
+   for(const name of names)s[name]=value(s,m,name,x);
+   return s;
+  };
+  const tick=60/(n.tempo*n.timebase),points=[];
+  for(const [time,,,sec] of cs){
+   points.push([time,0]);
+   if(!sec)points.push([time+.003,1]);
+   else{const steps=Math.max(1,Math.round(sec/tick));for(let k=1;k<=steps;k++)points.push([time+sec*k/steps,1]);}
+  }
+  points.sort((a,b)=>a[0]-b[0]||a[1]-b[1]);
+  let last=t;
+  for(const [time,ramp] of points){
+   const when=Math.max(t+time*stretch,last+1e-6);last=when;
+   if(ramp)param.linearRampToValueAtTime(f(at(time,false)),when);else param.setValueAtTime(f(at(time,true)),when);
+  }
+ }
  // tune: the volume, pitch and pan the game set on this sound (nw4r SoundHandle ratios), the
  // chart tempo when it plays, and a start offset in ticks (CSoundManager::play's start above 0).
  // Returns the voice: the sound's notes behind one handle volume and one pause gain, which
@@ -50,30 +83,32 @@ export async function createAudio(context,gameUrl,{envelope}={}){
   const late=Math.max(0,context.currentTime-when);if(late>.003){telemetry.late++;telemetry.maxLateMs=Math.max(telemetry.maxLateMs,late*1000);}
   // Ticks into the sound, in the sequence's own ticks at its tempo.
   const skip=offset&&notes.length?offset*60/(notes[0].tempo*notes[0].timebase)*stretch:0;
+  const drawn={};
   for(const n of notes){
    if(n.time*stretch<skip)continue;
-   const p=data.programs[n.program],w=data.waves[p.wave],source=context.createBufferSource(),env=context.createGain(),gain=context.createGain(),pan=context.createStereoPanner();
+   const p=data.programs[n.program],w=data.waves[p.wave],source=context.createBufferSource(),env=context.createGain(),gain=context.createGain(),gain2=context.createGain(),pan=context.createStereoPanner();
    source.buffer=buffers[p.wave];source.loop=w.loop;source.loopStart=w.loopStart/w.rate;source.loopEnd=w.samples/w.rate;
-   let bend=n.bend;if(n.random.bend)bend=n.random.bend[0]+Math.floor(Math.random()*(n.random.bend[1]-n.random.bend[0]+1));
-   const pitch=((n.note+n.transpose-p.key)+bend/128*n.bendRange),rate=2**(pitch/12)*p.pitch;
+   // A random parameter (0xa0) is drawn once per sound for each command range.
+   const draw=name=>{const r=n.random[name];if(!r)return n[name];const key=name+r;if(!(key in drawn))drawn[key]=r[0]+Math.floor(Math.random()*(r[1]-r[0]+1));return drawn[key];};
+   const start={volume:draw('volume'),volume2:n.volume2,pan:draw('pan'),bend:draw('bend'),bendRange:n.bendRange},transpose=draw('transpose');
+   // Pitch bend goes on detune (cents), so a slide is linear in semitones as in nw4r and the
+   // game's own pitch (tune) stays on playbackRate.
+   const rate=2**((n.note+transpose-p.key)/12)*p.pitch,cents=s=>s.bend/128*s.bendRange*100;
    // A sound asked for in the past (a late hit) plays its overdue notes now and the rest on time,
    // like nw4r's tick start offset.
    const t=Math.max(context.currentTime,when+n.time*stretch-skip),duration=n.length?n.duration*stretch:n.duration;source.playbackRate.value=rate*tunePitch;
    // As in the original code: the sound record's volume (SoundArchivePlayer) and the
    // instrument's volume (Bank::NoteOn) are linear; velocity and track volumes are squared.
-   const level=sound.volume/127*(n.velocity/127)**2*p.volume/127*(n.volume2/127)**2;
-   const ramp=n.random.volumeRamp;
-   let vol=n.volume;
-   if(ramp)vol=ramp.from+(ramp.to-ramp.from)*clamp((n.time-ramp.time)/ramp.seconds,0,1);
-   const rampEnd=ramp&&Math.max(t+.001,when+(ramp.time+ramp.seconds)*stretch-skip);
-   gain.gain.setValueAtTime(level*(vol/127)**2,t);
-   if(ramp&&ramp.time+ramp.seconds>n.time)gain.gain.linearRampToValueAtTime(level*(ramp.to/127)**2,rampEnd);
-   const basePan=((n.pan-64)+(p.pan-64))/63;pan.pan.value=clamp(basePan+tunePan,-1,1);
-   const panRamp=n.random.panRamp;if(panRamp){pan.pan.setValueAtTime(clamp((panRamp.from-64)/63,-1,1),t);pan.pan.linearRampToValueAtTime(clamp((panRamp.to-64)/63,-1,1),Math.max(t+.001,when+(panRamp.time+panRamp.seconds)*stretch-skip));}
+   const level=sound.volume/127*(n.velocity/127)**2*p.volume/127;
+   const basePan=(p.pan-64)/63,panOf=s=>clamp((s.pan-64)/63+basePan+tunePan,-1,1);
+   follow(gain.gain,start,n.changes,['volume'],s=>level*(s.volume/127)**2,t,n,stretch);
+   follow(gain2.gain,start,n.changes,['volume2'],s=>(s.volume2/127)**2,t,n,stretch);
+   follow(pan.pan,start,n.changes,['pan'],panOf,t,n,stretch);
+   follow(source.detune,start,n.changes,['bend','bendRange'],cents,t,n,stretch);
    if(n.sweepPitch){const sweep=n.sweepPitch>32767?n.sweepPitch-65536:n.sweepPitch;source.playbackRate.setValueAtTime(rate*tunePitch*2**(sweep/(64*12)),t);source.playbackRate.exponentialRampToValueAtTime(rate*tunePitch,t+Math.max(.003,duration));}
-   source.connect(env).connect(gain).connect(pan).connect(handleGain);source.start(t);
-   voice.notes.push({source,pan,basePan,rate,start:t});
-   const sampleDuration=source.buffer.duration/(rate*tunePitch);
+   source.connect(env).connect(gain).connect(gain2).connect(pan).connect(handleGain);source.start(t);
+   voice.notes.push({source,pan,basePan:(start.pan-64)/63+basePan,rate,start:t});
+   const sampleDuration=source.buffer.duration/(rate*tunePitch*2**(cents(start)/1200));
    if(envelope){
     // A note with a length is released when it ends; a one-shot plays its sample out.
     const releaseMs=n.length||source.loop?duration*1000:-1;
@@ -86,9 +121,9 @@ export async function createAudio(context,gameUrl,{envelope}={}){
     const release=n.release??p.release;
     // Provisional adapter envelope; retained as an explicit parity limitation.
     const tail=release===127?.003:clamp((127-release)*.006,.004,.35),end=t+duration;
-    gain.gain.setTargetAtTime(0,end,tail/5);stopSource(source,end+tail);
+    env.gain.setTargetAtTime(0,end,tail/5);stopSource(source,end+tail);
    }
-   source.onended=()=>{active.delete(source);source.disconnect();env.disconnect();gain.disconnect();pan.disconnect();if(!--voice.live){handleGain.disconnect();pauseGain.disconnect();}};voice.live=(voice.live||0)+1;active.add(source);if(sound.persistent)persistent.add(source);telemetry.played++;
+   source.onended=()=>{active.delete(source);source.disconnect();env.disconnect();gain.disconnect();gain2.disconnect();pan.disconnect();if(!--voice.live){handleGain.disconnect();pauseGain.disconnect();}};voice.live=(voice.live||0)+1;active.add(source);if(sound.persistent)persistent.add(source);telemetry.played++;
   }
   voice.start=voice.notes.length?Math.min(...voice.notes.map(n=>n.start)):when;
   if(!voice.notes.length){handleGain.disconnect();pauseGain.disconnect();}

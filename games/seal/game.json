@@ -1,0 +1,32 @@
+{
+  "$schema": "../../schemas/game.schema.json",
+  "schemaVersion": 1,
+  "id": "seal",
+  "title": "Built to Scale",
+  "action": "Kick",
+  "platform": "wii",
+  "wii": {
+    "scene": "Seal",
+    "sceneVariant": 0,
+    "cellanim": "EN/content2/cellanim/seal/ver0/cellanim.szs",
+    "units": [
+      "Game/Seal/SceneSeal.cpp",
+      "Game/Seal/MyChecker.cpp",
+      "Game/Seal/MyFlow.cpp"
+    ],
+    "banks": [
+      "assembly",
+      "assembly_bg",
+      "assembly_com",
+      "assembly_parts"
+    ],
+    "projection": [
+      854,
+      480
+    ],
+    "endsWithMusic": true
+  },
+  "web": {
+    "enabled": false
+  }
+}
