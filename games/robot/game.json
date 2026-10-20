@@ -25,6 +25,9 @@
     "endsWithMusic": true
   },
   "web": {
-    "enabled": false
+    "enabled": true,
+    "icon": "game_01_2.00.tpl",
+    "order": 20,
+    "expectedCues": 66
   }
 }

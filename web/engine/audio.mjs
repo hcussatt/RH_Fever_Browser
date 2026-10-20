@@ -26,7 +26,8 @@ export async function createAudio(context,gameUrl,{envelope}={}){
  }
  const master=context.createGain();master.gain.value=OUTPUT;master.connect(context.destination);
  const resultWaves=Object.fromEntries(await Promise.all(Object.entries(resultData.waves).map(async([sid,w])=>[sid,{...w,buffer:await context.decodeAudioData(await (await assetResponse(asset(w.file))).arrayBuffer())}])));
- const active=new Set(),musicGains=new WeakMap(),telemetry={played:0,unknown:[],late:0,maxLateMs:0};
+ const active=new Set(),musicGains=new WeakMap(),stops=new WeakMap(),persistent=new WeakSet(),telemetry={played:0,unknown:[],late:0,maxLateMs:0};
+ function stopSource(source,when){if(when<(stops.get(source)??Infinity)){try{source.stop(when);stops.set(source,when);}catch{}}}
  const clamp=(x,a,b)=>Math.min(b,Math.max(a,x));
  const curves=new Map();
  function envelopeCurve(adsr,releaseMs,steps){
@@ -79,15 +80,15 @@ export async function createAudio(context,gameUrl,{envelope}={}){
     const steps=releaseMs<0?Math.ceil(sampleDuration/.003)+1:4096;
     const curve=envelopeCurve([n.attack??p.attack,n.hold??p.hold,n.decay??p.decay,n.sustain??p.sustain,n.release??p.release],releaseMs,steps);
     if(curve.length>1)env.gain.setValueCurveAtTime(curve,t,(curve.length-1)*.003);else env.gain.value=curve[0]??1;
-    if(releaseMs>=0)source.stop(t+(curve.length-1)*.003);
+    if(releaseMs>=0)stopSource(source,t+(curve.length-1)*.003);
    }
    else if(n.length||source.loop){
     const release=n.release??p.release;
     // Provisional adapter envelope; retained as an explicit parity limitation.
     const tail=release===127?.003:clamp((127-release)*.006,.004,.35),end=t+duration;
-    gain.gain.setTargetAtTime(0,end,tail/5);source.stop(end+tail);
+    gain.gain.setTargetAtTime(0,end,tail/5);stopSource(source,end+tail);
    }
-   source.onended=()=>{active.delete(source);source.disconnect();env.disconnect();gain.disconnect();pan.disconnect();if(!--voice.live){handleGain.disconnect();pauseGain.disconnect();}};voice.live=(voice.live||0)+1;active.add(source);telemetry.played++;
+   source.onended=()=>{active.delete(source);source.disconnect();env.disconnect();gain.disconnect();pan.disconnect();if(!--voice.live){handleGain.disconnect();pauseGain.disconnect();}};voice.live=(voice.live||0)+1;active.add(source);if(sound.persistent)persistent.add(source);telemetry.played++;
   }
   voice.start=voice.notes.length?Math.min(...voice.notes.map(n=>n.start)):when;
   if(!voice.notes.length){handleGain.disconnect();pauseGain.disconnect();}
@@ -107,13 +108,13 @@ export async function createAudio(context,gameUrl,{envelope}={}){
   if(type===0){move(voice.handleGain.gain,voice.volume,value,t,seconds);voice.volume=value;}
   else if(type===1)for(const n of voice.notes)n.source.playbackRate.setValueAtTime(n.rate*value,t);
   else if(type===2)for(const n of voice.notes)n.pan.pan.setValueAtTime(clamp(n.basePan+value,-1,1),t);
-  else if(type===4){move(voice.handleGain.gain,voice.volume,0,t,seconds);voice.volume=0;for(const n of voice.notes){try{n.source.stop(t+seconds);}catch{}}}
+  else if(type===4){move(voice.handleGain.gain,voice.volume,0,t,seconds);voice.volume=0;for(const n of voice.notes)stopSource(n.source,t+seconds)}
   else if(type===5){const to=value?0:1;move(voice.pauseGain.gain,voice.paused?0:1,to,t,seconds);voice.paused=value;}
  }
  // Drops a voice that has not started yet (a speed change moved its time); false if it has.
  function cancel(voice){
   if(!voice||voice.start<=context.currentTime+.002)return false;
-  for(const n of voice.notes){try{n.source.stop();}catch{}}
+  for(const n of voice.notes)stopSource(n.source,context.currentTime)
   return true;
  }
  // The backing track: an original wave sound, at its record volume (linear, like every sound record).
@@ -128,6 +129,7 @@ export async function createAudio(context,gameUrl,{envelope}={}){
    speed(value,at){source.playbackRate.setValueAtTime(value,Math.max(context.currentTime,at));}};
  }
  function playWave(sid,when){const w=resultWaves[sid];if(!w)throw new Error('Missing original result wave '+sid);return playMusic(w.buffer,when,w).source;}
- function stopWave(source,when,frames){if(!source)return;const gain=musicGains.get(source),t=Math.max(context.currentTime,when);if(gain&&frames){gain.gain.setValueAtTime(gain.gain.value,t);gain.gain.linearRampToValueAtTime(0,t+frames/60);}try{source.stop(t+frames/60);}catch{}}
- return {play,tune,cancel,playMusic,playWave,stopWave,master,data,buffers,telemetry,stop(){for(const s of active){try{s.stop();}catch{}}active.clear();}};
+ function stopWave(source,when,frames){if(!source)return;const gain=musicGains.get(source),t=Math.max(context.currentTime,when);if(gain&&frames){gain.gain.setValueAtTime(gain.gain.value,t);gain.gain.linearRampToValueAtTime(0,t+frames/60);}stopSource(source,t+frames/60);}
+ function stopAt(when){const t=Math.max(context.currentTime,when);for(const s of active)if(!persistent.has(s))stopSource(s,t);}
+ return {play,tune,cancel,playMusic,playWave,stopWave,stopAt,master,data,buffers,telemetry,stop(){for(const s of active)stopSource(s,context.currentTime);active.clear();}};
 }

@@ -29,7 +29,9 @@ Supply `adapters/<id>/game.h`, the manifest's original C++ units, scene,
 cell-animation archive, banks, projection, and optional layout metadata. New
 original behavior may require adapter work; registration alone does not port
 a game. Run the local build and fidelity checks, then refresh the code-only
-snapshot with `python3 tools/prepare-pages.py --snapshot`. Only enabled games
+snapshot with `python3 tools/prepare-pages.py --snapshot`. A remix also snapshots
+its generated `scenes.h` so the Actions build can compile all scene profiles.
+Only enabled games
 are snapshotted. Review `runtime-src/<id>/original-functions.inc` before commit.
 Never commit extracted assets, original data sections, charts, the DOL, or ISO.
 

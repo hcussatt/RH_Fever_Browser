@@ -4,6 +4,7 @@
 // The game's code drives it through layout events (11) from the platform backend: play or stop
 // an animation, set a text box's message or show it, or offset a pane (see adapters/<game>/game.h).
 import {assetResponse,assetImage} from './assets.mjs';
+import {windowPixels} from './layout-window.mjs';
 export async function createLayout(g,{spec=g.manifest.wii.layout,file='layout.json',fontFile='layout-font.png',data:given,events=g.layoutEvents}={}){
  if(!spec)return null;
  const asset=n=>new URL('assets/'+n,g.base);
@@ -191,7 +192,7 @@ export async function createLayout(g,{spec=g.manifest.wii.layout,file='layout.js
    ctx.setTransform(...mul(m,[r.w/img.width,0,0,-r.h/img.height,r.left,r.top]));ctx.globalAlpha=alpha;ctx.drawImage(img,0,0);return;
   }
   const name=materialImage[p.material];if(!name)return;
-  const img=tint(images[name],data.materials[p.material],p.vertexColors?.[0]),r=rect(p),W=img.width,H=img.height;
+  const mat=data.materials[p.material],img=tint(images[name],mat,p.vertexColors?.[0]),r=rect(p),W=img.width,H=img.height;
   // Map texture coordinates of the top-left, top-right and bottom-left corners onto the pane.
   const [t0,t1,t2]=p.texcoords||[[0,0],[1,0],[0,1]];
   const ux=(t1[0]-t0[0])*W,uy=(t1[1]-t0[1])*H,vx=(t2[0]-t0[0])*W,vy=(t2[1]-t0[1])*H,det=ux*vy-uy*vx;if(!det)return;
@@ -206,24 +207,25 @@ export async function createLayout(g,{spec=g.manifest.wii.layout,file='layout.js
   else ctx.drawImage(img,0,0);
   ctx.restore();
  }
+ const windows=new WeakMap();
  function drawWindow(ctx,p,m,alpha){
   if(p.frames.length!==1)throw new Error('Unsupported original window frame count');
   const material=data.materials[p.frames[0].material],img=tint(images[data.textures[material.texture]],material),r=rect(p);
-  const w=img.width,h=img.height;
-  // The content is the content material's colour 1 (no texture) times the vertex colour: white for
-  // a speech balloon, clear for Hole in One's screen frame.
+  if(r.w<=0||r.h<=0)return;
+  // Keep the content material separate: a speech balloon is white inside,
+  // whereas Hole in One's frame has a transparent centre.
   const c=data.materials[p.material].color1,v=p.vertexColors?.[0]||[255,255,255,255];
-  ctx.setTransform(...m);ctx.globalAlpha=alpha*c[3]*v[3]/255/255;ctx.fillStyle=`rgb(${c[0]*v[0]/255},${c[1]*v[1]/255},${c[2]*v[2]/255})`;ctx.fillRect(r.left+w,-r.top,r.w-2*w,r.h);if(r.h>2*h)ctx.fillRect(r.left,-r.top+h,r.w,r.h-2*h);
-  ctx.globalAlpha=alpha;
-  // NW4R's one-frame window mirrors its single corner into all four corners.
-  for(const [right,bottom] of [[0,0],[1,0],[0,1],[1,1]]){
-   ctx.save();ctx.translate(r.left+(right?r.w:0),-r.top+(bottom?r.h:0));ctx.scale(right?-1:1,bottom?-1:1);ctx.drawImage(img,0,0);ctx.restore();
+  const fill=c.map((channel,i)=>Math.round(channel*v[i]/255)),width=Math.ceil(r.w),height=Math.ceil(r.h),key=[width,height,...fill].join(',');
+  if(!windows.has(img))windows.set(img,new Map());
+  const cache=windows.get(img);let surface=cache.get(key);
+  if(!surface){
+   surface=document.createElement('canvas');surface.width=width;surface.height=height;
+   const corner=img.getContext('2d').getImageData(0,0,img.width,img.height);
+   surface.getContext('2d').putImageData(new ImageData(windowPixels(corner,width,height,fill),width,height),0,0);
+   // Animated window sizes must not retain an unbounded set of surfaces.
+   if(cache.size>=32)cache.clear();cache.set(key,surface);
   }
-  ctx.drawImage(img,w-1,0,1,h,r.left+w,-r.top,r.w-2*w,h);
-  ctx.save();ctx.translate(0,-r.top*2+r.h);ctx.scale(1,-1);ctx.drawImage(img,w-1,0,1,h,r.left+w,-r.top,r.w-2*w,h);ctx.restore();
-  // The left and right edges stretch the corner's last row, mirrored for the right.
-  ctx.drawImage(img,0,h-1,w,1,r.left,-r.top+h,w,r.h-2*h);
-  ctx.save();ctx.translate(r.left*2+r.w,0);ctx.scale(-1,1);ctx.drawImage(img,0,h-1,w,1,r.left,-r.top+h,w,r.h-2*h);ctx.restore();
+  ctx.setTransform(...m);ctx.globalAlpha=alpha;ctx.drawImage(surface,r.left,-r.top,r.w,r.h);
  }
  function drawText(ctx,p,m,alpha){
   if(!p.text)return;
@@ -238,7 +240,7 @@ export async function createLayout(g,{spec=g.manifest.wii.layout,file='layout.js
   for(const l of lines){
    let x=left+(width-l.width)*align/2;
    for(const g of l.gs){
-    const cx=(g.cell%font.columns)*font.cellWidth,cy=Math.floor(g.cell/font.columns)*font.cellHeight;
+    const cx=(g.cell%font.columns)*(font.atlasStrideX||font.cellWidth)+(font.atlasPadding||0),cy=Math.floor(g.cell/font.columns)*(font.atlasStrideY||font.cellHeight)+(font.atlasPadding||0);
     // The glyph hangs from the line's top. This transform's y axis points down, the layout's up.
     if(g.glyphWidth)ctx.drawImage(glyphImage(img,cx,cy,g.glyphWidth,font.cellHeight),x+(g.left-1)*sx,-y-sy,(g.glyphWidth+2)*sx,(font.cellHeight+2)*sy);
     x+=g.charWidth*sx+p.charSpace;

@@ -10,6 +10,13 @@ spec.loader.exec_module(clean)
 
 
 class PublicPolicy(unittest.TestCase):
+    def test_public_key_allowance_is_exact(self):
+        module=(ROOT/'web/import/common-key.mjs').read_bytes()
+        self.assertFalse(clean.check('web/import/common-key.mjs',module,set()))
+        self.assertFalse(clean.check('import/common-key.mjs',module,set()))
+        self.assertTrue(clean.check('tools/key.mjs',module,set()))
+        self.assertTrue(clean.check('web/import/common-key.mjs',module+b'export const unrelated = true;\n',set()))
+
     def test_runtime_source_allowance_is_exact(self):
         translated = b'static void ' + b'p_80000000(void) {}'
         self.assertFalse(clean.check('runtime-src/golf/original-functions.inc', translated, set()))

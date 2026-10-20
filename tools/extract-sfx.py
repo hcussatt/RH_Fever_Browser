@@ -183,7 +183,7 @@ for seqid in [k for k,v in files.items() if v['magic']=='RSEQ']:
   if s['type']!=1 or s['fileId']!=int(seqid):continue
   if s['bankFile'] not in first_program:raise SystemExit(f"{s['name']}: its bank (file {s['bankFile']}) was not extracted")
   notes,info=trace(seq,s['data'][0],first_program[s['bankFile']])
-  sounds[sid]={'name':s['name'],'volume':s['volume'],'tempo':seq_tempo(int(sid)),'notes':notes}
+  sounds[sid]={'name':s['name'],'volume':s['volume'],'tempo':seq_tempo(int(sid)),'persistent':s.get('persistent',False),'notes':notes}
   sounds[sid]['sequence']={'file':f'sequence-{seqid}.bin','start':s['data'][0],'bank':first_program[s['bankFile']]}
   if info['dynamic']:sounds[sid]['dynamic']=True
   elif info['globals']:sounds[sid]['globals']={str(k):v for k,v in sorted(info['globals'].items())}

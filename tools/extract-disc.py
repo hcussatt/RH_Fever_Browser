@@ -61,6 +61,15 @@ def main(iso, *, sound_archive=True):
         raise SystemExit('main.dol does not match the known USA executable; this build expects an unmodified SOME01 disc.')
     DOL.write_bytes(dol)
     report = {'dolSha1': DOL_SHA1, 'files': {}}
+    icons = {manifest(game).get('web', {}).get('icon') for game in GAMES} - {None}
+    if icons:
+        menu = u8_files(disc.get('EN/content2/layout/layout_gameSelect.szs'))
+        (DISC/'menu').mkdir(exist_ok=True)
+        for icon in sorted(icons):
+            data = menu['timg/'+icon]
+            (DISC/'menu'/icon).write_bytes(data)
+            report['files']['menu/'+icon] = hashlib.sha256(data).hexdigest()
+
     for name,data in u8_files(disc.get('EN/content2/cellanim/permanent/cellanim.szs')).items():
         out=DISC/'permanent'/name
         out.parent.mkdir(parents=True,exist_ok=True)
