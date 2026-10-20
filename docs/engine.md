@@ -173,6 +173,23 @@ installs it as bank 254 (`install_permanent`), `CExScene::_20` hides the markers
 again on scene changes, and the renderer hides marker 0 in instruction-example
 mode like `CExScene::_1C`.
 
+### Screen mask, fader and song title card
+
+Charts can also drive three screen effects through ExFlow:
+
+- The screen mask (`0x112`-`0x116`): `CExScene::_08`'s `permanent_mask` under
+  canvas 1, which the chart shows, tints (`setBackColor`), layers and fades,
+  stepped after the game's update like `CExScene::_18`. Working Dough's opening
+  red alarm light is one. The renderer draws a cell animation's fore and back
+  colours as `CCellAnimManager`'s TEV stage does.
+- `CFaderFlash`'s black cover (`0x10A` in play): Remix 3's black cuts between
+  scenes. The renderer draws it over everything (`fader_cover`).
+- A vocal song's title card (`0x13B`): the scene's lyric layout
+  (`CExScene::mLyricLayout`, `lyrics.brlyt` in `layout_common.szs`) gets the
+  title and singer from `riq_bonus_E.bmg` and plays `lyrics_title_show`. Working
+  Dough registers it, so its manifest `layout` is the lyric layout with
+  `"messages": "bonus"`; Remix 3 opens on it with "Tonight".
+
 ## Audio
 
 `web/engine/audio.mjs` plays the original samples with Web Audio, following the

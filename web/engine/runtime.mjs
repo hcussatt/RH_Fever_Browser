@@ -39,7 +39,7 @@ export async function loadGame(gameUrl,load=fetchBytes,{timeline:withTimeline=tr
  // An import from before it was extracted has none, and the markers stay placeholders.
  if(gradingData.permanent){
   banks[254]={...gradingData.permanent.bank,texture:assets.textures.length};
-  core._install_permanent(...install(banks[254]),...gradingData.permanent.you);
+  core._install_permanent(...install(banks[254]),...gradingData.permanent.you,gradingData.permanent.mask);
  }
  scenes.forEach((list,scene)=>list.forEach(([name,b])=>{
   const p=alloc(name.length+1);for(let i=0;i<name.length;i++)w8(p+i,name.charCodeAt(i));w8(p+name.length,0);
@@ -63,6 +63,10 @@ export async function loadGame(gameUrl,load=fetchBytes,{timeline:withTimeline=tr
  // A bank registered under an id (25) is what the renderer draws for that id from then on.
  function drain(){const n=core._events_count(),p=core._events_ptr();const out=[];for(let i=0;i<n;i++)out.push(Array.from(core.HEAPU32.subarray(p/4+i*5,p/4+i*5+5)));core._events_clear();for(const e of out)if(e[0]===25)banks[e[1]]=named[e[2]];return out;}
  let tapped=0;
+ // A+B (6) stays held after its press only for the release (20) its checker then waits for
+ // (Screwbot Factory); with no such cue armed it is let go the next frame like a lone A or B
+ // (Working Dough's big balls, pressed again soon after).
+ let pairHeld=false;
  function frame(ticks,press){
   core._set_delta(ticks);core._set_frame_ticks(ticks);
   core._set_tempo(clock.tempoAtTick(tick));
@@ -71,6 +75,7 @@ export async function loadGame(gameUrl,load=fetchBytes,{timeline:withTimeline=tr
   // 5 B, 6 A and B together, 18-20 their releases), with A or B let go the next frame; or true
   // for an A tap.
   let trig=0,release=tapped;tapped=0;
+  if(pairHeld){release|=3;pairHeld=false;}
   if(press===true)press=4;
   if(typeof press==='number'){const b={4:1,5:2,6:3,18:1,19:2,20:3}[press]||0;if(press<16){trig=b;if(press<6)tapped=b;}else release|=b;}
   else if(press){trig=press.trig|0;release|=press.release|0;}
@@ -156,6 +161,7 @@ export async function loadGame(gameUrl,load=fetchBytes,{timeline:withTimeline=tr
  options.chartAudioScheduled=false;
  const live=new Map(),pending=new Map(); // checker address -> the target its last cue was read from, that cue's index
  function step(nextTick,press=false){
+  const armedBefore=cueInputs.length;
   const events=frame(nextTick-tick,press);tick=nextTick;
   // A checker's perfect tick: its target (mTickJust, +0x58) less the ticks it has counted (mTickPass,
   // +0x54), read when it is created. A hit can re-arm a checker for a later target (Screwbot
@@ -172,6 +178,7 @@ export async function loadGame(gameUrl,load=fetchBytes,{timeline:withTimeline=tr
   };
   for(const e of events)if(e[0]===9)arm(e[1]);
   for(let i=0,c;(c=core._checker_at(i)>>>0);i++)if(live.has(c)&&live.get(c)!==f32(c+0x58))arm(c);
+  if(press===6)pairHeld=!cueInputs.slice(armedBefore).includes(20);
   handle(events,tick);
   steps++;
   return events;

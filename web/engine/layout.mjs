@@ -23,8 +23,9 @@ export async function createLayout(g,{spec=g.manifest.wii.layout,file='layout.js
  // the game builds again (a new scene).
  function reset(){data.panes.forEach((p,i)=>{panes[i]=fresh(p);});for(const a of animations)Object.assign(a,{frame:0,playing:false,skip:false,enabled:false,reverse:false});atEnd();}
  const materialImage=data.materials.map(m=>m.texture==null?null:data.textures[m.texture]);
- // Live material values that RLTS and RLMC animations write into.
- const live=data.materials.map(m=>({srts:m.srts?.map(s=>[...s]),tevColors:m.tevColors?.map(c=>[...c]),kColors:m.kColors?.map(c=>[...c]),matColor:m.matColor&&[...m.matColor]}));
+ // Live material values that RLTS and RLMC animations write into. A material without its own TEV
+ // stages keeps its two colour registers as color0 and color1 (the lyric layout's title card fades them).
+ const live=data.materials.map(m=>({srts:m.srts?.map(s=>[...s]),tevColors:m.tevColors?.map(c=>[...c])??(m.stages?undefined:[[...m.color0],[...m.color1]]),kColors:m.kColors?.map(c=>[...c]),matColor:m.matColor&&[...m.matColor]}));
  const animations=spec.animations.map(([pane,name])=>{
   const anim=data.animations[name],root=byName[pane],inTree=new Set();
   const walk=i=>{inTree.add(data.panes[i].name);children[i].forEach(walk);};walk(root);
@@ -192,7 +193,7 @@ export async function createLayout(g,{spec=g.manifest.wii.layout,file='layout.js
    ctx.setTransform(...mul(m,[r.w/img.width,0,0,-r.h/img.height,r.left,r.top]));ctx.globalAlpha=alpha;ctx.drawImage(img,0,0);return;
   }
   const name=materialImage[p.material];if(!name)return;
-  const mat=data.materials[p.material],img=tint(images[name],mat,p.vertexColors?.[0]),r=rect(p),W=img.width,H=img.height;
+  const [color0,color1]=live[p.material].tevColors,img=tint(images[name],{color0,color1},p.vertexColors?.[0]),r=rect(p),W=img.width,H=img.height;
   // Map texture coordinates of the top-left, top-right and bottom-left corners onto the pane.
   const [t0,t1,t2]=p.texcoords||[[0,0],[1,0],[0,1]];
   const ux=(t1[0]-t0[0])*W,uy=(t1[1]-t0[1])*H,vx=(t2[0]-t0[0])*W,vy=(t2[1]-t0[1])*H,det=ux*vy-uy*vx;if(!det)return;

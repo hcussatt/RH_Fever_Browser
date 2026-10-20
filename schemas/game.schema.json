@@ -68,7 +68,8 @@
             "startAtEnd": {"type": "array", "uniqueItems": true, "items": {"type": "integer", "minimum": 0}},
             "texts": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/name"}},
             "panes": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/name"}},
-            "hidden": {"description": "Panes the game's layout setup hides.", "type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/name"}}
+            "hidden": {"description": "Panes the game's layout setup hides.", "type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/name"}},
+            "messages": {"description": "The messages its texts show: main (riq_E.bmg, the default) or bonus (riq_bonus_E.bmg, a vocal song's title card).", "enum": ["main", "bonus"]}
           }
         }
       }

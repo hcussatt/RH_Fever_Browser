@@ -9,7 +9,7 @@
 
 ## Scope and fidelity
 
-This project ports original Rhythm Heaven Fever minigames into standalone client-side browser games. It uses static PowerPC translation to WASM, hand-written Wii adapters, Canvas2D, and Web Audio, not a Dolphin runtime. The game IDs are the manifests under `games/` (`golf` Hole in One, `tap` Tap Trial, `rap` Love Rap, `agbghost` Sneaky Spirits, `robot` Screwbot Factory, `seesaw` See-Saw, `date` Double Date, `rocket` Launch Party, `concons` Donk-Donk, `receive` Bossa Nova, and the remixes `remix1` and `remix6`).
+This project ports original Rhythm Heaven Fever minigames into standalone client-side browser games. It uses static PowerPC translation to WASM, hand-written Wii adapters, Canvas2D, and Web Audio, not a Dolphin runtime. The game IDs are the manifests under `games/` (`golf` Hole in One, `tap` Tap Trial, `rap` Love Rap, `agbghost` Sneaky Spirits, `robot` Screwbot Factory, `seesaw` See-Saw, `date` Double Date, `rocket` Launch Party, `concons` Donk-Donk, `receive` Bossa Nova, `bun` Working Dough, `seal` Built to Scale, `badminton` Air Rally, `muscle` Figure Fighter, and the remixes `remix1`, `remix3` and `remix6`).
 
 Preserve original timing windows, float operation order, scoring, and Perfect rules. Do not force results, widen windows, or enable rollback. Unsupported instructions and platform calls must be investigated rather than silently ignored. Do not describe static translation or fallback original objects as completed decompilation, or claim 1:1 fidelity from autoplay alone. Treat older notes about missing features as historical; inspect current code before relying on them.
 
@@ -105,6 +105,13 @@ These come from the repository owner and apply to every contributor and agent.
 3. Check the entry chart's prelude sounds (`SE_REMIX_MODE_SET_REMIXn` sets sequence variable 22, which changes some games' sounds in remixes) and every scene's layouts (game layouts, the speech balloon, a game's own message layout).
 4. Test the remix first and fix it fully before retesting the standalone games: headless runtime tests, one keyboard autoplay in Chromium with screenshots across every scene, the results screen, and per-section sound comparison against each standalone game.
 5. Known remix pitfalls: TickFlow rest-slot defaults (32/16/16/8), scene changes ending the old scene's banks and animations, chart message panes and the layouts that register them, layout animations a scene relies on (Hole in One's screen frame), grading flows not running in game frames, and actors attached to a scene's base canvas.
+6. Bulk ports (a remix and its minigames in one go): port and test each minigame, then the remix, then rebuild every game once and diff each `original-timeline.json` and autoplay sound log against a copy saved before the change. Recheck what earlier bulk ports got wrong:
+   - Cue counts: a checker withdrawn before its beat, or one that scores nothing (a partner's), is not a cue; compare autoplay hits with the scoring events, not the checker count. A no-input run can pass fewer cues than exist when a miss ends a sequence (Built to Scale's dropped rods).
+   - Silent chart commands: list every ExFlow op a chart reaches (the CExFlow jump table at `0x802ed48c`) and handle or document each one; an op that falls through `exflow_command` is a silent stub. Remix 3 needed the screen mask (0x112-0x116), the in-play fader (0x10A) and the lyric layout's title card (0x13B).
+   - Scene version (`sceneVersion` in the chart index) gates behaviour: check it before "fixing" a difference between a solo game and its remix scene.
+   - Black or missing scenes: actor caps in the renderer, per-scene layouts, and anything the original shows only before the music starts.
+   - Sounds: the remix mode sound (`SE_REMIX_MODE_SET_REMIXn`) and each scene's sounds against its solo game.
+   - After merging main, refresh the enabled games' snapshots with `python3 tools/prepare-pages.py --snapshot`; new games stay web-disabled.
 
 ## Roadmap
 

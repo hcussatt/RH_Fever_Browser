@@ -136,8 +136,9 @@ def trace(seq,start,bank_programs):
     v=arg();ramp=arg('short') if arg2 else 0;used.add(hex(op))
     names={0xb0:'timebase',0xc0:'pan',0xc1:'volume',0xc2:'playerVolume',0xc3:'transpose',0xc4:'bend',0xc5:'bendRange',0xc7:'noteWait',0xd0:'attack',0xd1:'decay',0xd2:'sustain',0xd3:'release',0xd5:'volume2',0xd8:'lpf',0xd9:'fxA',0xda:'fxB',0xdb:'mainSend',0xdd:'mute',0xdf:'damper',0xdc:'initPan',0xc8:'tie',0xc9:'portamento',0xce:'portaSpeed',0xcf:'portaTime',0xca:'lfoDepth',0xcb:'lfoSpeed',0xcc:'lfoTarget',0xcd:'lfoRange',0xb1:'hold',0xb2:'monophonic',0xb3:'velocityRange',0xb4:'biquadType',0xb5:'biquadValue'}
     if op in (0xc3,0xc4) and v>=128:v-=256
+    # Setting the value the player already has changes nothing (Figure Fighter's tracks each set it).
     if op==0xb0:
-     if t or tracks:late_tempo.add(start)
+     if (t or tracks) and v!=player['timebase']:late_tempo.add(start)
      player['timebase']=v
     if op in names:
      if ramp:pending[names[op]+'Ramp']={'from':state.get(names[op],0),'to':v,'time':t,'seconds':ramp*60/state['tempo']/state['timebase']}
@@ -147,7 +148,7 @@ def trace(seq,start,bank_programs):
    elif 0xe0<=op<=0xe3:
     v=arg('short');used.add(hex(op))
     if op==0xe1:
-     if t or tracks:late_tempo.add(start)
+     if (t or tracks) and v!=player['tempo']:late_tempo.add(start)
      state['tempo']=player['tempo']=v
     elif op in [0xe3,0xe0]:state['sweepPitch' if op==0xe3 else 'lfoDelay']=v
     else:raise ValueError(f'unhandled {op:x} at {at:x}')

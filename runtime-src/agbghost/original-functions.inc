@@ -1,6 +1,7 @@
 /* Generated from the user-provided original DOL; see docs/golf-notes.md. */
 static void p_80009950(void);
 static void p_80009a40(void);
+static void p_8000abc0(void);
 static void p_8000b888(void);
 static void p_8000b8d8(void);
 static void p_8000b930(void);
@@ -44,6 +45,7 @@ static void p_800a8730(void);
 static void p_800a8788(void);
 static void p_800a8ab0(void);
 static void p_800a8ab4(void);
+static void p_80104044(void);
 static void p_801a7af0(void);
 static void p_801b0940(void);
 static void p_801b0990(void);
@@ -198,6 +200,9 @@ static void p_80009a40(void) {
 L_80009a40: r[4]=rd32((r[13]+(-27840)));
 L_80009a44: wr8((r[4]+(167)),r[3]);
 L_80009a48: return;
+}
+static void p_8000abc0(void) {
+L_8000abc0: return;
 }
 static void p_8000b888(void) {
 L_8000b888: wr32((r[1]+(-16)),r[1]);r[1]=(r[1]+(-16));
@@ -2433,6 +2438,31 @@ L_800a8b18: r[0]=rd32((r[1]+(20)));
 L_800a8b1c: lr=r[0];
 L_800a8b20: r[1]=r[1]+(16);
 L_800a8b24: return;
+}
+static void p_80104044(void) {
+L_80104044: wr32((r[1]+(-16)),r[1]);r[1]=(r[1]+(-16));
+L_80104048: r[4]=-32722*65536u;
+L_8010404c: r[4]=r[4]+(-8496);
+L_80104050: r[3]=0;
+L_80104054: f[0].d=rdf64((r[4]+(0)));
+L_80104058: f[3].d=rdf64((r[4]+(8)));
+L_8010405c: f[4].d=rdf64((r[4]+(16)));
+L_80104060: fcmp(0,f[1].d,f[0].d);
+L_80104064: fcmp(6,f[1].d,f[3].d);
+L_80104068: if(cr[0]){goto L_80104098;}
+L_8010406c: r[3]=r[3]+(-1);
+L_80104070: if(!cr[24]){goto L_80104098;}
+L_80104074: fcmp(7,f[1].d,f[4].d);
+L_80104078: f[2].d=f[1].d;
+L_8010407c: if(cr[28]){goto L_80104084;}
+L_80104080: f[2].d=(f[1].d-f[4].d);
+L_80104084: f[2].u=0xfff8000000000000ull|(uint32_t)(int32_t)f[2].d;
+L_80104088: wr64((r[1]+(8)),f[2].u);
+L_8010408c: r[3]=rd32((r[1]+(12)));
+L_80104090: if(cr[28]){goto L_80104098;}
+L_80104094: r[3]=r[3]+(-32768*65536u);
+L_80104098: r[1]=r[1]+(16);
+L_8010409c: return;
 }
 static void p_801a7af0(void) {
 L_801a7af0: f[0].d=rdf32((r[2]+(596)));
@@ -10337,6 +10367,7 @@ L_801ec2b0: return;
 static int dispatch_original(uint32_t address) {switch(address){
 case 0x80009950: p_80009950(); return 1;
 case 0x80009a40: p_80009a40(); return 1;
+case 0x8000abc0: p_8000abc0(); return 1;
 case 0x8000b888: p_8000b888(); return 1;
 case 0x8000b8d8: p_8000b8d8(); return 1;
 case 0x8000b930: p_8000b930(); return 1;
@@ -10380,6 +10411,7 @@ case 0x800a8730: p_800a8730(); return 1;
 case 0x800a8788: p_800a8788(); return 1;
 case 0x800a8ab0: p_800a8ab0(); return 1;
 case 0x800a8ab4: p_800a8ab4(); return 1;
+case 0x80104044: p_80104044(); return 1;
 case 0x801a7af0: p_801a7af0(); return 1;
 case 0x801b0940: p_801b0940(); return 1;
 case 0x801b0990: p_801b0990(); return 1;

@@ -21,7 +21,9 @@ SHARED={'GameUtil/TickFlow.cpp','nw4r/snd/snd_EnvGenerator.cpp','GameUtil/TimeRa
 SHARED_FUNCTIONS={'calc_initial_wave_tempo__13CSoundManagerFP8WaveInfo',
   'fn_80009950__8CExSceneFll','fn_80009A40__8CExSceneFb', # the "you" marker's position and visibility
   'CalcVolumeRatio__Q44nw4r3snd6detail4UtilFf', # decibels to amplitude, for sound envelopes
-  'Atan2FIdx__Q24nw4r4mathFff'} # nw4r's table arctangent (Bossa Nova's ball arcs)
+  'Atan2FIdx__Q24nw4r4mathFff', # nw4r's table arctangent (Bossa Nova's ball arcs)
+  '_34__13CInputCheckerFv', # CInputChecker's empty default virtual (Working Dough's checkers keep it)
+  '__cvt_fp2unsigned'} # the compiler's double to u32 conversion (Air Rally)
 # Each game's manifest names the original units whose functions are translated; a remix
 # translates the units of every game it changes to.
 PROFILE=manifest(GAME)['wii']
@@ -119,7 +121,7 @@ def generate(a,size,name):
             c=f'{{uint32_t address={q[1]}+{q[2]};{q[0]}=rd32(address);{q[1]}=address;}}'
         elif m in ['li','lis','mr','fmr']:
             c=f'{q[0]}={q[1]}' + ('*65536u;' if m=='lis' else ';')
-        elif m in ['addi','subi','addis','add','subf','mulli','mullw','or','xor','xoris','oris','and','andc','nor']:
+        elif m in ['addi','subi','addis','add','subf','mulli','mullw','or','ori','xor','xoris','oris','and','andc','nor']:
             if m=='addis':v=f'{q[1]}+({q[2]}*65536u)'
             elif m in ['addi','add']:v=f'{q[1]}+({q[2]})'
             elif m=='subi':v=f'{q[1]}-({q[2]})'
@@ -129,6 +131,7 @@ def generate(a,size,name):
             elif m=='xor':v=f'{q[1]}^{q[2]}'
             elif m=='xoris':v=f'{q[1]}^({q[2]}*65536u)'
             elif m=='oris':v=f'{q[1]}|({q[2]}*65536u)'
+            elif m=='ori':v=f'{q[1]}|({q[2]}&65535u)'
             elif m=='and':v=f'{q[1]}&{q[2]}'
             elif m=='andc':v=f'{q[1]}&~{q[2]}'
             elif m=='nor':v=f'~({q[1]}|{q[2]})'

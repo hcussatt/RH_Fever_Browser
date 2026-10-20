@@ -1,0 +1,48 @@
+{
+  "$schema": "../../schemas/game.schema.json",
+  "schemaVersion": 1,
+  "id": "muscle",
+  "title": "Figure Fighter",
+  "action": "Punch",
+  "platform": "wii",
+  "wii": {
+    "scene": "Muscle",
+    "sceneVariant": 0,
+    "cellanim": "EN/content2/cellanim/muscle/ver0/cellanim.szs",
+    "units": [
+      "Game/Muscle/SceneMuscle.cpp",
+      "Game/Muscle/MyChecker.cpp",
+      "Game/Muscle/MyFlow.cpp"
+    ],
+    "banks": [
+      "muscle",
+      "muscle_bg_00",
+      "muscle_bg_01",
+      "muscle_cutin"
+    ],
+    "projection": [
+      854,
+      480
+    ],
+    "endsWithMusic": true,
+    "layout": {
+      "archive": "EN/content2/layout/layout_muscle.szs",
+      "file": "muscle.brlyt",
+      "animations": [],
+      "startAtEnd": [],
+      "texts": [
+        "T_message_00",
+        "N_message_00"
+      ],
+      "panes": [
+        "N_message_00"
+      ],
+      "hidden": [
+        "N_message_00"
+      ]
+    }
+  },
+  "web": {
+    "enabled": false
+  }
+}
