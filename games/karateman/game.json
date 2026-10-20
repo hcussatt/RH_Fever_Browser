@@ -1,0 +1,33 @@
+{
+  "$schema": "../../schemas/game.schema.json",
+  "schemaVersion": 1,
+  "id": "karateman",
+  "title": "Karate Man",
+  "action": "Punch",
+  "platform": "wii",
+  "wii": {
+    "scene": "Karateman",
+    "sceneVariant": 0,
+    "cellanim": "EN/content2/cellanim/karateman/ver0/cellanim.szs",
+    "units": [
+      "Game/Karateman/SceneKarateman.cpp",
+      "Game/Karateman/MyChecker.cpp",
+      "Game/Karateman/MyFlow.cpp",
+      "Game/WindParticle.cpp",
+      "Game/Pseudo3D.cpp",
+      "Game/code_800D2920.cpp"
+    ],
+    "banks": [
+      "karateman",
+      "karate_bg_00"
+    ],
+    "projection": [
+      854,
+      480
+    ],
+    "endsWithMusic": true
+  },
+  "web": {
+    "enabled": false
+  }
+}

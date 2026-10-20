@@ -44,6 +44,7 @@ static void p_800a9d90(void);
 static void p_800a9e24(void);
 static void p_800a9e94(void);
 static void p_800a9e98(void);
+static void p_80103c40(void);
 static void p_80104044(void);
 static void p_801a7af0(void);
 static void p_801b0940(void);
@@ -2096,6 +2097,38 @@ L_800a9efc: r[0]=rd32((r[1]+(20)));
 L_800a9f00: lr=r[0];
 L_800a9f04: r[1]=r[1]+(16);
 L_800a9f08: return;
+}
+static void p_80103c40(void) {
+L_80103c40: wr32((r[1]+(-32)),r[1]);r[1]=(r[1]+(-32));
+L_80103c44: r[0]=lr;
+L_80103c48: wr32((r[1]+(36)),r[0]);
+L_80103c4c: r[0]=r[5]*(r[6]);
+L_80103c50: wr32((r[1]+(28)),r[31]);
+L_80103c54: wr32((r[1]+(24)),r[30]);
+L_80103c58: r[30]=r[6];
+L_80103c5c: r[31]=r[3]+(r[0]);
+L_80103c60: wr32((r[1]+(20)),r[29]);
+L_80103c64: r[29]=r[5];
+L_80103c68: wr32((r[1]+(16)),r[28]);
+L_80103c6c: r[28]=r[4];
+L_80103c70: goto L_80103c90;
+L_80103c74: r[31]=r[31]-r[29];
+L_80103c78: r[12]=r[28];
+L_80103c7c: r[3]=r[31];
+L_80103c80: r[4]=-1;
+L_80103c84: ctr=r[12];
+L_80103c88: lr=0x80103c8c;call(ctr);
+L_80103c8c: r[30]=r[30]+(-1);
+L_80103c90: cmp(0,(int32_t)r[30],(int32_t)(0));
+L_80103c94: if(!cr[2]){goto L_80103c74;}
+L_80103c98: r[0]=rd32((r[1]+(36)));
+L_80103c9c: r[31]=rd32((r[1]+(28)));
+L_80103ca0: r[30]=rd32((r[1]+(24)));
+L_80103ca4: r[29]=rd32((r[1]+(20)));
+L_80103ca8: r[28]=rd32((r[1]+(16)));
+L_80103cac: lr=r[0];
+L_80103cb0: r[1]=r[1]+(32);
+L_80103cb4: return;
 }
 static void p_80104044(void) {
 L_80104044: wr32((r[1]+(-16)),r[1]);r[1]=(r[1]+(-16));
@@ -10068,6 +10101,7 @@ case 0x800a9d90: p_800a9d90(); return 1;
 case 0x800a9e24: p_800a9e24(); return 1;
 case 0x800a9e94: p_800a9e94(); return 1;
 case 0x800a9e98: p_800a9e98(); return 1;
+case 0x80103c40: p_80103c40(); return 1;
 case 0x80104044: p_80104044(); return 1;
 case 0x801a7af0: p_801a7af0(); return 1;
 case 0x801b0940: p_801b0940(); return 1;

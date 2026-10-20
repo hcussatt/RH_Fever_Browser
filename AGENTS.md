@@ -9,7 +9,7 @@
 
 ## Scope and fidelity
 
-This project ports original Rhythm Heaven Fever minigames into standalone client-side browser games. It uses static PowerPC translation to WASM, hand-written Wii adapters, Canvas2D, and Web Audio, not a Dolphin runtime. The game IDs are the manifests under `games/` (`golf` Hole in One, `tap` Tap Trial, `rap` Love Rap, `agbghost` Sneaky Spirits, `robot` Screwbot Factory, `seesaw` See-Saw, `date` Double Date, `rocket` Launch Party, `concons` Donk-Donk, `receive` Bossa Nova, `bun` Working Dough, `seal` Built to Scale, `badminton` Air Rally, `muscle` Figure Fighter, and the remixes `remix1`, `remix3` and `remix6`).
+This project ports original Rhythm Heaven Fever minigames into standalone client-side browser games. It uses static PowerPC translation to WASM, hand-written Wii adapters, Canvas2D, and Web Audio, not a Dolphin runtime. The game IDs are the manifests under `games/` (`golf` Hole in One, `tap` Tap Trial, `rap` Love Rap, `agbghost` Sneaky Spirits, `robot` Screwbot Factory, `seesaw` See-Saw, `date` Double Date, `rocket` Launch Party, `concons` Donk-Donk, `receive` Bossa Nova, `bun` Working Dough, `seal` Built to Scale, `badminton` Air Rally, `muscle` Figure Fighter, `taptroupe` Tap Troupe, `shrimp` Shrimp Shuffle, `panel` Cheer Readers, `karateman` Karate Man, and the remixes `remix1`, `remix3`, `remix6` and `remix7`).
 
 Preserve original timing windows, float operation order, scoring, and Perfect rules. Do not force results, widen windows, or enable rollback. Unsupported instructions and platform calls must be investigated rather than silently ignored. Do not describe static translation or fallback original objects as completed decompilation, or claim 1:1 fidelity from autoplay alone. Treat older notes about missing features as historical; inspect current code before relying on them.
 
@@ -111,6 +111,9 @@ These come from the repository owner and apply to every contributor and agent.
    - Scene version (`sceneVersion` in the chart index) gates behaviour: check it before "fixing" a difference between a solo game and its remix scene.
    - Black or missing scenes: actor caps in the renderer, per-scene layouts, and anything the original shows only before the music starts.
    - Sounds: the remix mode sound (`SE_REMIX_MODE_SET_REMIXn`) and each scene's sounds against its solo game.
+   - Sound slides and held, wavering notes (sirens, calls): `node tests/test-sequence.mjs` must match and `tools/extract-sfx.py` must not raise; listen to them. A note's later volume, pan and bend changes are its `changes`.
+   - Per-frame tint changes (an actor's fore/back colour, `0xa0`-`0xa5`, changing every frame, like Air Rally's clouds): count them headless and never read pixels back per frame (`colored()` in `renderer.mjs` blends into reused canvases).
+   - A+B cues followed by a release (Karate Man's charged kick): the test harness holds A+B until the release cue arms; a no-input run can pass extra checkers that take no input (`checkers` in `tests/test-runtime.mjs`).
    - After merging main, refresh the enabled games' snapshots with `python3 tools/prepare-pages.py --snapshot`; new games stay web-disabled.
 
 ## Roadmap

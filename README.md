@@ -11,7 +11,8 @@ is a real-time multiplayer mod.
 Playable today: **Hole in One**, **Tap Trial**, **Love Rap**, **Sneaky Spirits**,
 **Screwbot Factory**, **See-Saw**, **Double Date**, **Remix 1**, **Working Dough**,
 **Built to Scale**, **Air Rally**, **Figure Fighter**, **Remix 3**, **Launch Party**,
-**Donk-Donk**, **Bossa Nova** and **Remix 6**. The game picker
+**Donk-Donk**, **Bossa Nova**, **Remix 6**, **Tap Troupe**, **Shrimp Shuffle**,
+**Cheer Readers**, **Karate Man** and **Remix 7**. The game picker
 lists them by remix set, as the original song select does.
 
 ## Runtime code here; assets stay local

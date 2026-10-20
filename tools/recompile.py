@@ -23,7 +23,8 @@ SHARED_FUNCTIONS={'calc_initial_wave_tempo__13CSoundManagerFP8WaveInfo',
   'CalcVolumeRatio__Q44nw4r3snd6detail4UtilFf', # decibels to amplitude, for sound envelopes
   'Atan2FIdx__Q24nw4r4mathFff', # nw4r's table arctangent (Bossa Nova's ball arcs)
   '_34__13CInputCheckerFv', # CInputChecker's empty default virtual (Working Dough's checkers keep it)
-  '__cvt_fp2unsigned'} # the compiler's double to u32 conversion (Air Rally)
+  '__cvt_fp2unsigned', # the compiler's double to u32 conversion (Air Rally)
+  '__destroy_arr'} # the C++ runtime's array destructor loop (Karate Man)
 # Each game's manifest names the original units whose functions are translated; a remix
 # translates the units of every game it changes to.
 PROFILE=manifest(GAME)['wii']
@@ -121,7 +122,7 @@ def generate(a,size,name):
             c=f'{{uint32_t address={q[1]}+{q[2]};{q[0]}=rd32(address);{q[1]}=address;}}'
         elif m in ['li','lis','mr','fmr']:
             c=f'{q[0]}={q[1]}' + ('*65536u;' if m=='lis' else ';')
-        elif m in ['addi','subi','addis','add','subf','mulli','mullw','or','ori','xor','xoris','oris','and','andc','nor']:
+        elif m in ['addi','subi','addis','add','subf','mulli','mullw','or','ori','xor','xoris','oris','and','andi','andis','andc','nor','xori','nand','orc','eqv']:
             if m=='addis':v=f'{q[1]}+({q[2]}*65536u)'
             elif m in ['addi','add']:v=f'{q[1]}+({q[2]})'
             elif m=='subi':v=f'{q[1]}-({q[2]})'
@@ -133,12 +134,25 @@ def generate(a,size,name):
             elif m=='oris':v=f'{q[1]}|({q[2]}*65536u)'
             elif m=='ori':v=f'{q[1]}|({q[2]}&65535u)'
             elif m=='and':v=f'{q[1]}&{q[2]}'
+            elif m=='andi':v=f'{q[1]}&({q[2]}&65535u)'
+            elif m=='andis':v=f'{q[1]}&({q[2]}*65536u)'
             elif m=='andc':v=f'{q[1]}&~{q[2]}'
             elif m=='nor':v=f'~({q[1]}|{q[2]})'
+            elif m=='xori':v=f'{q[1]}^({q[2]}&65535u)'
+            elif m=='nand':v=f'~({q[1]}&{q[2]})'
+            elif m=='orc':v=f'{q[1]}|~{q[2]}'
+            elif m=='eqv':v=f'~({q[1]}^{q[2]})'
             c=f'{q[0]}={v};'
         elif m in ['neg','cntlzw','extsh','extsb']:
             v={'neg':f'-{q[1]}','cntlzw':f'({q[1]}?__builtin_clz({q[1]}):32)','extsh':f'(int16_t){q[1]}','extsb':f'(int8_t){q[1]}'}[m]
             c=f'{q[0]}={v};'
+        elif m in ['slw','srw']:
+            # The shift is rB's low 6 bits; 32 or more gives 0.
+            op='<<' if m=='slw' else '>>'
+            c=f'{{uint32_t n={q[2]}&63;{q[0]}=n>31?0:{q[1]}{op}n;}}'
+        elif m=='sraw':
+            # Shifts of 32 or more fill with the sign; carry is set when a negative value loses 1 bits.
+            c=f'{{uint32_t n={q[2]}&63;int32_t x=(int32_t){q[1]};uint32_t lost=n>31?(uint32_t)x:(n?(uint32_t)x&((1u<<n)-1):0);carry=x<0&&lost!=0;{q[0]}=(uint32_t)(n>31?(x>>31):(x>>n));}}'
         elif m in ['srwi','slwi','srawi','clrlwi','clrrwi','rlwinm']:
             if m=='srwi':v=f'{q[1]}>>{q[2]}'
             elif m=='slwi':v=f'{q[1]}<<{q[2]}'

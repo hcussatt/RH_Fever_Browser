@@ -10,20 +10,27 @@ import {createMessages} from './message.mjs';
 import {assetImage,assetResponse} from './assets.mjs';
 // A remix's scenes each build their own game's layout (Love Rap's captions, Bossa Nova's subtitles):
 // the running scene's is drawn, with the layout events from while it ran (assets/layouts.json).
+// A layout the game draws only into its dynamic texture (spec.screen, Shrimp Shuffle's shore) is
+// drawn through the screen bank instead (see drawScreen below).
 async function sceneLayouts(g){
  const list=await (await assetResponse(new URL('assets/layouts.json',g.base))).json(),layouts=new Map();
- for(const {scene,file,font,spec} of list){const events=[];layouts.set(scene,{events,layout:await createLayout(g,{spec,file,fontFile:font,events})});}
+ for(const {scene,file,font,spec} of list){const events=[];layouts.set(scene,{spec,events,layout:await createLayout(g,{spec,file,fontFile:font,events})});}
  let scene=g.chart.firstScene||0;
- return {draw(ctx,canvas){
-  for(const e of g.layoutEvents.splice(0)){scene=e.scene;layouts.get(e.scene)?.events.push(e);}
-  layouts.get(scene)?.layout.draw(ctx,canvas);
- }};
+ const sync=()=>{for(const e of g.layoutEvents.splice(0)){scene=e.scene;layouts.get(e.scene)?.events.push(e);}};
+ return {
+  draw(ctx,canvas){sync();const l=layouts.get(scene);if(l&&!l.spec.screen)l.layout.draw(ctx,canvas);},
+  screen(){sync();const l=layouts.get(scene);return l?.spec.screen?l:null;},
+ };
+}
+async function gameLayout(g){
+ const spec=g.manifest.wii.layout,layout=await createLayout(g);if(!layout)return null;
+ return {draw(ctx,canvas){if(!spec.screen)layout.draw(ctx,canvas);},screen:()=>spec.screen?{spec,layout}:null};
 }
 export async function createRenderer(g,canvas){
  // The game's textures, then the permanent bank's (bank 254, see runtime.mjs).
  const images=await Promise.all([...g.assets.textures,...(g.gradingData.permanent?.textures||[])].map(n=>assetImage(new URL('assets/'+n,g.base))));
  const ctx=canvas.getContext('2d',{alpha:false});
- const layout=g.manifest.wii.scenes?await sceneLayouts(g):await createLayout(g),messages=await createMessages(g);
+ const layout=g.manifest.wii.scenes?await sceneLayouts(g):await gameLayout(g),messages=await createMessages(g);
  const {u8,u16,u32,f32,core,banks}=g;
  const mul=(a,b)=>[a[0]*b[0]+a[2]*b[1],a[1]*b[0]+a[3]*b[1],a[0]*b[2]+a[2]*b[3],a[1]*b[2]+a[3]*b[3],a[0]*b[4]+a[2]*b[5]+a[4],a[1]*b[4]+a[3]*b[5]+a[5]];
  const trs=(x,y,deg,sx,sy)=>{const a=deg*Math.PI/180,c=Math.cos(a),s=Math.sin(a);return [c*sx,s*sx,-s*sy,c*sy,x,y];};
@@ -78,6 +85,25 @@ export async function createRenderer(g,canvas){
   for(let i=0;i<p.length;i+=4){p[i]=lut[0][src[i]];p[i+1]=lut[1][src[i+1]];p[i+2]=lut[2][src[i+2]];p[i+3]=src[i+3];}
   x.putImageData(d,0,0);coloredCells.set(id,c);return c;
  }
+ // The screen bank's texture (CDynTex, see adapters/wii/platform.c): the layout's colours drawn
+ // over black, and its alpha pass as grey. Drawn with the cell's usual blend, the screen becomes
+ // colour*alpha + screen*(1-alpha): multiply by 1-alpha, then add colour*alpha.
+ const surface=()=>Object.assign(document.createElement('canvas'),{width:640,height:456});
+ let screenTex=null;
+ function renderScreen(l){
+  screenTex||={color:surface(),alpha:surface(),inverse:surface(),product:surface()};
+  const {color,alpha,inverse,product}=screenTex,fill=(c,style)=>{const x=c.getContext('2d');x.setTransform(1,0,0,1,0,0);x.globalAlpha=1;x.globalCompositeOperation='source-over';x.fillStyle=style;x.fillRect(0,0,640,456);return x;};
+  l.layout.draw(fill(color,'#000'),color,{snap:true});
+  l.layout.draw(fill(alpha,'#000'),alpha,{snap:true,additive:l.spec.screen.additive});
+  let x=fill(inverse,'#fff');x.globalCompositeOperation='difference';x.drawImage(alpha,0,0);
+  x=fill(product,'#000');x.drawImage(color,0,0);x.globalCompositeOperation='multiply';x.drawImage(alpha,0,0);
+ }
+ function drawScreen(om,alpha){
+  ctx.setTransform(...om);ctx.globalAlpha=alpha;
+  ctx.globalCompositeOperation='multiply';ctx.drawImage(screenTex.inverse,-320,-228);
+  ctx.globalCompositeOperation='lighter';ctx.drawImage(screenTex.product,-320,-228);
+  ctx.globalCompositeOperation='source-over';
+ }
  function drawActor(a,origin){
   const k=key(a),m=matrices.get(a);if(!m)return;
   const bank=banks[u8(a+12)],opacity=u8(a+0xa6),attached=children(a).filter(c=>u8(c+0xc2)&&u8(c+0xa7)&&current.has(c));
@@ -86,9 +112,12 @@ export async function createRenderer(g,canvas){
    if(alpha&&o.w&&o.h){
     ctx.imageSmoothingEnabled=!!u8(a+0xa8);
     const om=mul(mul(origin,m),trs(o.x+o.w*o.scaleX/2,o.y+o.h*o.scaleY/2,o.angle,o.scaleX*(o.flipX?-1:1),o.scaleY*(o.flipY?-1:1)));
-    ctx.setTransform(...om);ctx.globalAlpha=alpha;
-    if(plain(a))ctx.drawImage(images[bank.texture],o.sx,o.sy,o.w,o.h,-o.w/2,-o.h/2,o.w,o.h);
-    else ctx.drawImage(colored(bank.texture,o,a),-o.w/2,-o.h/2,o.w,o.h);
+    if(bank.screen){if(!plain(a))throw new Error('Screen bank drawn with a tint');if(screenTex)drawScreen(om,alpha);}
+    else{
+     ctx.setTransform(...om);ctx.globalAlpha=alpha;
+     if(plain(a))ctx.drawImage(images[bank.texture],o.sx,o.sy,o.w,o.h,-o.w/2,-o.h/2,o.w,o.h);
+     else ctx.drawImage(colored(bank.texture,o,a),-o.w/2,-o.h/2,o.w,o.h);
+    }
    }
    for(const c of attached)if(u16(c+0xc0)===i&&u8(c+12)!==255)drawActor(c,origin);
   });
@@ -111,6 +140,9 @@ export async function createRenderer(g,canvas){
   // CExScene::_1C hides the "you" marker while the screen shows an instruction example (lbl_80320228).
   const hiddenYou=u8(0x80320228)?u32(0x80320200):0;
   const drawn=actors.filter(a=>u8(a+12)!==255&&u8(a+0xa7)&&a!==hiddenYou&&!(u32(a+0xb0)&&u8(a+0xc2))).sort((a,b)=>(u32(b+0x98)|0)-(u32(a+0x98)|0));
+  // The dynamic texture is redrawn each frame a screen bank shows (CDynTex::update).
+  const screen=layout?.screen();
+  if(screen&&actors.some(a=>banks[u8(a+12)]?.screen&&u8(a+0xa7)))renderScreen(screen);
   for(const a of drawn)drawActor(a,origin);
   layout?.draw(ctx,canvas);messages.draw(ctx,canvas);
   // CFaderFlash's black cover over everything (fn_80007DD8), as the chart fades it.

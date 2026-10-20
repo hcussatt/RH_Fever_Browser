@@ -28,10 +28,12 @@ export async function loadGame(gameUrl,load=fetchBytes,{timeline:withTimeline=tr
  const scenes=profile.scenes?assets.scenes.map(sc=>sc.banks.map(n=>[n,assets.banks[sc.game+'/'+n]])):[profile.banks.map(n=>[n,assets.banks[n]])];
  const banks=[],named=[];
  banks[255]={texture:0,cells:[[]],animations:Array.from({length:256},()=>[{cell:0,frames:1,x:0,y:0,scaleX:1,scaleY:1,angle:0,alpha:255}])};
+ // Cells and keys as registBank lays them out in memory (CellAnim_CellOBJ: the object's position
+ // sits at +10/+12, not at the file's +12/+14), which game code reads (Karate Man's hit points).
  function install(b){
   const ap=alloc(b.animations.length*8),cp=alloc(b.cells.length*8);
   b.animations.forEach((keys,i)=>{const p=alloc(keys.length*24);w16(ap+i*8,keys.length);w32(ap+i*8+4,p);keys.forEach((k,j)=>{const a=p+j*24;w16(a,k.cell);w16(a+2,k.frames);w16(a+4,k.x);w16(a+6,k.y);wf(a+8,k.scaleX);wf(a+12,k.scaleY);wf(a+16,k.angle);w8(a+20,k.alpha);});});
-  b.cells.forEach((objects,i)=>{const p=alloc(objects.length*32);w16(cp+i*8,objects.length);w32(cp+i*8+4,p);objects.forEach((o,j)=>{const a=p+j*32;[o.sx,o.sy,o.w,o.h,o.palette,o.reserved,o.x,o.y].forEach((v,k)=>w16(a+k*2,v));wf(a+16,o.scaleX);wf(a+20,o.scaleY);wf(a+24,o.angle);w8(a+28,o.flipX);w8(a+29,o.flipY);w8(a+30,o.alpha);});});
+  b.cells.forEach((objects,i)=>{const p=alloc(objects.length*32);w16(cp+i*8,objects.length);w32(cp+i*8+4,p);objects.forEach((o,j)=>{const a=p+j*32;[o.sx,o.sy,o.w,o.h,o.palette,o.x,o.y].forEach((v,k)=>w16(a+k*2,v));wf(a+16,o.scaleX);wf(a+20,o.scaleY);wf(a+24,o.angle);w8(a+28,o.flipX);w8(a+29,o.flipY);w8(a+30,o.alpha);});});
   return [b.animations.length,ap,cp];
  }
  core._install_bank(255,...install(banks[255]));
@@ -61,11 +63,16 @@ export async function loadGame(gameUrl,load=fetchBytes,{timeline:withTimeline=tr
  const resultEvents=[];const sounds=[],chartSounds=[],gameSounds=[],commands=[],cues=[],cueInputs=[],cueWithdrawn=[];const options={chartAudioScheduled:false};
  // Each event: kind, value, extra, frame, sound handle (see platform.c emit_handle).
  // A bank registered under an id (25) is what the renderer draws for that id from then on.
- function drain(){const n=core._events_count(),p=core._events_ptr();const out=[];for(let i=0;i<n;i++)out.push(Array.from(core.HEAPU32.subarray(p/4+i*5,p/4+i*5+5)));core._events_clear();for(const e of out)if(e[0]===25)banks[e[1]]=named[e[2]];return out;}
+ // CCellAnimManager::createBankScreen (event 27): one cell of the 640x456 dynamic texture, centred,
+ // scaled to 608 by 456 units and widened by 832/608 on a wide screen (renderer.mjs draws it).
+ const screenBank={screen:true,cells:[[{sx:0,sy:0,w:640,h:456,x:-320,y:-228,scaleX:1,scaleY:1,angle:0,flipX:0,flipY:0,alpha:255}]],
+  animations:[[{cell:0,frames:1,x:0,y:0,scaleX:608/640*(832/608),scaleY:1,angle:0,alpha:255}]]};
+ function drain(){const n=core._events_count(),p=core._events_ptr();const out=[];for(let i=0;i<n;i++)out.push(Array.from(core.HEAPU32.subarray(p/4+i*5,p/4+i*5+5)));core._events_clear();for(const e of out){if(e[0]===25)banks[e[1]]=named[e[2]];else if(e[0]===27)banks[e[1]]=screenBank;}return out;}
  let tapped=0;
- // A+B (6) stays held after its press only for the release (20) its checker then waits for
- // (Screwbot Factory); with no such cue armed it is let go the next frame like a lone A or B
- // (Working Dough's big balls, pressed again soon after).
+ // A+B (6) stays held after its press for the release (20) its checker then waits for, armed in
+ // the same frame (Screwbot Factory) or later (Karate Man's charged kick, armed about 72 ticks
+ // on). Until a release cue arms it is held provisionally ('wait'); it is let go the next frame when
+ // another cue (past the one just pressed, 12 ticks on) is already waiting or arms first (Working Dough's big balls, pressed again soon after).
  let pairHeld=false;
  function frame(ticks,press){
   core._set_delta(ticks);core._set_frame_ticks(ticks);
@@ -75,8 +82,9 @@ export async function loadGame(gameUrl,load=fetchBytes,{timeline:withTimeline=tr
   // 5 B, 6 A and B together, 18-20 their releases), with A or B let go the next frame; or true
   // for an A tap.
   let trig=0,release=tapped;tapped=0;
-  if(pairHeld){release|=3;pairHeld=false;}
   if(press===true)press=4;
+  if(pairHeld==='release'||pairHeld&&typeof press==='number'&&press<16){release|=3;pairHeld=false;}
+  else if(pairHeld&&press===20)pairHeld=false;
   if(typeof press==='number'){const b={4:1,5:2,6:3,18:1,19:2,20:3}[press]||0;if(press<16){trig=b;if(press<6)tapped=b;}else release|=b;}
   else if(press){trig=press.trig|0;release|=press.release|0;}
   core._buttons(trig,release);
@@ -178,7 +186,9 @@ export async function loadGame(gameUrl,load=fetchBytes,{timeline:withTimeline=tr
   };
   for(const e of events)if(e[0]===9)arm(e[1]);
   for(let i=0,c;(c=core._checker_at(i)>>>0);i++)if(live.has(c)&&live.get(c)!==f32(c+0x58))arm(c);
-  if(press===6)pairHeld=!cueInputs.slice(armedBefore).includes(20);
+  const armed=cueInputs.slice(armedBefore);
+  if(press===6)pairHeld=armed.includes(20)?'held':cues.some((t,i)=>t>tick+12&&!cueWithdrawn[i]&&cueInputs[i]!==20)?'release':'wait';
+  else if(pairHeld==='wait'&&armed.length)pairHeld=armed.includes(20)?'held':'release';
   handle(events,tick);
   steps++;
   return events;

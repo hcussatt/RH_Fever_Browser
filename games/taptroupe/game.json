@@ -1,0 +1,32 @@
+{
+  "$schema": "../../schemas/game.schema.json",
+  "schemaVersion": 1,
+  "id": "taptroupe",
+  "title": "Tap Troupe",
+  "action": "Tap",
+  "platform": "wii",
+  "wii": {
+    "scene": "Tap",
+    "sceneVariant": 0,
+    "cellanim": "EN/content2/cellanim/tap/ver0/cellanim.szs",
+    "units": [
+      "Game/Tap/SceneTap.cpp",
+      "Game/Tap/MyChecker.cpp",
+      "Game/Tap/MyFlow.cpp",
+      "Game/code_800D2920.cpp"
+    ],
+    "banks": [
+      "tap",
+      "tapman",
+      "tap_bg"
+    ],
+    "projection": [
+      854,
+      480
+    ],
+    "endsWithMusic": true
+  },
+  "web": {
+    "enabled": false
+  }
+}

@@ -107,11 +107,12 @@ static void emit(uint32_t kind,uint32_t value,uint32_t extra){emit_handle(kind,v
 // Hole in One's CMyLayout) is announced when the scene adds it; MESG_CLEAR drops them all when
 // the scene ends. MESG_REGISTER gives a pane a text box (CTickFlow::fn_801DEF58): 0 none,
 // 0x10 the balloon (with its window), 0x11 the balloon's text alone, 0x12 the overlay strip,
-// 0x20+i Hole in One's message i. MESG_FRAME plays one of the screen frame's animations in Hole
-// in One's layout: extra = animation<<2 | reverse<<1 | jump to its end.
+// 0x20+i Hole in One's message i, 0x30/0x31 the lyric layout's top/bottom line. MESG_FRAME plays one of the screen frame's animations in Hole
+// in One's layout: extra = animation<<2 | reverse<<1 | jump to its end. MESG_TEXT_Y moves a
+// pane's text box to y (extra = float bits).
 enum{MESG_VISIBLE,MESG_TEXT,MESG_STRING,MESG_REGISTER,MESG_LAYOUT,MESG_CLEAR,MESG_TAIL,
-  MESG_BOX_X,MESG_BOX_Y,MESG_BOX_W,MESG_BOX_H,MESG_TAIL_X,MESG_TAIL_Y,MESG_OVERLAY_Y,MESG_OVERLAY_H,MESG_FRAME,MESG_TAIL_FLIP};
-enum{MESG_LAYOUT_BALLOON=1,MESG_LAYOUT_GOLF=2};
+  MESG_BOX_X,MESG_BOX_Y,MESG_BOX_W,MESG_BOX_H,MESG_TAIL_X,MESG_TAIL_Y,MESG_OVERLAY_Y,MESG_OVERLAY_H,MESG_FRAME,MESG_TAIL_FLIP,MESG_TEXT_Y};
+enum{MESG_LAYOUT_BALLOON=1,MESG_LAYOUT_GOLF=2,MESG_LAYOUT_LYRIC=3};
 static uint32_t fbits(float x){union{float v;uint32_t u;}b={.v=x};return b.u;}
 // The rest of the flow running now; 0 outside the chart (a press, a scene update).
 static uint32_t flow_rest(void){return current_flow?rd32(current_flow+0x1c):0;}
@@ -340,7 +341,24 @@ static void exflow_command(void){
   // to (x, y) or is shown or hidden. Donk-Donk's chart hides its marker when the ship takes off.
   else if(op==0x110&&arg0<=2){uint32_t you=rd32(0x80320200+arg0*4);wrf32(you+0x84,(float)(int32_t)rd32(args));wrf32(you+0x88,(float)(int32_t)rd32(args+4));}
   else if(op==0x111&&arg0<=2)wr8(rd32(0x80320200+arg0*4)+0xa7,rd32(args)!=0);
-  else if(op==0x121||op==0x131)wr32(self+0x24,0); // Scene version / play-mode queries: normal play.
+  // CExFlow 0x121 (0x8008da44): a per-section miss record. 0/1 reset its counter (lbl_803201A4) and
+  // the missed flag (lbl_803201A0) that a Perfect fail (fn_80009ABC) sets; 2 counts the section when
+  // nothing was missed; 3 and 7 read them back; 4 fails Perfect; 5-9 set or read two more flags
+  // (fn_80009D60..D7C; 5 also prints a debug line). Tap Troupe clears the flag before each combo
+  // and cheers only when it is clear, so leaving it set stopped every cheer after the first miss.
+  else if(op==0x121){switch(arg0){
+    case 0:wr32(0x803201a4,0);break;
+    case 1:wr8(0x803201a0,0);break;
+    case 2:if(!rd8(0x803201a0))wr32(0x803201a4,rd32(0x803201a4)+1);break;
+    case 3:wr32(self+0x24,rd32(0x803201a4));break;
+    case 4:call(0x80009abc);break;
+    case 5:wr8(0x803201c0,1);break;
+    case 6:wr32(self+0x24,rd8(0x803201c0));break;
+    case 7:wr32(self+0x24,rd8(0x803201a0));break;
+    case 8:wr8(0x803201a2,rd32(args)!=0);break;
+    case 9:wr32(self+0x24,rd8(0x803201a2));break;
+  }}
+  else if(op==0x131)wr32(self+0x24,0); // Scene version / play-mode query: normal play.
   r[3]=0;
 }
 // The game's sequence user procedure (F0 E0 in a sound's program): it sets sequence variables from
@@ -433,6 +451,12 @@ static void call(uint32_t address){
       wr8(0x803201ba,1);perfect_failed=reason;emit(3,reason,0);
     }break;}
   case 0x80009a9c:case 0x80009e58:break; // Input visualizer / Perfect hit icon.
+  // CExScene::fn_8000975C(pos): moves the skip button and instruction example (lbl_803201D0/D4),
+  // which show only in a practice; the port plays no practice and does not create them (Cheer Readers).
+  case 0x8000975c:break;
+  // CExScene::fn_80009F24(channel): rumbles the Wii Remote with pattern "*****-----------"
+  // (Cheer Readers' big finish flip). Browsers have no Wii Remote motor; nothing else follows from it.
+  case 0x80009f24:break;
   case 0x801a7a20:case 0x801a7a90:{ // nw4r::math::SinFIdx / CosFIdx: 256-step table at 0x802dfe70 with deltas
     float x=f[1].d,a=fabsf(x);while(a>65536.0f)a-=65536.0f;uint32_t i=(uint32_t)a&0xffff;float frac=a-(float)i;uint32_t e=0x802dfe70+(i&0xff)*16;
     if(address==0x801a7a20){float v=rdf32(e)+frac*rdf32(e+8);f[1].d=x<0.0f?-v:v;}else f[1].d=rdf32(e+4)+frac*rdf32(e+12);break;}
@@ -440,6 +464,10 @@ static void call(uint32_t address){
   case 0x801a7850:f[1].d=expf(f[1].d);break;
   case 0x801a78f0:f[1].d=logf(f[1].d);break;
   case 0x8007bef8:base_canvas=(int32_t)r[4]<0?0:canvas[r[4]];break;
+  // CCellAnimManager::setBaseDefault / getBaseDefault: the base new animations attach to
+  // (Karate Man sets its own), the same value MyCanvas's base selection (0x8007bef8) sets.
+  case 0x801dc164:base_canvas=r[4];break;
+  case 0x801dc16c:r[3]=base_canvas;break;
   case 0x8007bf30:{uint32_t actor=r[4],index=r[5];r[3]=actor;r[4]=(int32_t)index<0?0:canvas[index];r[5]=0;r[6]=0;call(0x801dcfa4);break;}
   case 0x8007bf6c:{uint32_t i=r[4];wrf32(canvas[i]+0x8c,f[1].d);wrf32(canvas[i]+0x90,f[2].d);for(int a=0;a<2;a++)if(canvas_timing[i][a])wr8(canvas_timing[i][a]+37,0);break;}
   case 0x8007bfa8:wrf32(canvas[r[4]]+0x84,f[1].d);wrf32(canvas[r[4]]+0x88,f[2].d);break;
@@ -511,6 +539,17 @@ static void call(uint32_t address){
   // Archive/bank registration is completed by the static browser asset loader.
   case 0x801d3644:case 0x801d369c:case 0x801d3f94:case 0x801d41cc:case 0x801ed7d4:case 0x800db700:break;
   case 0x801db568:register_bank(r[4],r[6]&255);break; // CCellAnimManager::registBank(brcad, tpl, id)
+  // Shrimp Shuffle's shore: CDynTex renders the game's layout (its waves) into a 640x456 texture
+  // each frame. update calls the scene's callback (fn_8003669C), which draws the layout's colours,
+  // copies them out clearing only alpha (colour update off), then draws its alpha alone with the
+  // waves and starfish added (fn_8007C6C0, fn_8007C8A0); update copies the result into the texture.
+  // createBankScreen makes a bank whose one cell shows that texture across the screen. The port
+  // renders nothing into textures: the screen bank gets the placeholder bank's one-frame animation,
+  // and event 27 tells the renderer to draw the layout's two passes where that bank is drawn.
+  case 0x8007c288:wr32(r[3]+0x30,r[4]);wr16(r[3]+0x2c,640);wr16(r[3]+0x2e,456);break; // CDynTex(fn)
+  case 0x8007c348:break; // ~CDynTex: its texture memory is the port's, never allocated
+  case 0x8007c3a0:break; // CDynTex::update: see above
+  case 0x801db9c0:banks[r[5]&255]=banks[255];emit(27,r[5]&255,0);break; // createBankScreen(tex, id)
   case 0x801dba98:break; // endBank frees the bank's data; the browser keeps every bank and the next registBank replaces the id.
   case 0x801dc068:{uint32_t bank=r[4]&255;for(uint32_t i=0;i<actor_count;i++)if(actor_active[i]&&rd8(actors[i]+12)==bank)end_actor_at(i);break;} // endCellAnimByBank
   case 0x801d422c:r[3]=1;break;
@@ -522,11 +561,22 @@ static void call(uint32_t address){
     if(layout_count>=8)panic(layout_count,9);layout[layout_count++]=r[4];
     uint32_t setup=rd32(rd32(r[4])+0x10);
     if(setup==0x800399e4)emit(15,MESG_LAYOUT<<8,MESG_LAYOUT_BALLOON); // CBalloonLayout
+    else if(setup==0x80090408)emit(15,MESG_LAYOUT<<8,MESG_LAYOUT_LYRIC); // CLyricLayout
+    // Shrimp Shuffle's wave layout (fn_8007C474) binds wave_wave_loop, its game layout's
+    // animation 0, and plays it looping from the start. The game draws it only into its CDynTex
+    // (draw disabled here), which web/engine/renderer.mjs shows through the screen bank.
+    else if(setup==0x8007c474){emit(11,0x800,1);emit(11,0x100,0);}
     // Hole in One's CMyLayout gives its four messages to panes 0-3, hidden (fn_80072428).
     else if(setup==0x80072428){emit(15,MESG_LAYOUT<<8,MESG_LAYOUT_GOLF);for(uint32_t i=0;i<4;i++){emit(15,(MESG_REGISTER<<8)|i,0x20+i);emit(15,(MESG_VISIBLE<<8)|i,0);}}
     break;
   }
   case 0x801d6c50:r[3]=layout[r[4]];break;
+  // CLyricLayout::fn_800907D0 and fn_80090854 (Cheer Readers): message pane r4 shows the top or
+  // bottom lyric line (CTickFlow::fn_801DEF58), which moves to y = -f1, z 0.
+  case 0x800907d0:case 0x80090854:{
+    int bottom=address==0x80090854;wr32(r[3]+(bottom?0x40:0x3c),r[4]);
+    emit(15,(MESG_REGISTER<<8)|(r[4]&255),bottom?0x31:0x30);emit(15,(MESG_TEXT_Y<<8)|(r[4]&255),fbits(-(float)f[1].d));break;
+  }
   case 0x801d9a2c:wr32(r[3],0x80430000);break;
   case 0x801e1cc0:r[3]=create_flow(r[4],f[1].d);break;
   case 0x800dc460:case 0x80199b80:break;
