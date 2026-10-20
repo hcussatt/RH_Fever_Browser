@@ -105,7 +105,9 @@ export async function createAudio(context,gameUrl,{envelope}={}){
    follow(gain2.gain,start,n.changes,['volume2'],s=>(s.volume2/127)**2,t,n,stretch);
    follow(pan.pan,start,n.changes,['pan'],panOf,t,n,stretch);
    follow(source.detune,start,n.changes,['bend','bendRange'],cents,t,n,stretch);
-   if(n.sweepPitch){const sweep=n.sweepPitch>32767?n.sweepPitch-65536:n.sweepPitch;source.playbackRate.setValueAtTime(rate*tunePitch*2**(sweep/(64*12)),t);source.playbackRate.exponentialRampToValueAtTime(rate*tunePitch,t+Math.max(.003,duration));}
+   // nw4r Channel's sweep (sequence.mjs): from n.sweep semitones off back to the note's pitch,
+   // linearly in semitones, over its porta time (in 3 ms mixer steps) or its ticks.
+   if(n.sweep){const end=t+(n.sweepMs!=null?n.sweepMs/1000:duration);source.playbackRate.setValueAtTime(rate*tunePitch*2**(n.sweep/12),t);if(end>t)source.playbackRate.exponentialRampToValueAtTime(rate*tunePitch,end);}
    source.connect(env).connect(gain).connect(gain2).connect(pan).connect(handleGain);source.start(t);
    voice.notes.push({source,pan,basePan:(start.pan-64)/63+basePan,rate,start:t});
    const sampleDuration=source.buffer.duration/(rate*tunePitch*2**(cents(start)/1200));

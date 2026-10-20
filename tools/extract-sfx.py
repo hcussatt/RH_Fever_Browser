@@ -34,6 +34,7 @@ LIVE=('volume','volume2','pan','bend','bendRange')
 # The longest a released note can still sound: platform.c envelope_curve's 4096 mixer frames of 3 ms.
 RELEASE=4096*.003
 def s16(x):return (x+0x8000&0xffff)-0x8000
+def f32(x):return struct.unpack('>f',struct.pack('>f',x))[0]
 def trace(seq,start,bank_programs):
  notes=[];queue=[(start,0)];tracks=0;variables=collections.defaultdict(lambda:-1);info={'dynamic':False,'globals':{}}
  def read(v):
@@ -47,6 +48,7 @@ def trace(seq,start,bank_programs):
  player={'tempo':120,'timebase':48}
  while queue:
   pc,t=queue.pop(0);state={'program':0,'volume':127,'volume2':127,'pan':64,'transpose':0,'bend':0,'bendRange':2,'noteWait':1,**player};stack=[];loops=[];pending={};steps=0
+  porta_key,porta=60,False
   # nw4r SeqTrack applies its volume, pan and pitch bend to the notes it is still playing, and
   # a timed command (0xa3) moves one there by one step a tick (MoveValue). moves: the moves
   # under way (name -> from, to, start, seconds); live: this track's notes that may still sound.
@@ -102,6 +104,15 @@ def trace(seq,start,bank_programs):
     rate=2**((op+state['transpose']-p['key']+now['bend']/128*now['bendRange'])/12)*p['pitch']
     duration=length*60/state['tempo']/state['timebase'] if length else waves[p['wave']]['samples']/waves[p['wave']]['rate']/rate
     note=dict(state,**now,program=bank_programs+state['program'],time=t,note=op,velocity=velocity,length=length,duration=duration,random=pending.copy())
+    # nw4r SeqTrack::NoteOn's pitch sweep: the track's sweep pitch (0xe3, in 64ths of a semitone)
+    # plus, with portamento on (0xc9 sets its key, 0xce switches it), the slide from the last key.
+    # It returns to the note's pitch over (porta time² x |sweep|) / 32 steps of 5 ms (0xcf), or with
+    # no porta time over the note's ticks (none for a note without a length).
+    key=max(0,min(127,op+state['transpose']))
+    sweep=f32(s16(state.get('sweepPitch',0))*0.015625)+(porta_key-key if porta else 0)
+    if sweep and state.get('portaTime'):note.update(sweep=sweep,sweepMs=(int(f32(f32(state['portaTime']**2)*abs(sweep)))>>5)*5)
+    elif sweep and length:note['sweep']=sweep
+    porta_key=key
     for name in LIVE:
      if name in moves and t<moves[name][2]+moves[name][3]:note.setdefault('changes',[]).append([0,name,moves[name][1],moves[name][2]+moves[name][3]-t])
     notes.append(note);live.append(note)
@@ -169,6 +180,8 @@ def trace(seq,start,bank_programs):
       for n in live:n.setdefault('changes',[]).append([t-n['time'],name,v,seconds])
      elif ramp:raise ValueError(f'timed {name} at {at:x} is not modelled')
      state[name]=v
+     if op==0xc9:porta_key,porta=(v+state['transpose'])&255,True
+     elif op==0xce:porta=v!=0
      if random is not None:pending[name]=random
     elif op not in [0xc6,0xde]:raise ValueError(f'unhandled {op:x} at {at:x}')
    elif 0xe0<=op<=0xe3:
