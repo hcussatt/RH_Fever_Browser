@@ -5,7 +5,7 @@ Original instructions remain the behavioral reference while readable recovery
 continues. This is static recompilation, not a claim of completed decompilation.
 Unsupported instructions fail the build; unsupported external calls trap.
 """
-import re,struct,json,subprocess,os,tempfile,pathlib
+import re,struct,json,subprocess,os,tempfile,pathlib,hashlib
 from paths import BUILD,DECOMP,DOL,assets,game,manifest,require
 GAME=game()
 blob=require(DOL).read_bytes()
@@ -44,17 +44,31 @@ for line in (DECOMP/'config/SOME01/symbols.txt').read_text().splitlines():
     if size and (any(lo<=a<hi for lo,hi,_ in ranges) or name in SHARED_FUNCTIONS):funcs.append((a,int(size[1],0),name))
 # Disassemble the DOL's text sections directly. Gekko mode is required:
 # default binutils reads paired-single instructions as unrelated VSX ones.
+# Every game reads the same disassembly, so it is kept in build/ keyed by the
+# DOL, the objdump version and its arguments, and only this game's functions are parsed.
 objdump=os.environ.get('RHF_OBJDUMP','powerpc-eabi-objdump')
-text=''
-with tempfile.TemporaryDirectory() as tmp:
-    for i in range(7):
-        off,start,size=u32(i*4),u32(0x48+i*4),u32(0x90+i*4)
-        if not size:continue
-        part=os.path.join(tmp,f'text{i}.bin')
-        with open(part,'wb') as f:f.write(blob[off:off+size])
-        text+=subprocess.check_output([objdump,'-D','-b','binary','-m','powerpc:common','-EB','-M','gekko',f'--adjust-vma={start:#x}',part],text=True)
+args=['-D','-b','binary','-m','powerpc:common','-EB','-M','gekko']
+key=hashlib.sha1(blob+subprocess.check_output([objdump,'--version'])+repr(args).encode()).hexdigest()
+cache=BUILD/'disasm'/f'{key}.txt'
+if cache.exists():text=cache.read_text()
+else:
+    text=''
+    with tempfile.TemporaryDirectory() as tmp:
+        for i in range(7):
+            off,start,size=u32(i*4),u32(0x48+i*4),u32(0x90+i*4)
+            if not size:continue
+            part=os.path.join(tmp,f'text{i}.bin')
+            with open(part,'wb') as f:f.write(blob[off:off+size])
+            text+=subprocess.check_output([objdump,*args,f'--adjust-vma={start:#x}',part],text=True)
+    cache.parent.mkdir(parents=True,exist_ok=True)
+    partial=cache.with_suffix(f'.{os.getpid()}.tmp');partial.write_text(text);partial.replace(cache)
+wanted={pc for a,size,_ in funcs for pc in range(a,a+size,4)}
 decoded={}
 for line in text.splitlines():
+    head=line.split(':',1)[0].strip()
+    try:
+        if int(head,16) not in wanted:continue
+    except ValueError:continue
     m=re.match(r'\s*([0-9a-f]+):\s+(?:[0-9a-f]{2} ){3}[0-9a-f]{2}\s+(\S+)\s*(.*)',line)
     if not m:continue
     address=int(m[1],16);mnemonic=m[2].rstrip('+-');ops=m[3].split('<')[0].strip()
@@ -63,7 +77,6 @@ for line in text.splitlines():
         if re.fullmatch('[0-9a-f]{8}',target):fields[-1]='0x'+target
         ops=','.join(fields)
     decoded[address]=type('Instruction',(),dict(address=address,mnemonic=mnemonic,op_str=ops))
-
 def reg(s):
     if re.fullmatch('r[0-9]+',s):return 'r['+s[1:]+']'
     if re.fullmatch('f[0-9]+',s):return 'f['+s[1:]+'].d'

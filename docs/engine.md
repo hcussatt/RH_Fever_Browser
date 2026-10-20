@@ -280,7 +280,7 @@ Nothing on the frame loop or audio path ever waits on the network.
    wrong-input addresses and the flow constructor, plus any extra platform calls the game makes
    (`GAME_CALLS`) and per-frame hooks (`GAME_AFTER_UPDATE`). The build fails with
    the address of any call that is still missing.
-3. `./build.sh <iso>` builds and tests every game that has a manifest.
+3. `./build.sh <iso>` builds and tests every game that has a manifest, several games at a time (`RHF_JOBS`), reusing cached disassembly, decoded samples and unchanged WASM.
 4. Add the game to its remix set in `web/engine/menu.mjs` (the first remix whose
    graphics it has on the disc, `cellanim/<game>/remix0N`); games in no remix are
    listed under Other games.

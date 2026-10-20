@@ -35,7 +35,7 @@ git config core.hooksPath hooks
 ./serve.sh --open
 ```
 
-`build.sh` extracts, translates, builds WASM, converts assets, stages web sources, generates timelines, and tests all manifested games. `--skip-tests` is available for iteration, but run relevant checks before reporting success. Existing built outputs can be served without rebuilding. Use the server's printed URL.
+`build.sh` extracts, translates, builds WASM, converts assets, stages web sources, generates timelines, and tests all manifested games. It builds games side by side (`tools/build-game.sh`, one per CPU core; `RHF_JOBS` overrides) with each game's log in `build/logs/`. It keeps the DOL disassembly (`build/disasm/`) and decoded DSP samples (`build/cache/dsp/`) keyed by their exact inputs, and `tools/build-core.sh` skips emcc when every file of the last compile, its flags and the emcc version are unchanged. These caches never change output; bump `DSP_VERSION` in `tools/nintendo_audio.py` if `decode_dsp` output ever changes. `--skip-tests` is available for iteration, but run relevant checks before reporting success. Existing built outputs can be served without rebuilding. Use the server's printed URL.
 
 For web-only iteration, `tools/stage-web.sh <game>` copies engine source, the game page, and manifest to `dist/`; `tools/stage-index.sh` refreshes the picker. Changes to code, assets, or charts require the corresponding build pipeline steps.
 

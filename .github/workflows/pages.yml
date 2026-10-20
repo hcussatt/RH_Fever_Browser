@@ -78,7 +78,7 @@ jobs:
           python tests/test-public-policy.py
           python -m compileall -q tools scripts tests
           find web tools tests -name '*.mjs' -exec node --check {} \;
-          sh -n build.sh serve.sh tools/build-core.sh
+          sh -n build.sh serve.sh tools/build-core.sh tools/build-game.sh tools/test-game.sh tools/stage-web.sh
       - uses: actions/download-artifact@v4
         with:
           pattern: core-*
