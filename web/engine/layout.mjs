@@ -286,7 +286,8 @@ export async function createLayout(g,{spec=g.manifest.wii.layout,file='layout.js
   }
   if(alphaPass){img=alphaImage(img,Math.round(alpha*255));alpha=1;}
   ctx.save();
-  if(pass?.snap){const M=snapped(mul(m,[r.w,0,0,r.h,r.left,r.top-r.h]),1,1);ctx.setTransform(1,0,0,1,0,0);ctx.beginPath();ctx.rect(M[4],M[5],M[0],M[3]);}
+  // Snapped, the texture is laid on the rounded rectangle too, so no edge pixel is part covered.
+  if(pass?.snap){const M=snapped(mul(m,[r.w,0,0,r.h,r.left,r.top-r.h]),1,1);m=mul(M,[1/r.w,0,0,1/r.h,-r.left/r.w,(r.h-r.top)/r.h]);ctx.setTransform(1,0,0,1,0,0);ctx.beginPath();ctx.rect(M[4],M[5],M[0],M[3]);}
   else{ctx.setTransform(...m);ctx.beginPath();ctx.rect(r.left,r.top-r.h,r.w,r.h);}
   ctx.clip();
   ctx.setTransform(...mul(m,[A[0],A[1],A[2],A[3],ox,oy]));ctx.globalAlpha=alpha;lay(ctx,img);

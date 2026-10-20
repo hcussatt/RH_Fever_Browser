@@ -97,12 +97,26 @@ export async function createRenderer(g,canvas){
   l.layout.draw(fill(alpha,'#000'),alpha,{snap:true,additive:l.spec.screen.additive});
   let x=fill(inverse,'#fff');x.globalCompositeOperation='difference';x.drawImage(alpha,0,0);
   x=fill(product,'#000');x.drawImage(color,0,0);x.globalCompositeOperation='multiply';x.drawImage(alpha,0,0);
+  // The columns the layout covers, read once (the shore's panes keep their width).
+  if(!screenTex.span){
+   const d=alpha.getContext('2d').getImageData(0,0,640,456).data;let x0=640,x1=0;
+   for(let y=0;y<456;y++)for(let x=0;x<640;x++)if(d[(y*640+x)*4]){if(x<x0)x0=x;if(x>=x1)x1=x+1;}
+   if(x1>x0)screenTex.span=[x0,x1];
+  }
  }
+ // The game tiles the texture side by side (Shrimp Shuffle's shore, one tile per 468 texels). The
+ // Wii draws it texel for texel, but the canvas magnifies it, and filtering would blend each tile's
+ // edge with the transparent texels beside it: the background then showed through as a thin line
+ // between tiles. Each tile is clipped to its covered columns, rounded to whole pixels, so
+ // neighbouring tiles meet edge to edge.
  function drawScreen(om,alpha){
+  const span=screenTex.span,flat=!om[1]&&!om[2];
+  ctx.save();
+  if(span&&flat){const X=x=>Math.round(om[0]*(x-320)+om[4]);ctx.setTransform(1,0,0,1,0,0);ctx.beginPath();ctx.rect(X(span[0]),0,X(span[1])-X(span[0]),ctx.canvas.height);ctx.clip();}
   ctx.setTransform(...om);ctx.globalAlpha=alpha;
   ctx.globalCompositeOperation='multiply';ctx.drawImage(screenTex.inverse,-320,-228);
   ctx.globalCompositeOperation='lighter';ctx.drawImage(screenTex.product,-320,-228);
-  ctx.globalCompositeOperation='source-over';
+  ctx.restore();
  }
  function drawActor(a,origin){
   const k=key(a),m=matrices.get(a);if(!m)return;
