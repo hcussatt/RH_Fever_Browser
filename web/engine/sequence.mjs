@@ -18,7 +18,7 @@ export function traceSequence(seq,start,bank,{programs,waves},globals,userproc={
  while(queue.length){
   let [pc,t]=queue.shift();
   const state={program:0,volume:127,volume2:127,pan:64,transpose:0,bend:0,bendRange:2,noteWait:1,...player},stack=[],loops=[],pending={};
-  let steps=0,live=[];
+  let steps=0,live=[],portaKey=60,porta=false;
   const moves=new Map();
   const current=(name,at)=>{
    if(!moves.has(name))return state[name];
@@ -61,6 +61,11 @@ export function traceSequence(seq,start,bank,{programs,waves},globals,userproc={
     const duration=length?length*60/state.tempo/state.timebase:waves[p.wave].samples/waves[p.wave].rate/rate;
     const note={...state,...now,program:bank+state.program,time:t,note:op,velocity,length,duration,random:{...pending}};
     for(const name of LIVE){const m=moves.get(name);if(m&&t<m[2]+m[3])(note.changes??=[]).push([0,name,m[1],m[2]+m[3]-t]);}
+    // nw4r SeqTrack::NoteOn's pitch sweep: see extract-sfx.py.
+    const key=Math.max(0,Math.min(127,op+state.transpose)),sweep=Math.fround(s16(state.sweepPitch??0)*.015625)+(porta?portaKey-key:0);
+    if(sweep&&state.portaTime){note.sweep=sweep;note.sweepMs=(Math.trunc(Math.fround(Math.fround(state.portaTime**2)*Math.abs(sweep)))>>5)*5;}
+    else if(sweep&&length)note.sweep=sweep;
+    portaKey=key;
     notes.push(note);live.push(note);
     if(state.noteWait)t+=duration;
    }
@@ -120,6 +125,7 @@ export function traceSequence(seq,start,bank,{programs,waves},globals,userproc={
      }
      else if(ramp)throw new Error(`timed ${name} at ${at.toString(16)} is not modelled`);
      state[name]=v;
+     if(op===0xc9){portaKey=(v+state.transpose)&255;porta=true;}else if(op===0xce)porta=v!==0;
      if(random_!==null)pending[name]=random_;
     }
     else if(op!==0xc6&&op!==0xde)throw new Error(`unhandled ${op.toString(16)} at ${at.toString(16)}`);

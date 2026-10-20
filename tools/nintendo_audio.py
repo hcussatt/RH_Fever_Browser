@@ -1,4 +1,6 @@
 """Local RWAR/RWAV extraction using the recovered NW4R layouts."""
+import hashlib
+import os
 import pathlib
 import struct
 import subprocess
@@ -6,6 +8,7 @@ import tempfile
 import wave
 import numpy as np
 
+DSP_VERSION=1 # change when decode_dsp's output changes, to retire cached results
 u16=lambda b,o=0:struct.unpack_from('>H',b,o)[0]
 u32=lambda b,o=0:struct.unpack_from('>I',b,o)[0]
 
@@ -21,19 +24,35 @@ def wave_files(data):
         yield result
 
 def decode_dsp(raw, coefs, yn1, yn2, length):
-    """Nintendo DSP rounding and saturated history, also used by the browser bridge."""
-    out=[]
+    """Nintendo DSP rounding and saturated history, also used by the browser bridge.
+
+    Local builds set RHF_DSP_CACHE to a folder that keeps each decoded result, keyed by
+    every input, because many games decode the same samples (the results music)."""
+    cache=os.environ.get('RHF_DSP_CACHE')
+    if cache:
+        key=hashlib.sha1(bytes(raw)+repr((DSP_VERSION,tuple(coefs),yn1,yn2,length)).encode()).hexdigest()
+        path=pathlib.Path(cache)/f'{key}.npy'
+        if path.exists():return np.load(path)
+    assert len(raw)%8==0
+    out=[];append=out.append
     for frame in range(0,len(raw),8):
         ps=raw[frame]; scale=1<<(ps&15);pred=ps>>4
         assert pred<8
         c0,c1=coefs[pred*2:pred*2+2]
-        for i in range(14):
-            nibble=(raw[frame+1+i//2]>>(4 if i%2==0 else 0))&15
-            if nibble>=8:nibble-=16
-            value=(c0*yn1+c1*yn2+(nibble*scale<<11)+1024)>>11
-            value=max(-32768,min(32767,value))
-            out.append(value);yn2,yn1=yn1,value
-    return np.array(out[:length],dtype=np.int16)
+        for b in raw[frame+1:frame+8]:
+            for nibble in (b>>4,b&15):
+                if nibble>=8:nibble-=16
+                value=(c0*yn1+c1*yn2+(nibble*scale<<11)+1024)>>11
+                if value>32767:value=32767
+                elif value<-32768:value=-32768
+                append(value);yn2=yn1;yn1=value
+    result=np.array(out[:length],dtype=np.int16)
+    if cache:
+        path.parent.mkdir(parents=True,exist_ok=True)
+        partial=path.with_suffix(f'.{os.getpid()}.tmp')
+        with partial.open('wb') as f:np.save(f,result)
+        partial.replace(path)
+    return result
 
 def decode_wave(data, verify=False):
     assert data[:4]==b'RWAV'

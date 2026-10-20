@@ -10,9 +10,29 @@ import {assetResponse,requireAssets} from './assets.mjs';
 const gameUrl=new URL('./',location.href);
 const canvas=document.querySelector('canvas'),overlay=document.querySelector('#overlay'),play=document.querySelector('#play'),status=document.querySelector('#status');
 let g,renderer,audio,music,startTime,running=false,frame=0,sfx,paused=false,results,resultsStart,phase='game',track,backing;const input=createInputQueue(),metrics=[];
+// Crash log: every runtime error is kept in this browser's storage with the game, frame and chart
+// tick, so a reload does not lose it. rhf.crashLog() returns it; after a crash the page offers it
+// as a file.
+const CRASH_LOG='rhf-crash-log';
+function crashLog(){try{return JSON.parse(localStorage.getItem(CRASH_LOG)||'[]');}catch{return [];}}
+function logCrash(e,kind){
+ const entry={time:new Date().toISOString(),page:location.pathname,kind,phase,frame,tick:g?.tick??null,message:String(e?.message??e),stack:String(e?.stack??''),userAgent:navigator.userAgent};
+ try{localStorage.setItem(CRASH_LOG,JSON.stringify([...crashLog(),entry].slice(-20)));}catch{}
+ return entry;
+}
+addEventListener('error',e=>logCrash(e.error??e.message,'uncaught'));
+addEventListener('unhandledrejection',e=>logCrash(e.reason,'unhandled rejection'));
 // Debug and QA handle (tests and audio checks read it).
-window.rhf={};
-function fail(e){running=false;audio?.suspend();overlay.hidden=false;play.disabled=true;play.textContent='Runtime error';status.textContent=e.message;console.error(e);window.rhf.error=e.stack;}
+window.rhf={crashLog};
+function fail(e){
+ running=false;audio?.suspend();overlay.hidden=false;play.disabled=true;play.textContent='Runtime error';status.textContent=e.message;console.error(e);window.rhf.error=e.stack;
+ logCrash(e,'runtime error');
+ if(!overlay.querySelector('#crash-log')){
+  const a=Object.assign(document.createElement('a'),{id:'crash-log',download:'rhf-crash-log.json',textContent:'Save crash log'});a.style.color='#d2ded5';
+  a.onclick=()=>{a.href=URL.createObjectURL(new Blob([JSON.stringify(crashLog(),null,2)],{type:'application/json'}));};
+  overlay.append(a);
+ }
+}
 try{
  await requireAssets(gameUrl.pathname.split('/').filter(Boolean).at(-1));
  const context=new AudioContext({latencyHint:'interactive'});audio=context;
@@ -25,7 +45,7 @@ try{
  const controls=!inputs.has(6)?'Space / X / click · '+action:!inputs.has(4)?`A + B together · ${action} (A: Space / Left Shift / click, B: Right Shift / right click)`:`${action} · A: Space / X / Left Shift / click · B: Right Shift / right click · some cues need A + B together`;for(const e of document.querySelectorAll('.controls'))e.textContent=controls;
  renderer=await createRenderer(g,canvas);renderer.draw();music=await musicData;sfx=await createAudio(audio,gameUrl,{envelope:g.envelope});
  results=await createResults(g,canvas);
- window.rhf={g,renderer,audio,sfx,results,inputs:input.presses,metrics,heardTime,stats:g.stats,result:null,get track(){return track;},get phase(){return phase;},get frame(){return frame;}};
+ window.rhf={g,renderer,audio,sfx,results,inputs:input.presses,metrics,heardTime,stats:g.stats,result:null,crashLog,get track(){return track;},get phase(){return phase;},get frame(){return frame;}};
  play.disabled=false;play.textContent='Play';
 }catch(e){fail(e);}
 // Every sound plays at its chart tick on the audio clock: the chart's own sounds from the build's

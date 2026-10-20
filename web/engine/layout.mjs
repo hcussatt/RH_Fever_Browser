@@ -178,7 +178,7 @@ export async function createLayout(g,{spec=g.manifest.wii.layout,file='layout.js
   const indMtx=(src.indSrts||[]).map(indMatrix);
   const [t0,t1,t2]=p.texcoords||[[0,0],[1,0],[0,1]],vc=p.vertexColors||[[255,255,255,255],[255,255,255,255],[255,255,255,255],[255,255,255,255]];
   const chan=src.chanCtrl?src.chanCtrl.map(x=>x===0):[false,false];
-  const V=new Float64Array(32),start=new Float64Array(16),ind=new Float64Array(4),OUT=new Float64Array(3);
+  const V=new Float64Array(32),ras=new Float64Array(4),start=new Float64Array(16),ind=new Float64Array(4),OUT=new Float64Array(3);
   for(let i=0;i<3;i++)for(let k=0;k<4;k++)start[4+i*4+k]=m.tevColors[i][k]/255;
   // Each stage, set up once: its konstants, input offsets, operation and indirect lookup.
   const stages=src.stages.map(st=>{
@@ -199,8 +199,8 @@ export async function createLayout(g,{spec=g.manifest.wii.layout,file='layout.js
    const s=(x+.5)/W,t=(y+.5)/H,u=t0[0]+s*(t1[0]-t0[0])+t*(t2[0]-t0[0]),v=t0[1]+s*(t1[1]-t0[1])+t*(t2[1]-t0[1]),du=u-.5,dv=v-.5;
    V.set(start);V[V_ONE]=1;V[V_HALF]=.5;V[V_ZERO]=0;
    // The rasterised channel: vertex colours (or the material colour), bilinear across the pane.
-   for(let k=0;k<4;k++)V[V_RAS+k]=((vc[0][k]*(1-s)+vc[1][k]*s)*(1-t)+(vc[2][k]*(1-s)+vc[3][k]*s)*t)/255;
-   if(chan[0])for(let k=0;k<3;k++)V[V_RAS+k]=m.matColor[k]/255;if(chan[1])V[V_RAS+3]=m.matColor[3]/255;
+   for(let k=0;k<4;k++)ras[k]=((vc[0][k]*(1-s)+vc[1][k]*s)*(1-t)+(vc[2][k]*(1-s)+vc[3][k]*s)*t)/255;
+   if(chan[0])for(let k=0;k<3;k++)ras[k]=m.matColor[k]/255;if(chan[1])ras[3]=m.matColor[3]/255;
    for(let n=0;n<stages.length;n++){
     const S=stages[n];
     if(S.map){
@@ -215,7 +215,8 @@ export async function createLayout(g,{spec=g.manifest.wii.layout,file='layout.js
      }
      sample(S.map,su,sv,V,V_TEX);
     }else V[V_TEX]=V[V_TEX+1]=V[V_TEX+2]=V[V_TEX+3]=0;
-    if(!S.ras)V[V_RAS]=V[V_RAS+1]=V[V_RAS+2]=V[V_RAS+3]=0;
+    // A stage without a colour channel reads zero; the next stage with one reads it again.
+    for(let k=0;k<4;k++)V[V_RAS+k]=S.ras?ras[k]:0;
     V[V_KONST]=S.konst[0];V[V_KONST+1]=S.konst[1];V[V_KONST+2]=S.konst[2];V[V_KONST+3]=S.konstA;
     const co=S.co,cs=S.cs;
     for(let k=0;k<3;k++){
@@ -263,8 +264,8 @@ export async function createLayout(g,{spec=g.manifest.wii.layout,file='layout.js
    ctx.globalAlpha=alphaPass?alpha*alpha:alpha;ctx.drawImage(img,0,0);return;
   }
   const name=materialImage[p.material];if(!name)return;
-  const [color0,color1]=live[p.material].tevColors;let img=tint(images[name],{color0,color1},p.vertexColors?.[0]);const r=rect(p),W=img.width,H=img.height;
-  if(alphaPass){img=alphaImage(img,Math.round(alpha*255));alpha=1;}
+  const vc=p.vertexColors,gradient=vc?.some(v=>v.some((x,k)=>x!==vc[0][k]));
+  const [color0,color1]=live[p.material].tevColors;let img=tint(images[name],{color0,color1},gradient?undefined:vc?.[0]);const r=rect(p),W=img.width,H=img.height;
   // Map texture coordinates of the top-left, top-right and bottom-left corners onto the pane.
   const [t0,t1,t2]=p.texcoords||[[0,0],[1,0],[0,1]];
   const ux=(t1[0]-t0[0])*W,uy=(t1[1]-t0[1])*H,vx=(t2[0]-t0[0])*W,vy=(t2[1]-t0[1])*H,det=ux*vy-uy*vx;if(!det)return;
@@ -273,14 +274,40 @@ export async function createLayout(g,{spec=g.manifest.wii.layout,file='layout.js
   const inv=[vy/det,-uy/det,-vx/det,ux/det];
   const A=[ax[0]*inv[0]+ay[0]*inv[1],ax[1]*inv[0]+ay[1]*inv[1],ax[0]*inv[2]+ay[0]*inv[3],ax[1]*inv[2]+ay[1]*inv[3]];
   const ox=r.left-(A[0]*t0[0]*W+A[2]*t0[1]*H),oy=r.top-(A[1]*t0[0]*W+A[3]*t0[1]*H);
+  const lay=(x,img)=>{
+   if(p.texcoords?.some(t=>t.some(v=>v<0||v>1))){x.fillStyle=x.createPattern(img,'repeat');x.fillRect(Math.min(...p.texcoords.map(t=>t[0]))*W,Math.min(...p.texcoords.map(t=>t[1]))*H,Math.abs(ux)+Math.abs(vx),Math.abs(uy)+Math.abs(vy));}
+   else x.drawImage(img,0,0);
+  };
+  if(gradient){
+   let s=shadedImage(img,p,r,[A[0],A[1],A[2],A[3],ox,oy],lay);
+   if(alphaPass){s=alphaImage(s,Math.round(alpha*255));alpha=1;}
+   const M=mul(m,[r.w/s.width,0,0,-r.h/s.height,r.left,r.top]);
+   ctx.setTransform(...(pass?.snap?snapped(M,s.width,s.height):M));ctx.globalAlpha=alpha;ctx.drawImage(s,0,0);return;
+  }
+  if(alphaPass){img=alphaImage(img,Math.round(alpha*255));alpha=1;}
   ctx.save();
-  if(pass?.snap){const M=snapped(mul(m,[r.w,0,0,r.h,r.left,r.top-r.h]),1,1);ctx.setTransform(1,0,0,1,0,0);ctx.beginPath();ctx.rect(M[4],M[5],M[0],M[3]);}
+  // Snapped, the texture is laid on the rounded rectangle too, so no edge pixel is part covered.
+  if(pass?.snap){const M=snapped(mul(m,[r.w,0,0,r.h,r.left,r.top-r.h]),1,1);m=mul(M,[1/r.w,0,0,1/r.h,-r.left/r.w,(r.h-r.top)/r.h]);ctx.setTransform(1,0,0,1,0,0);ctx.beginPath();ctx.rect(M[4],M[5],M[0],M[3]);}
   else{ctx.setTransform(...m);ctx.beginPath();ctx.rect(r.left,r.top-r.h,r.w,r.h);}
   ctx.clip();
-  ctx.setTransform(...mul(m,[A[0],A[1],A[2],A[3],ox,oy]));ctx.globalAlpha=alpha;
-  if(p.texcoords?.some(t=>t.some(x=>x<0||x>1))){ctx.fillStyle=ctx.createPattern(img,'repeat');ctx.fillRect(Math.min(...p.texcoords.map(t=>t[0]))*W,Math.min(...p.texcoords.map(t=>t[1]))*H,Math.abs(ux)+Math.abs(vx),Math.abs(uy)+Math.abs(vy));}
-  else ctx.drawImage(img,0,0);
+  ctx.setTransform(...mul(m,[A[0],A[1],A[2],A[3],ox,oy]));ctx.globalAlpha=alpha;lay(ctx,img);
   ctx.restore();
+ }
+ // A picture whose corners have different vertex colours (Shrimp Shuffle's sea-to-sand strip,
+ // Working Dough's alarm light edges): GX interpolates them across the pane and multiplies each
+ // texel by the result, so the texture is laid onto a pane-sized surface, which is then shaded.
+ const shaded=new WeakMap();
+ function shadedImage(img,p,r,T,lay){
+  if(!shaded.has(img))shaded.set(img,new Map());
+  const cache=shaded.get(img),key=JSON.stringify([r.w,r.h,p.vertexColors,T]);if(cache.has(key))return cache.get(key);
+  const w=Math.max(1,Math.ceil(r.w)),h=Math.max(1,Math.ceil(r.h)),c=document.createElement('canvas');c.width=w;c.height=h;
+  const x=c.getContext('2d',{willReadFrequently:true});
+  x.setTransform(...mul([w/r.w,0,0,-h/r.h,-r.left*w/r.w,r.top*h/r.h],T));lay(x,img);
+  const d=x.getImageData(0,0,w,h),q=d.data,vc=p.vertexColors;
+  for(let j=0;j<h;j++){const t=(j+.5)/h;for(let i=0;i<w;i++){const s=(i+.5)/w,k=(j*w+i)*4;
+   for(let ch=0;ch<4;ch++)q[k+ch]=q[k+ch]*((vc[0][ch]*(1-s)+vc[1][ch]*s)*(1-t)+(vc[2][ch]*(1-s)+vc[3][ch]*s)*t)/255;}}
+  x.putImageData(d,0,0);
+  if(cache.size>=16)cache.delete(cache.keys().next().value);cache.set(key,c);return c;
  }
  const windows=new WeakMap();
  function drawWindow(ctx,p,m,alpha){
