@@ -1,0 +1,38 @@
+{
+  "$schema": "../../schemas/game.schema.json",
+  "schemaVersion": 1,
+  "id": "panel",
+  "title": "Cheer Readers",
+  "action": "Flip",
+  "platform": "wii",
+  "wii": {
+    "scene": "Panel",
+    "sceneVariant": 1,
+    "cellanim": "EN/content2/cellanim/panel/ver0/cellanim.szs",
+    "units": [
+      "Game/Panel/ScenePanel.cpp",
+      "Game/Panel/MyChecker.cpp",
+      "Game/Panel/MyFlow.cpp"
+    ],
+    "banks": [
+      "panel",
+      "panel_bg",
+      "panel_image_00",
+      "panel_image_01",
+      "panel_image_02"
+    ],
+    "projection": [
+      854,
+      480
+    ],
+    "endsWithMusic": true,
+    "messageLayout": {
+      "archive": "EN/content2/layout/layout_common.szs",
+      "file": "lyrics.brlyt",
+      "font": 1
+    }
+  },
+  "web": {
+    "enabled": false
+  }
+}

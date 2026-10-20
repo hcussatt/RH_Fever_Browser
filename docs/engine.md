@@ -128,6 +128,15 @@ current profile.
 - Actors made while a scene's base canvas is set attach to it, so one canvas
   can carry a whole scene (Launch Party: over 600 animations).
 
+### Dynamic textures
+
+Shrimp Shuffle draws its shore layout into a texture (`CDynTex`) and shows it
+through one cell (`CCellAnimManager::createBankScreen`, event 27). Its callback
+draws the layout twice, keeping the first pass's colour and the second's alpha
+(additive panes, named in the manifest's `layout.screen.additive`). The
+renderer repeats both passes on 640 by 456 canvases and draws the screen bank's
+actors with them, snapping texture edges to whole pixels as the EFB copy does.
+
 ## Layouts
 
 Some games draw 2D layouts (NW4R lyt) over the cell animations, like Love Rap's
@@ -140,7 +149,11 @@ two colour registers, animations stepped once per game frame like
 A material with its own TEV stages (the Superb stamp's stars) is combined per
 texel like GX, with its texture SRT and colour register animations (RLTS,
 RLMC). Each glyph is cut from the font sheet with a clear border, so scaled
-text does not pick up its neighbours' edges.
+text does not pick up its neighbours' edges. Fonts may be I4 or IA4 (the lyric
+layout's), kept as intensity and alpha. Indirect TEV stages (Shrimp Shuffle's
+waves) offset a stage's texture lookup by an indirect texture through its
+matrix, as `SetupGX` unpacks them; any indirect setting the converter does not
+model raises.
 The game's layout class is replaced in `adapters/<id>/game.h` by layout events
 (kind 11: play or stop an animation, set a text box's message, offset a pane),
 indexing the manifest's `animations`, `texts` and `panes` lists.
@@ -189,6 +202,11 @@ Charts can also drive three screen effects through ExFlow:
   title and singer from `riq_bonus_E.bmg` and plays `lyrics_title_show`. Working
   Dough registers it, so its manifest `layout` is the lyric layout with
   `"messages": "bonus"`; Remix 3 opens on it with "Tonight".
+- The same layout's two lyric lines (`T_lyrics_Top_00`, `T_lyrics_Down_00`)
+  are message panes when a game registers them (`CLyricLayout::fn_800907D0`
+  and `fn_80090854`, targets `0x30` and `0x31`): Cheer Readers' calls. Its
+  manifest names `lyrics.brlyt` as `wii.messageLayout` with that layout's own
+  font (`"font": 1`).
 
 ## Audio
 

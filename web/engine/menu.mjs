@@ -5,6 +5,7 @@ export const SETS=[
  {title:'Remix 1',games:['golf','robot','seesaw','date','remix1']},
  {title:'Remix 3',games:['bun','seal','badminton','muscle','remix3']},
  {title:'Remix 6',games:['rocket','concons','receive','rap','remix6']},
+ {title:'Remix 7',games:['taptroupe','shrimp','panel','karateman','remix7']},
 ];
 export const OTHER='Other games';
 // Groups a game list ({id,...}) into [{title,games}], keeping only the sets that have a game.

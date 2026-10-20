@@ -100,8 +100,6 @@ def material(b, o):
     alpha_compare, blend, chan, mat_color = (flags >> 23) & 1, (flags >> 24) & 1, (flags >> 25) & 1, (flags >> 27) & 1
     if not stages:
         return out
-    if ind_srts or ind_stages:
-        raise SystemExit(f'{out["name"]}: indirect texture stages are not supported')
     q = o+64
     out['maps'] = [{'texture': u16(b, q+i*4), 'wrapS': b[q+i*4+2], 'wrapT': b[q+i*4+3]} for i in range(maps)]
     q += maps*4
@@ -119,16 +117,33 @@ def material(b, o):
         if b[q:q+4] != bytes.fromhex('e4e4e4e4'):
             raise SystemExit(f'{out["name"]}: TEV swap tables are not supported')
         q += 4
+    # Indirect texturing (Shrimp Shuffle's waves): each indirect matrix from its SRT (nw4r's
+    # IndirectSRT), each indirect stage's texture coordinate, map and coordinate scale (GXIndTexScale).
+    if ind_srts or ind_stages:
+        out['indSrts'] = [list(struct.unpack_from('>5f', b, q+i*20)) for i in range(ind_srts)]
+        q += ind_srts*20
+        out['indStages'] = [{'texCoordGen': b[q+i*4], 'map': b[q+i*4+1], 'scaleS': b[q+i*4+2], 'scaleT': b[q+i*4+3]} for i in range(ind_stages)]
+        q += ind_stages*4
     out['tevColors'] = [[clamp(c) for c in cols[i*4:i*4+4]] for i in range(3)]
     out['kColors'] = [list(b[o+44+i*4:o+48+i*4]) for i in range(4)]
     out['stages'] = []
     for i in range(stages):
         t = b[q+i*16:q+i*16+16]
-        # Without indirect stages (checked above) a stage's indirect fields have no effect.
         # Each combiner: a, b, c, d inputs (low nibble first), op/bias/scale, clamp/output/konstant.
         comb = lambda x: {'in': [x[0] & 15, x[0] >> 4, x[1] & 15, x[1] >> 4], 'op': x[2] & 15, 'bias': (x[2] >> 4) & 3,
                           'scale': x[2] >> 6, 'clamp': x[3] & 1, 'out': (x[3] >> 1) & 3, 'konst': x[3] >> 3}
-        out['stages'].append({'texCoordGen': t[0], 'channel': t[1], 'map': t[2], 'color': comb(t[4:8]), 'alpha': comb(t[8:12])})
+        stage = {'texCoordGen': t[0], 'channel': t[1], 'map': t[2], 'color': comb(t[4:8]), 'alpha': comb(t[8:12])}
+        # The stage's indirect lookup, unpacked as nw4r::lyt::Material::SetupGX passes it to
+        # GXSetTevIndirect: matrix 0 is GX_ITM_OFF, which with no wrap and no previous
+        # coordinate added leaves the stage's coordinates as they are.
+        ind = {'stage': t[12], 'format': t[15] & 3, 'bias': t[13] & 7, 'matrix': (t[13] >> 3) & 15, 'wrapS': t[14] & 7,
+               'wrapT': (t[14] >> 3) & 7, 'addPrev': (t[15] >> 2) & 1, 'utcLod': (t[15] >> 3) & 1, 'alpha': (t[15] >> 4) & 3}
+        if ind['matrix'] or ind['wrapS'] or ind['wrapT'] or ind['addPrev'] or ind['alpha']:
+            if not (1 <= ind['matrix'] <= 3 and ind['stage'] < ind_stages and ind['format'] == 0 and ind['bias'] == 7
+                    and not (ind['wrapS'] or ind['wrapT'] or ind['addPrev'] or ind['utcLod'] or ind['alpha'])):
+                raise SystemExit(f'{out["name"]}: unsupported indirect stage {ind}')
+            stage['ind'] = ind
+        out['stages'].append(stage)
     q += stages*16
     if alpha_compare:
         out['alphaCompare'] = list(b[q:q+4])
@@ -252,7 +267,7 @@ def font(b, chars):
     tglp, cwdh, cmap = u32(b, finf+16)-8, u32(b, finf+20)-8, u32(b, finf+24)-8
     height, width, ascent = b[finf+28], b[finf+29], b[finf+30]
     cw, ch, _, _, sheet_size, _, fmt, rows, lines, sw, sh, image = struct.unpack_from('>BBBBIHHHHHHI', b, tglp+8)
-    assert fmt == 0, f'Unsupported font sheet format {fmt}'
+    assert fmt in (0, 2), f'Unsupported font sheet format {fmt}'  # I4, or IA4 (the lyric font)
     index = {}
     while cmap > 0:
         begin, end, method = u16(b, cmap+8), u16(b, cmap+10), u16(b, cmap+12)
@@ -285,15 +300,23 @@ def font(b, chars):
         glyphs[c] = {'cell': len(cells)-1, 'left': left, 'glyphWidth': glyph_width, 'charWidth': char_width}
     columns = 16
     pad=2;stride_x,stride_y=cw+pad*2,ch+pad*2
-    atlas = np.zeros((((len(cells)+columns-1)//columns)*stride_y, columns*stride_x), np.uint8)
+    # Intensity and alpha: one value for I4 glyphs; IA4 glyphs (8x4 tiles, alpha in the high
+    # nibble) keep both, so the text's two colours shade the outline apart from the fill.
+    atlas = np.zeros((((len(cells)+columns-1)//columns)*stride_y, columns*stride_x, 2), np.uint8)
     sheets = {}
     for k, (sheet, x, y) in enumerate(cells):
         if sheet not in sheets:
-            sheets[sheet] = i4(b, image+sheet*sheet_size, sw, sh)
+            start = image+sheet*sheet_size
+            if fmt == 0:
+                sheets[sheet] = np.dstack([i4(b, start, sw, sh)]*2)
+            else:
+                px = np.frombuffer(b, np.uint8, sw*sh, start).reshape(sh//4, sw//8, 4, 8).transpose(0, 2, 1, 3).reshape(sh, sw)
+                sheets[sheet] = np.dstack([(px & 15)*17, (px >> 4)*17]).astype(np.uint8)
         r, c = divmod(k, columns)
         atlas[r*stride_y+pad:r*stride_y+pad+ch,c*stride_x+pad:c*stride_x+pad+cw] = sheets[sheet][y:y+ch, x:x+cw]
+    i, a = atlas[..., 0], atlas[..., 1]
     return {'height': height, 'width': width, 'ascent': ascent, 'lineFeed': line_feed, 'cellWidth': cw,
-            'cellHeight': ch, 'columns': columns, 'glyphs': glyphs,'atlasStrideX':stride_x,'atlasStrideY':stride_y,'atlasPadding':pad}, Image.fromarray(np.dstack([atlas]*4), 'RGBA')
+            'cellHeight': ch, 'columns': columns, 'glyphs': glyphs,'atlasStrideX':stride_x,'atlasStrideY':stride_y,'atlasPadding':pad}, Image.fromarray(np.dstack([i, i, i, a]), 'RGBA')
 
 
 def message_layouts():
@@ -316,13 +339,25 @@ def message_layouts():
         for n in data['textures']:
             tpl((root/'timg'/n).read_bytes()).save(OUT/f'message-{name}-{n}.png')
             data['images'][n] = f'message-{name}-{n}.png'
-        out['layouts'][name] = data
-    fonts = {d['fonts'][0] for d in out['layouts'].values()}
-    assert len(fonts) == 1, f'Message layouts use different fonts: {fonts}'
+        # The lyric layout (CLyricLayout) is the same in every game that registers its lines.
+        out['layouts']['lyric' if file == 'lyrics.brlyt' else name] = data
     out['messages'] = messages(require(DISC/'message'/'riq_E.bmg').read_bytes())
     chars = {ord(c) for t in out['messages'].values() for c in t if c not in '\n'}
-    out['font'], atlas = font(require(DISC/'font'/fonts.pop()).read_bytes(), chars)
+    # The balloon's text boxes use its first font, message-font.png. A layout whose text boxes use
+    # another (the lyric layout's lines, its second font) names it: message-font-<layout>.png.
+    out['font'], atlas = font(require(DISC/'font'/out['layouts']['balloon']['fonts'][0]).read_bytes(), chars)
     atlas.save(OUT/'message-font.png')
+    for name in names[1:]:
+        entry = manifest(name)['wii']['messageLayout']
+        key = 'lyric' if entry['file'] == 'lyrics.brlyt' else name
+        data, index = out['layouts'][key], entry.get('font', 0)
+        if data['fonts'][index] == out['layouts']['balloon']['fonts'][0]:
+            continue
+        root = DISC/'message-layout'/name
+        font_file = root/'font'/data['fonts'][index] if (root/'font'/data['fonts'][index]).exists() else DISC/'font'/data['fonts'][index]
+        data['font'], atlas = font(require(font_file).read_bytes(), chars)
+        data['fontFile'] = f'message-font-{key}.png'
+        atlas.save(OUT/data['fontFile'])
     (OUT/'message-layouts.json').write_text(json.dumps(out, separators=(',', ':'))+'\n')
 
 
@@ -346,9 +381,11 @@ def game_layout(game, entry, prefix):
         if pane['kind'] == 'text' and pane['font'] != 0:
             raise SystemExit(f'{game}: text {name} uses font {pane["font"]}; only the first is extracted')
     # A font the archive carries (Bossa Nova's subtitles), else a stand-alone one (see extract-disc.py).
-    font_file = root/'font'/out['fonts'][0] if (root/'font'/out['fonts'][0]).exists() else DISC/'font'/out['fonts'][0]
-    out['font'], atlas = font(require(font_file).read_bytes(), chars)
-    atlas.save(OUT/f'{prefix}-font.png')
+    # A layout without text (Shrimp Shuffle's shore) has none.
+    if out['fonts']:
+        font_file = root/'font'/out['fonts'][0] if (root/'font'/out['fonts'][0]).exists() else DISC/'font'/out['fonts'][0]
+        out['font'], atlas = font(require(font_file).read_bytes(), chars)
+        atlas.save(OUT/f'{prefix}-font.png')
     (OUT/f'{prefix}.json').write_text(json.dumps(out, separators=(',', ':'))+'\n')
     print(json.dumps({'layout': prefix, 'panes': len(out['panes']), 'animations': list(out['animations']), 'images': len(names),
                       'messages': len(out['messages']), 'glyphs': len(chars)}))
