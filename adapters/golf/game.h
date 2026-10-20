@@ -5,7 +5,6 @@
 #define GAME_FLOW_COMMAND 0x80065134  // MyFlow chart command dispatcher
 #define GAME_WRONG_INPUT 0x80065768   // reaction to a press with no cue
 #define GAME_FLOW_CREATE 0x8006508c   // MyFlow::create(chart, rest)
-#define GAME_END_CHECKER_ON_HIT 0
 #define GAME_CALLS
 // The original draw callback updates the monkey face visibility.
 #define GAME_AFTER_UPDATE \

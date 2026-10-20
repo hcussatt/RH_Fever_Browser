@@ -1,0 +1,49 @@
+{
+  "$schema": "../../schemas/game.schema.json",
+  "schemaVersion": 1,
+  "id": "receive",
+  "title": "Bossa Nova",
+  "action": "Catch",
+  "platform": "wii",
+  "wii": {
+    "scene": "Receive",
+    "sceneVariant": 1,
+    "cellanim": "EN/content2/cellanim/receive/ver0/cellanim.szs",
+    "units": [
+      "Game/Receive/SceneReceive.cpp",
+      "Game/Receive/MyChecker.cpp",
+      "Game/Receive/MyFlow.cpp"
+    ],
+    "banks": [
+      "bosa",
+      "bosa_bg00",
+      "bosa_bg01",
+      "bosa_bg02",
+      "bosa_bg03",
+      "bosa_leaf",
+      "bosa_others"
+    ],
+    "projection": [
+      854,
+      480
+    ],
+    "endsWithMusic": true,
+    "layout": {
+      "archive": "EN/content2/layout/layout_receive.szs",
+      "file": "subtitles.brlyt",
+      "animations": [],
+      "startAtEnd": [],
+      "texts": [
+        "T_subtitles_00"
+      ],
+      "panes": [],
+      "hidden": [
+        "T_subtitles_00",
+        "N_endless_00"
+      ]
+    }
+  },
+  "web": {
+    "enabled": false
+  }
+}

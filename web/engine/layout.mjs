@@ -2,7 +2,7 @@
 // text boxes tinted by their material's two colour registers, and BRLAN keyframe animations
 // driven like CLayoutAnimation (src/GameUtil/LayoutAnimation.cpp) and CLayout::_18.
 // The game's code drives it through layout events (11) from the platform backend: play or stop
-// an animation, set a text box's message, or offset a pane (see adapters/<game>/game.h).
+// an animation, set a text box's message or show it, or offset a pane (see adapters/<game>/game.h).
 import {assetResponse,assetImage} from './assets.mjs';
 import {windowPixels} from './layout-window.mjs';
 export async function createLayout(g,{spec=g.manifest.wii.layout,file='layout.json',fontFile='layout-font.png',data:given,events=g.layoutEvents}={}){
@@ -15,11 +15,13 @@ export async function createLayout(g,{spec=g.manifest.wii.layout,file='layout.js
  const byName=Object.fromEntries(data.panes.map((p,i)=>[p.name,i]));
  const children=data.panes.map(()=>[]);data.panes.forEach((p,i)=>{if(p.parent!=null)children[p.parent].push(i);});
  // Live pane values (animations write into them and they keep the last value, as in nw4r).
- const fresh=p=>({...p,translate:[...p.translate],scale:[...p.scale],size:[...p.size],fontSize:p.fontSize&&[...p.fontSize],text:''});
+ // spec.hidden: panes the game's setup hides (Bossa Nova's CMyLayout::_10 hides its subtitle).
+ const hidden=new Set(spec.hidden||[]);
+ const fresh=p=>({...p,translate:[...p.translate],scale:[...p.scale],size:[...p.size],fontSize:p.fontSize&&[...p.fontSize],text:'',visible:p.visible&&!hidden.has(p.name)});
  const panes=data.panes.map(fresh);
  // The panes as the layout file sets them up, and its animations bound but stopped, for a layout
  // the game builds again (a new scene).
- function reset(){data.panes.forEach((p,i)=>{panes[i]=fresh(p);});for(const a of animations)Object.assign(a,{frame:0,playing:false,skip:false,enabled:false,reverse:false});}
+ function reset(){data.panes.forEach((p,i)=>{panes[i]=fresh(p);});for(const a of animations)Object.assign(a,{frame:0,playing:false,skip:false,enabled:false,reverse:false});atEnd();}
  const materialImage=data.materials.map(m=>m.texture==null?null:data.textures[m.texture]);
  // Live material values that RLTS and RLMC animations write into.
  const live=data.materials.map(m=>({srts:m.srts?.map(s=>[...s]),tevColors:m.tevColors?.map(c=>[...c]),kColors:m.kColors?.map(c=>[...c]),matColor:m.matColor&&[...m.matColor]}));
@@ -31,7 +33,8 @@ export async function createLayout(g,{spec=g.manifest.wii.layout,file='layout.js
   return {anim,targets,frame:0,playing:false,skip:false,enabled:false,reverse:false};
  });
  const setFrame=(a,frame)=>{a.enabled=true;a.frame=frame;};
- for(const i of spec.startAtEnd||[])setFrame(animations[i],animations[i].anim.frames);
+ const atEnd=()=>{for(const i of spec.startAtEnd||[])setFrame(animations[i],animations[i].anim.frames);};
+ atEnd();
  const base=Object.fromEntries((spec.panes||[]).map(n=>[n,[...data.panes[byName[n]].translate]]));
  let applied=0;
 
@@ -71,12 +74,14 @@ export async function createLayout(g,{spec=g.manifest.wii.layout,file='layout.js
  const f32=u=>new Float32Array(new Uint32Array([u]).buffer)[0];
  function message(id){return (data.messages[id]??'???').replace(/\{[0-9a-f]*\}/g,'');}
  function apply(e){
+  if(e.action===-1)return reset();
   const op=e.action>>8,i=e.action&255;
   if(op===1){const a=animations[i];a.reverse=false;setFrame(a,0);a.playing=true;a.skip=true;}
   // Play from the beginning, forward or reversed (value bit 1), or jump to the end (bit 0).
   else if(op===6){const a=animations[i];a.reverse=!!(e.value&2);setFrame(a,e.value&1?a.anim.frames:0);a.playing=true;a.skip=true;}
   else if(op===2)animations[i].playing=false;
   else if(op===3)panes[byName[spec.texts[i]]].text=message(e.value);
+  else if(op===7)panes[byName[spec.texts[i]]].visible=!!e.value;
   else if(op===4||op===5){const n=spec.panes[i];panes[byName[n]].translate[op-4]=base[n][op-4]+f32(e.value);}
  }
  // One game frame of CLayout::_18: advance, animate the enabled animations in bind order, then

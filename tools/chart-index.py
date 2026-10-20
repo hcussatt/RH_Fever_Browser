@@ -185,7 +185,17 @@ def remix_chart(profile, ids):
                 loads.append(args[0])
             elif op == 0:
                 todo.append(args[0])
-    return start, music, scenes.index(scene), {'address': scene_version_address(scene), 'value': u32(o-4)}, [loads]
+    # Sounds the entry chart plays before the scene change (TF 0x23): SE_REMIX_MODE_SET_REMIXn,
+    # which sets the sequence variable the games' remix versions of their sounds read (v22).
+    prelude = []
+    for address, op, arg0, args in commands(entry, 1):
+        if address >= o:
+            break
+        if op == 0x22:
+            raise SystemExit(f'Unhandled sound command 0x22 at {address:#x} before the remix chart')
+        if op == 0x23:
+            prelude.append(args[0])
+    return start, music, scenes.index(scene), {'address': scene_version_address(scene), 'value': u32(o-4)}, [loads], prelude
 
 
 def main():
@@ -195,13 +205,13 @@ def main():
         ids = profile.get('sceneIds') or scene_ids()
         for s in profile['scenes']:
             s['game_scene'] = manifest(s['game'])['wii']['scene']
-        start, music, first, version, loads = remix_chart(profile, ids)
+        start, music, first, version, loads, prelude = remix_chart(profile, ids)
         segments, table = tempo_segments(music)
         out = {'scenes': [ids[s['game_scene']] for s in profile['scenes']], 'firstScene': first, 'start': start,
                'musicSound': music, 'tempoAddress': table, 'beatCount': sum(s['beats'] for s in segments),
                'sampleCount': sum(s['samples'] for s in segments), 'sampleRate': segments[0]['rate'],
                'groupLoads': loads, 'secondsPerTick': segments[0]['samples']/segments[0]['rate']/(segments[0]['beats']*48),
-               'sceneVersion': version}
+               'sceneVersion': version, 'preludeSounds': prelude}
         if len(segments) > 1:
             out['tempoSegments'] = segments
         (assets(name)/'original-chart.json').write_text(json.dumps(out, indent=2)+'\n')

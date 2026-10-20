@@ -17,7 +17,7 @@ if(auto&&delay===0){await mkdir(new URL(`../dist/${id}/qa/`,import.meta.url),{re
 
 // Expected [hits, misses, through, stray, perfectFailed] for each game's cue count.
 const stats=g.stats().slice(0,5),cues=targets.length;
-const expected={golf:64,tap:102,rap:31,agbghost:12,robot:66,seesaw:60,date:59,remix1:54}[id];
+const expected={golf:64,tap:102,rap:31,agbghost:12,robot:66,seesaw:60,date:59,remix1:54,rocket:41,concons:193,receive:163}[id];
 // Screwbot Factory's checkers each wait for a press and then a release: nobody pressing passes one cue per checker
 // (Remix 1 has four of them).
 const checkers={robot:33,remix1:50}[id]??cues;

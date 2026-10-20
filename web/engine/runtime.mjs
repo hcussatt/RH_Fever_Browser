@@ -35,6 +35,12 @@ export async function loadGame(gameUrl,load=fetchBytes,{timeline:withTimeline=tr
   return [b.animations.length,ap,cp];
  }
  core._install_bank(255,...install(banks[255]));
+ // The permanent bank (bank 254): the "you" markers over the player's character (see platform.c).
+ // An import from before it was extracted has none, and the markers stay placeholders.
+ if(gradingData.permanent){
+  banks[254]={...gradingData.permanent.bank,texture:assets.textures.length};
+  core._install_permanent(...install(banks[254]),...gradingData.permanent.you);
+ }
  scenes.forEach((list,scene)=>list.forEach(([name,b])=>{
   const p=alloc(name.length+1);for(let i=0;i<name.length;i++)w8(p+i,name.charCodeAt(i));w8(p+name.length,0);
   named[core._install_named_bank(scene,p,...install(b))]=b;
@@ -52,7 +58,7 @@ export async function loadGame(gameUrl,load=fetchBytes,{timeline:withTimeline=tr
  const f32bits=new DataView(new ArrayBuffer(4));
  const rest=bits=>(f32bits.setUint32(0,bits),f32bits.getFloat32(0));
  let tick=0,ended=false,endTick=null;
- const resultEvents=[];const sounds=[],chartSounds=[],gameSounds=[],commands=[],cues=[],cueInputs=[];const options={chartAudioScheduled:false};
+ const resultEvents=[];const sounds=[],chartSounds=[],gameSounds=[],commands=[],cues=[],cueInputs=[],cueWithdrawn=[];const options={chartAudioScheduled:false};
  // Each event: kind, value, extra, frame, sound handle (see platform.c emit_handle).
  // A bank registered under an id (25) is what the renderer draws for that id from then on.
  function drain(){const n=core._events_count(),p=core._events_ptr();const out=[];for(let i=0;i<n;i++)out.push(Array.from(core.HEAPU32.subarray(p/4+i*5,p/4+i*5+5)));core._events_clear();for(const e of out)if(e[0]===25)banks[e[1]]=named[e[2]];return out;}
@@ -90,7 +96,7 @@ export async function loadGame(gameUrl,load=fetchBytes,{timeline:withTimeline=tr
  // (a hit or a miss starts one, for example) are not in them, so their sounds play live.
  // Layout events (11): the game's 2D layouts (Love Rap's lyric captions), drawn by layout.mjs.
  // Message events (15): the speech balloon and the message panes, drawn by message.mjs.
- const layoutEvents=[],messageEvents=[];let steps=0;
+ const layoutEvents=[],messageEvents=[];let steps=0,scene=chart.firstScene||0;
  const consumed=new Set();
  function prescheduled(sound,at){
   const list=timeline?.sounds||[];
@@ -129,9 +135,13 @@ export async function loadGame(gameUrl,load=fetchBytes,{timeline:withTimeline=tr
     const op={type,value,frames,tick:frameTick};
     tunes.push({target,op});
    }
+   // The sequence variables the game's user procedure set for the sound played last (see audio.mjs).
+   else if(e[0]===26){if(last)(last.userproc||={})[e[1]]=e[2]|0;}
    else if(e[0]===8)commands.push({tick:frameTick+rest(e[2]),op:e[1]});
    else if(e[0]===7){ended=true;endTick=frameTick+rest(e[2]);}
-   else if(e[0]===11)layoutEvents.push({frame:steps,action:e[1],value:e[2]});
+   else if(e[0]===11)layoutEvents.push({frame:steps,scene,action:e[1],value:e[2]});
+   // A new scene (a remix's next game) builds its layout again (see renderer.mjs).
+   else if(e[0]===24){scene=e[1];layoutEvents.push({frame:steps,scene,action:-1});}
    else if(e[0]===15)messageEvents.push({frame:steps,field:e[1]>>8,pane:e[1]&255,value:e[2]});
    else if(e[0]===13)musicVolumes.push({tick:frameTick,frames:e[1],volume:rest(e[2])});
    else if(e[0]===14)speeds.push({tick:frameTick+rest(e[2]),speed:rest(e[1])});
@@ -144,7 +154,7 @@ export async function loadGame(gameUrl,load=fetchBytes,{timeline:withTimeline=tr
  options.chartAudioScheduled=!!timeline;
  preroll.forEach((events,n)=>handle(events,tick-(preroll.length-1-n)*nominal));
  options.chartAudioScheduled=false;
- const live=new Map(); // checker address -> the target its last cue was read from
+ const live=new Map(),pending=new Map(); // checker address -> the target its last cue was read from, that cue's index
  function step(nextTick,press=false){
   const events=frame(nextTick-tick,press);tick=nextTick;
   // A checker's perfect tick: its target (mTickJust, +0x58) less the ticks it has counted (mTickPass,
@@ -152,7 +162,14 @@ export async function loadGame(gameUrl,load=fetchBytes,{timeline:withTimeline=tr
   // Factory's release after its press), which is a new cue; the input it waits for is its first
   // input type (+0x0c). A checker waiting for input type -1 takes no press and hits itself on its
   // target tick (See-Saw's partner, who plays itself in one-player mode), so it is not a cue.
-  const arm=c=>{live.set(c,f32(c+0x58));if(u32(c+0x0c)!==0xffffffff){cues.push(tick+f32(c+0x58)-f32(c+0x54));cueInputs.push(u32(c+0x0c));}};
+  // A checker re-armed before its cue comes (Bossa Nova's ball checker, put off 256 beats when a
+  // closer checker takes over its catch) never waits for that cue, which is withdrawn
+  // (cueWithdrawn). A cue still ahead when the level ends is never reached either (traceTimeline).
+  const arm=c=>{
+   const last=pending.get(c);if(last!==undefined&&cues[last]>tick)cueWithdrawn[last]=true;
+   live.set(c,f32(c+0x58));pending.delete(c);
+   if(u32(c+0x0c)!==0xffffffff){pending.set(c,cues.length);cues.push(tick+f32(c+0x58)-f32(c+0x54));cueInputs.push(u32(c+0x0c));cueWithdrawn.push(false);}
+  };
   for(const e of events)if(e[0]===9)arm(e[1]);
   for(let i=0,c;(c=core._checker_at(i)>>>0);i++)if(live.has(c)&&live.get(c)!==f32(c+0x58))arm(c);
   handle(events,tick);
@@ -183,5 +200,5 @@ export async function loadGame(gameUrl,load=fetchBytes,{timeline:withTimeline=tr
   if(press){core._grading_input(1);core._grading_input(0);}core._grading_frame();gradingFrame++;
   return drain().map(e=>({kind:e[0],value:e[1],extra:e[2],frame:gradingFrame,seconds:gradingFrame/60+((e[0]===5||e[0]===20||e[0]===21)?rest(e[2])/(core._grading_tempo()*.8):0)}));
  }
- return {manifest,base,core,options,assets,chart,clock,secondsAtTick:clock.secondsAtTick,tickAtSeconds:clock.tickAtSeconds,banks,timeline,step,drain,sounds,chartSounds,gameSounds,tunes,speeds,musicVolumes,commands,cues,cueInputs,layoutEvents,messageEvents,get steps(){return steps;},envelope,stats,result,gradingData,resultEvents,startGrading,stepGrading,u8,u16,u32,f32,w8,w16,w32,wf,alloc,offset,get tick(){return tick;},get ended(){return ended;},get endTick(){return endTick;}};
+ return {manifest,base,core,options,assets,chart,clock,secondsAtTick:clock.secondsAtTick,tickAtSeconds:clock.tickAtSeconds,banks,timeline,step,drain,sounds,chartSounds,gameSounds,tunes,speeds,musicVolumes,commands,cues,cueInputs,cueWithdrawn,layoutEvents,messageEvents,get steps(){return steps;},envelope,stats,result,gradingData,resultEvents,startGrading,stepGrading,u8,u16,u32,f32,w8,w16,w32,wf,alloc,offset,get tick(){return tick;},get ended(){return ended;},get endTick(){return endTick;}};
 }

@@ -7,11 +7,23 @@
 // headroom for the browser, whose output clips at full scale; .48 keeps every built level's autoplay
 // render (web/engine/qa/audio-check.mjs) under it, the loudest peaking at .96.
 import {assetResponse} from './assets.mjs';
+import {traceSequence} from './sequence.mjs';
 const OUTPUT=.7*.48;
 export async function createAudio(context,gameUrl,{envelope}={}){
  const asset=name=>new URL('assets/'+name,gameUrl);
  const [data,musicInfo,resultData]=await Promise.all(['sfx.json','music.json','results.json'].map(async f=>(await assetResponse(asset(f))).json()));
  const buffers=await Promise.all(data.waves.map(async w=>context.decodeAudioData(await (await assetResponse(asset(w.file))).arrayBuffer())));
+ // The sequences dynamic sounds are traced from again when they play, and the sequence player's
+ // global variables (16-31, nw4r's default -1), which sounds set and read.
+ const sequences=Object.fromEntries(await Promise.all([...new Set(Object.values(data.sounds).filter(s=>s.dynamic).map(s=>s.sequence.file))].map(async f=>[f,new Uint8Array(await (await assetResponse(asset(f))).arrayBuffer())])));
+ const globals=new Array(16).fill(-1);
+ // A sound's notes as it plays now: traced again from the globals and the game's user procedure
+ // (userproc: variable -> value, from the game when it played the sound) when they depend on them.
+ function soundNotes(sound,userproc){
+  if(sound.dynamic)return traceSequence(sequences[sound.sequence.file],sound.sequence.start,sound.sequence.bank,data,globals,userproc);
+  for(const [v,x] of Object.entries(sound.globals||{}))globals[v-16]=x;
+  return sound.notes;
+ }
  const master=context.createGain();master.gain.value=OUTPUT;master.connect(context.destination);
  const resultWaves=Object.fromEntries(await Promise.all(Object.entries(resultData.waves).map(async([sid,w])=>[sid,{...w,buffer:await context.decodeAudioData(await (await assetResponse(asset(w.file))).arrayBuffer())}])));
  const active=new Set(),musicGains=new WeakMap(),stops=new WeakMap(),persistent=new WeakSet(),telemetry={played:0,unknown:[],late:0,maxLateMs:0};
@@ -27,8 +39,9 @@ export async function createAudio(context,gameUrl,{envelope}={}){
  // chart tempo when it plays, and a start offset in ticks (CSoundManager::play's start above 0).
  // Returns the voice: the sound's notes behind one handle volume and one pause gain, which
  // tune() changes later, as the game does through its SNDHandle.
- function play(sid,when=context.currentTime,{volume:tuneVolume=1,pitch:tunePitch=1,pan:tunePan=0,tempo,offset=0}={}){
+ function play(sid,when=context.currentTime,{volume:tuneVolume=1,pitch:tunePitch=1,pan:tunePan=0,tempo,offset=0,userproc}={}){
   const sound=data.sounds[sid];if(!sound){telemetry.unknown.push(sid);return null;}
+  const notes=soundNotes(sound,userproc);
   const handleGain=context.createGain(),pauseGain=context.createGain();handleGain.gain.value=tuneVolume;handleGain.connect(pauseGain).connect(master);
   const voice={sid,when,handleGain,pauseGain,notes:[],volume:tuneVolume,paused:0};
   // A sequence in the game's tempo table plays at the chart tempo over the tempo it was written
@@ -36,8 +49,8 @@ export async function createAudio(context,gameUrl,{envelope}={}){
   const stretch=sound.tempo&&tempo?sound.tempo/tempo:1;
   const late=Math.max(0,context.currentTime-when);if(late>.003){telemetry.late++;telemetry.maxLateMs=Math.max(telemetry.maxLateMs,late*1000);}
   // Ticks into the sound, in the sequence's own ticks at its tempo.
-  const skip=offset&&sound.notes.length?offset*60/(sound.notes[0].tempo*sound.notes[0].timebase)*stretch:0;
-  for(const n of sound.notes){
+  const skip=offset&&notes.length?offset*60/(notes[0].tempo*notes[0].timebase)*stretch:0;
+  for(const n of notes){
    if(n.time*stretch<skip)continue;
    const p=data.programs[n.program],w=data.waves[p.wave],source=context.createBufferSource(),env=context.createGain(),gain=context.createGain(),pan=context.createStereoPanner();
    source.buffer=buffers[p.wave];source.loop=w.loop;source.loopStart=w.loopStart/w.rate;source.loopEnd=w.samples/w.rate;

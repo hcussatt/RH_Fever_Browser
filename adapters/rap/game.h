@@ -5,7 +5,6 @@
 #define GAME_FLOW_COMMAND 0x8004f850  // MyFlow chart command dispatcher
 #define GAME_WRONG_INPUT 0x80050284   // reaction to a press with no cue
 #define GAME_FLOW_CREATE 0x8004f7a8   // MyFlow::create(chart, rest)
-#define GAME_END_CHECKER_ON_HIT 0
 // Lyric captions (Rap::CMyLayout, src/Game/Rap/MyLayout.cpp) become layout events (11) for the
 // browser's layout renderer (web/engine/layout.mjs). The animation, text box and pane numbers
 // index the "layout" lists in games/rap/game.json, in the order CMyLayout::_10 sets them up.

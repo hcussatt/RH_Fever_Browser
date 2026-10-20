@@ -67,7 +67,8 @@
             "animations": {"type": "array", "items": {"type": "array", "minItems": 2, "maxItems": 2, "items": {"$ref": "#/$defs/name"}}},
             "startAtEnd": {"type": "array", "uniqueItems": true, "items": {"type": "integer", "minimum": 0}},
             "texts": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/name"}},
-            "panes": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/name"}}
+            "panes": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/name"}},
+            "hidden": {"description": "Panes the game's layout setup hides.", "type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/name"}}
           }
         }
       }
