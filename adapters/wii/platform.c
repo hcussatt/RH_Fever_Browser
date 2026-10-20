@@ -297,6 +297,10 @@ static void exflow_command(void){
   }
   else if(song_ended&&op==0x10a){emit(20,arg0?6:7,rd32(self+0x1c));emit(22,arg0,rd32(args)?rd32(args+4):(uint32_t)((float)rd32(args+4)*60/(current_tempo*.8f)));}
   else if(op==0x12a)wr8(0x803201b9,arg0);
+  // The "you" markers (CExScene::fn_80009950/99A0/99F0 and fn_80009A40/4C/58): marker arg0 moves
+  // to (x, y) or is shown or hidden. Donk-Donk's chart hides its marker when the ship takes off.
+  else if(op==0x110&&arg0<=2){uint32_t you=rd32(0x80320200+arg0*4);wrf32(you+0x84,(float)(int32_t)rd32(args));wrf32(you+0x88,(float)(int32_t)rd32(args+4));}
+  else if(op==0x111&&arg0<=2)wr8(rd32(0x80320200+arg0*4)+0xa7,rd32(args)!=0);
   else if(op==0x121||op==0x131)wr32(self+0x24,0); // Scene version / play-mode queries: normal play.
   r[3]=0;
 }
