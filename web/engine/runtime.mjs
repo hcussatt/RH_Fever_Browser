@@ -28,10 +28,12 @@ export async function loadGame(gameUrl,load=fetchBytes,{timeline:withTimeline=tr
  const scenes=profile.scenes?assets.scenes.map(sc=>sc.banks.map(n=>[n,assets.banks[sc.game+'/'+n]])):[profile.banks.map(n=>[n,assets.banks[n]])];
  const banks=[],named=[];
  banks[255]={texture:0,cells:[[]],animations:Array.from({length:256},()=>[{cell:0,frames:1,x:0,y:0,scaleX:1,scaleY:1,angle:0,alpha:255}])};
+ // Cells and keys as registBank lays them out in memory (CellAnim_CellOBJ: the object's position
+ // sits at +10/+12, not at the file's +12/+14), which game code reads (Karate Man's hit points).
  function install(b){
   const ap=alloc(b.animations.length*8),cp=alloc(b.cells.length*8);
   b.animations.forEach((keys,i)=>{const p=alloc(keys.length*24);w16(ap+i*8,keys.length);w32(ap+i*8+4,p);keys.forEach((k,j)=>{const a=p+j*24;w16(a,k.cell);w16(a+2,k.frames);w16(a+4,k.x);w16(a+6,k.y);wf(a+8,k.scaleX);wf(a+12,k.scaleY);wf(a+16,k.angle);w8(a+20,k.alpha);});});
-  b.cells.forEach((objects,i)=>{const p=alloc(objects.length*32);w16(cp+i*8,objects.length);w32(cp+i*8+4,p);objects.forEach((o,j)=>{const a=p+j*32;[o.sx,o.sy,o.w,o.h,o.palette,o.reserved,o.x,o.y].forEach((v,k)=>w16(a+k*2,v));wf(a+16,o.scaleX);wf(a+20,o.scaleY);wf(a+24,o.angle);w8(a+28,o.flipX);w8(a+29,o.flipY);w8(a+30,o.alpha);});});
+  b.cells.forEach((objects,i)=>{const p=alloc(objects.length*32);w16(cp+i*8,objects.length);w32(cp+i*8+4,p);objects.forEach((o,j)=>{const a=p+j*32;[o.sx,o.sy,o.w,o.h,o.palette,o.x,o.y].forEach((v,k)=>w16(a+k*2,v));wf(a+16,o.scaleX);wf(a+20,o.scaleY);wf(a+24,o.angle);w8(a+28,o.flipX);w8(a+29,o.flipY);w8(a+30,o.alpha);});});
   return [b.animations.length,ap,cp];
  }
  core._install_bank(255,...install(banks[255]));
