@@ -112,6 +112,8 @@ These come from the repository owner and apply to every contributor and agent.
    - Black or missing scenes: actor caps in the renderer, per-scene layouts, and anything the original shows only before the music starts.
    - Sounds: the remix mode sound (`SE_REMIX_MODE_SET_REMIXn`) and each scene's sounds against its solo game.
    - Sound slides and held, wavering notes (sirens, calls): `node tests/test-sequence.mjs` must match and `tools/extract-sfx.py` must not raise; listen to them. A note's later volume, pan and bend changes are its `changes`.
+   - Pitch sweeps and portamento (0xe3, 0xc9, 0xce, 0xcf): a note's `sweep` returns over its `sweepMs` (from the porta time), or over its ticks when there is none. A sweep running far too fast sounds like peaking (Shrimp Shuffle's step sound).
+   - Layout panes with a different vertex colour at each corner, and TEV stages after one with no colour channel: check screenshots for flat strips or missing panes (Shrimp Shuffle's shore, wet sand and starfish).
    - Per-frame tint changes (an actor's fore/back colour, `0xa0`-`0xa5`, changing every frame, like Air Rally's clouds): count them headless and never read pixels back per frame (`colored()` in `renderer.mjs` blends into reused canvases).
    - A+B cues followed by a release (Karate Man's charged kick): the test harness holds A+B until the release cue arms; a no-input run can pass extra checkers that take no input (`checkers` in `tests/test-runtime.mjs`).
    - After merging main, refresh the enabled games' snapshots with `python3 tools/prepare-pages.py --snapshot`; new games stay web-disabled.
