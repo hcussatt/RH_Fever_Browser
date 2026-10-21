@@ -173,9 +173,13 @@ static uint32_t message_id(uint32_t p){uint32_t id=0;for(;rd8(p);p++){uint32_t c
 // CMessageManager::fn_80087708: a message id string is seven digits (Tap Trial's has a trailing
 // space); 0xffffffff if not.
 static uint32_t bmg_id(uint32_t s){uint32_t v=0;for(int i=0;i<7;i++){uint8_t c=rd8(s+i);if(c<'0'||c>'9')return 0xffffffff;v=v*10+c-'0';}return v;}
+static void end_flows_above(int32_t category);
 static void enter_grading(void){
   uint32_t cp=rd32(0x8032016c),gs=alloc(256);grading_scene=gs;grading=1;grading_ready=grading_pressed=0;
   wr32(rd32(0x80320180)+4,gs);wr32(gs+0x34,alloc(256));wr32(gs+0x38,rd32(cp+0x2fc));wr8(gs+0x3c,rd8(cp+0xdf));
+  // Leaving the game scene (CExScene::_20) ends its flows above category 0 (fn_801E2490): a game's
+  // looping flow (Monkey Watch, Launch Party) would otherwise keep the results from finishing.
+  end_flows_above(0);
 }
 // CTickFlowManager::fn_801E1CC0: create a flow with the game's own flow class
 // and push it at the head of the list, as the original does.
