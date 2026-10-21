@@ -120,6 +120,8 @@ export async function loadGame(gameUrl,load=fetchBytes,{timeline:withTimeline=tr
  // the browser applies to sounds already playing (tunes), song speed changes (speeds) and backing
  // track volume fades (musicVolumes), each at its chart tick.
  const handles=new Map(),tunes=[],speeds=[],musicVolumes=[];
+ // Sounds started with a delay (a start below 0), which a handle's end can still drop.
+ const delayed=new WeakSet();
  const TUNE=['volume','pitch','pan'];
  function handle(events,frameTick){
   let last=null;
@@ -132,7 +134,7 @@ export async function loadGame(gameUrl,load=fetchBytes,{timeline:withTimeline=tr
     let sound={sound:e[1],tick:at,tempo:clock.tempoAtTick(at)};
     // A start offset follows its sound (CSoundManager::play): below 0 it waits that many ticks.
     const next=events[i+1];
-    if(next&&next[0]===10&&(next[1]&255)===3&&!next[4]){const start=rest(next[2]);i++;if(start<0){sound.tick-=start;sound.tempo=clock.tempoAtTick(sound.tick);}else sound.offset=start;}
+    if(next&&next[0]===10&&(next[1]&255)===3&&!next[4]){const start=rest(next[2]);i++;if(start<0){sound.tick-=start;delayed.add(sound);sound.tempo=clock.tempoAtTick(sound.tick);}else sound.offset=start;}
     if(e[0]===5)chartSounds.push(sound);else if(e[0]===12)gameSounds.push(sound);
     const scheduled=e[0]!==1&&options.chartAudioScheduled?prescheduled(e[1],sound.tick):null;
     if(scheduled)sound=scheduled;else sounds.push(sound);
@@ -145,6 +147,8 @@ export async function loadGame(gameUrl,load=fetchBytes,{timeline:withTimeline=tr
     const type=e[1]&255,frames=e[1]>>8,value=type===5?e[2]:rest(e[2]);
     // Set together with the sound itself: it plays with it from the start.
     if(type<3&&!frames&&target===last&&!target.voice){target[TUNE[type]]=value;continue;}
+    // A handle's end only drops a sound still waiting out its start delay (CSoundManager::end_sound_handle).
+    if(type===6&&!(delayed.has(target)&&target.tick>frameTick))continue;
     const op={type,value,frames,tick:frameTick};
     tunes.push({target,op});
    }

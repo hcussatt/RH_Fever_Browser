@@ -87,7 +87,8 @@ static int32_t fast_cast(double x,float lo,float hi){float v=(float)x;return (in
 static uint32_t alloc(uint32_t size){uint32_t a=heap;heap=(heap+size+31)&~31u;if(heap>=0x81600000)panic(a,2);return a;}
 // Each scene's original addresses, from adapters/<game>/game.h (a remix lists several; see
 // tools/recompile.py). id: the original ESceneID a remix's chart names; version: where the scene
-// keeps its version (CSceneManager::fn_8008A4DC).
+// keeps its version (CSceneManager::fn_8008A4DC). wrong_input names the callback the scene's init
+// registers; presses reach the registered one (see press()).
 typedef struct{uint32_t id,version,create,init,update,flow_command,wrong_input,flow_create;void(*after_update)(void);} SceneProfile;
 #ifdef GAME_SCENE_PROFILES
 GAME_SCENE_PROFILES
@@ -221,6 +222,7 @@ static void ex_scene_unload(void){
   base_canvas=canvas[2];for(uint32_t i=2;i<=9;i++)canvas_default(i);
   for(uint32_t i=0;i<3;i++){r[3]=rd32(0x80320200+i*4);r[4]=base_canvas;r[5]=0;r[6]=0;call(0x801dcfa4);}
   checker_count=0;for(int i=0;i<256;i++)input_map[i]=i;
+  wr32(rd32(0x80320170)+0x418,0); // the scene's wrong-input callback
   layout_count=0;emit(15,MESG_CLEAR<<8,0); // CLayoutManager::fn_801D6BB0
   end_flows_above(0);register_flow(0x8008d2cc);
 }
@@ -358,6 +360,18 @@ static void exflow_command(void){
     case 8:wr8(0x803201a2,rd32(args)!=0);break;
     case 9:wr32(self+0x24,rd8(0x803201a2));break;
   }}
+  // CExFlow 0x125 scales a canvas (args in 1/256ths): 0 at once (fn_8007BF6C), 1 over time with an
+  // ease (fn_8007C000: type, power, duration, x, y), 2 stops that (fn_8007C200).
+  else if(op==0x125&&arg0<=2){
+    const float unit=rdf32(0x80328fe0-15424);uint32_t index=rd32(args);
+    if(arg0==0){r[4]=index;f[1].d=(float)rd32(args+4)*unit;f[2].d=(float)rd32(args+8)*unit;call(0x8007bf6c);}
+    else if(arg0==1)set_canvas_timed(index,rd32(args+4),rd32(args+8)&255,(float)(int32_t)rd32(args+12),(float)rd32(args+16)*unit,(float)rd32(args+20)*unit);
+    else{r[4]=index;call(0x8007c200);}
+  }
+  // CExFlow 0x126 0 places a canvas (CMyCanvasManager::fn_8007BFA8; Board Meeting shakes the base
+  // canvas this way). 1 (a timed move, fn_8007C0C8) and 2 (fn_8007C218) are not modelled yet.
+  else if(op==0x126&&arg0==0){r[4]=rd32(args);f[1].d=(float)(int32_t)rd32(args+4);f[2].d=(float)(int32_t)rd32(args+8);call(0x8007bfa8);}
+  else if(op==0x126)panic(arg0,22);
   else if(op==0x131)wr32(self+0x24,0); // Scene version / play-mode query: normal play.
   r[3]=0;
 }
@@ -395,10 +409,17 @@ static void call(uint32_t address){
   }
   switch(address){
   GAME_CALLS
+  // __construct_new_array(block, ctor, dtor, size, n): the block starts with size and count; each
+  // element is built with ctor(element, 1) and the elements' start is returned.
+  case 0x80103988:{uint32_t block=r[3],ctor=r[4],size=r[6],n=r[7];if(!block){r[3]=0;break;}
+    wr32(block,size);wr32(block+4,n);for(uint32_t i=0;ctor&&i<n;i++){r[4]=1;invoke1(ctor,block+16+i*size);}r[3]=block+16;break;}
+  // __destroy_new_array(elements, dtor): each element, last first, gets dtor(element, -1).
+  case 0x80103cb8:{uint32_t a=r[3],dtor=r[4];if(!a||!dtor)break;uint32_t size=rd32(a-16),n=rd32(a-12);
+    for(uint32_t i=n;i-->0;){r[4]=(uint32_t)-1;invoke1(dtor,a+i*size);}break;}
   case 0x80103b48:{uint32_t a=r[3],ctor=r[4],size=r[6],n=r[7];for(uint32_t i=0;i<n;i++)invoke1(ctor,a+i*size);r[3]=a;break;}
-  case 0x801d3284:r[3]=alloc(r[3]);break;
+  case 0x801d3284:case 0x801d3370:r[3]=alloc(r[3]);break; // operator new and new[]
   case 0x801e9144:r[3]=alloc(r[4]);break;
-  case 0x801d345c:case 0x801e9150:break;
+  case 0x801d345c:case 0x801d34e0:case 0x801e9150:break; // operator delete and delete[]: the heap is never reused
   case 0x801eaa84:wr32(r[3]+4,0);wr32(r[3]+8,0);break;
   case 0x801eaaa0:break;
   case 0x801dbe7c:{uint32_t bank=r[4],anim=r[5];r[3]=create_actor(bank,anim);break;}
@@ -436,11 +457,16 @@ static void call(uint32_t address){
   // CSoundManager's setSeqUserprocCallback (nw4r SoundArchivePlayer::SetSeqUserprocCallback).
   case 0x801e7344:userproc_fn=r[4];userproc_arg=r[5];break;
   // Tuning (10): value = type | fade frames << 8 (0 volume, 1 pitch, 2 pan, 3 start, 4 stop,
-  // 5 pause), extra = float bits (pause: 1 or 0), on the handle's sound or the one played last.
+  // 5 pause, 6 end the handle), extra = float bits (pause: 1 or 0), on the handle's sound or the one played last.
   case 0x801e65f4:emit_handle(10,0|r[4]<<8,fbits(f[1].d),r[5]);break;
   case 0x801e676c:emit_handle(10,1,fbits(f[1].d),r[4]);break;
   case 0x801e68e0:emit_handle(10,2,fbits(f[1].d),r[4]);break;
   case 0x801e62b8:emit_handle(10,4|r[4]<<8,0,r[5]);break;
+  // ~SNDHandle: CSoundManager::end_sound_handle drops the handle's sounds still waiting to start (6).
+  // Its stand-in sound slot is freed for the next handle (a game can make a handle per checker).
+  case 0x801e4198:{uint32_t handle=r[3];emit_handle(10,6,0,handle);
+    for(uint32_t i=0;i<handle_count;i++)if(handle_sounds[i][0]==handle){handle_sounds[i][0]=handle_sounds[--handle_count][0];handle_sounds[i][1]=handle_sounds[handle_count][1];break;}
+    break;}
   case 0x801e6440:emit_handle(10,5|r[5]<<8,r[4]&1,r[6]);break;
   case 0x801ad8b0:wr8(r[3],r[4]&1);emit_handle(10,5|r[5]<<8,r[4]&1,handle_of(r[3]));break; // nw4r BasicSound::Pause on a game handle
   case 0x801adb10:r[3]=rd8(r[3]);break; // BasicSound::IsPause
@@ -470,6 +496,7 @@ static void call(uint32_t address){
   case 0x801dc16c:r[3]=base_canvas;break;
   case 0x8007bf30:{uint32_t actor=r[4],index=r[5];r[3]=actor;r[4]=(int32_t)index<0?0:canvas[index];r[5]=0;r[6]=0;call(0x801dcfa4);break;}
   case 0x8007bf6c:{uint32_t i=r[4];wrf32(canvas[i]+0x8c,f[1].d);wrf32(canvas[i]+0x90,f[2].d);for(int a=0;a<2;a++)if(canvas_timing[i][a])wr8(canvas_timing[i][a]+37,0);break;}
+  case 0x8007c200:{uint32_t i=r[4];for(int a=0;a<2;a++)if(canvas_timing[i][a])wr8(canvas_timing[i][a]+37,0);break;} // stops the canvas's scale tweens
   case 0x8007bfa8:wrf32(canvas[r[4]]+0x84,f[1].d);wrf32(canvas[r[4]]+0x88,f[2].d);break;
   case 0x8007c000:{uint32_t index=r[4],type=r[5],power=r[6];float duration=f[1].d,x=f[2].d,y=f[3].d;set_canvas_timed(index,type,power,duration,x,y);break;}
   case 0x8007c244:{uint32_t i=r[4];union{float f;uint32_t u;}x={.f=rdf32(canvas[i]+0x8c)},y={.f=rdf32(canvas[i]+0x90)};r[3]=x.u;r[4]=y.u;break;}
@@ -733,7 +760,10 @@ static void press(uint32_t type){
     }
   }
   if(!consumed){
-    r[3]=type;call(profiles[profile_index].wrong_input);
+    // The scene's wrong-input callback (CInputCheckManager +0x418), set in its _onInit and cleared by
+    // CExScene::_20: a press before the next scene's init reaches none.
+    uint32_t wrong=rd32(rd32(0x80320170)+0x418);
+    if(wrong){r[3]=type;call(wrong);}
     // CInputCheckManager::fn_801E94E8 and the stray count only follow A and A+B (unk430).
     if(type==4||type==6){stray++;wrong_timer=48;wrong_count=wrong_count<6?wrong_count+1:6;}
   }

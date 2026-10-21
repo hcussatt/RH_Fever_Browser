@@ -1,0 +1,30 @@
+{
+  "$schema": "../../schemas/game.schema.json",
+  "schemaVersion": 1,
+  "id": "fork",
+  "title": "Fork Lifter",
+  "action": "Stab",
+  "platform": "wii",
+  "wii": {
+    "scene": "Fork",
+    "cellanim": "EN/content2/cellanim/fork/ver0/cellanim.szs",
+    "units": [
+      "Game/Fork/SceneFork.cpp",
+      "Game/Fork/MyChecker.cpp",
+      "Game/Fork/MyFlow.cpp",
+      "Game/Pseudo3D.cpp",
+      "Game/code_800D2920.cpp"
+    ],
+    "banks": [
+      "fork"
+    ],
+    "projection": [
+      832,
+      456
+    ],
+    "endsWithMusic": true
+  },
+  "web": {
+    "enabled": false
+  }
+}

@@ -139,8 +139,11 @@ export async function createAudio(context,gameUrl,{envelope}={}){
  // Tuning on a playing (or scheduled) sound at time `when`, like nw4r's SoundHandle: volume and
  // pause fade over frames (60 per second), pitch and pan replace the ones set at the start, and
  // a stop fades out over frames. Pause is a fade to silence: the sound keeps its place unheard.
+ // An ended handle (6) drops a sound that has not started yet.
  function tune(voice,{type,value,frames},when){
   if(!voice)return;
+  // The handle ended while its sound still waited out a start delay: it never plays.
+  if(type===6){if(voice.start>when)for(const n of voice.notes)stopSource(n.source,Math.max(context.currentTime,when));return;}
   const t=Math.max(context.currentTime,when,voice.start),seconds=frames/60;
   if(type===0){move(voice.handleGain.gain,voice.volume,value,t,seconds);voice.volume=value;}
   else if(type===1)for(const n of voice.notes)n.source.playbackRate.setValueAtTime(n.rate*value,t);

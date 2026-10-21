@@ -17,7 +17,7 @@ if(auto&&delay===0){await mkdir(new URL(`../dist/${id}/qa/`,import.meta.url),{re
 
 // Expected [hits, misses, through, stray, perfectFailed] for each game's cue count.
 const stats=g.stats().slice(0,5),cues=targets.length;
-const expected={golf:64,tap:102,rap:31,agbghost:12,robot:66,seesaw:60,date:59,remix1:54,rocket:41,concons:193,receive:163,remix6:130,bun:124,seal:40,badminton:120,muscle:111,remix3:168,karateman:183,panel:67,shrimp:144,taptroupe:235,remix7:175}[id];
+const expected={golf:64,tap:102,rap:31,agbghost:12,robot:66,seesaw:60,date:59,remix1:54,rocket:41,concons:193,receive:163,remix6:130,bun:124,seal:40,badminton:120,muscle:111,remix3:168,karateman:183,panel:67,shrimp:144,taptroupe:235,remix7:175,fork:74,tambourine:70,rotation:15,watch:149,remix2:60}[id];
 // Screwbot Factory's checkers each wait for a press and then a release: nobody pressing passes one cue per checker
 // (Remix 1 has four of them). In Built to Scale a missed rod drops, so its later
 // bounce and launch checkers never arm: nobody pressing passes one cue for each of its 16 rods (Remix 3 has 7 of them, 8 cues fewer).
