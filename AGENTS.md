@@ -116,6 +116,7 @@ These come from the repository owner and apply to every contributor and agent.
    - Layout panes with a different vertex colour at each corner, and TEV stages after one with no colour channel: check screenshots for flat strips or missing panes (Shrimp Shuffle's shore, wet sand and starfish).
    - Per-frame tint changes (an actor's fore/back colour, `0xa0`-`0xa5`, changing every frame, like Air Rally's clouds): count them headless and never read pixels back per frame (`colored()` in `renderer.mjs` blends into reused canvases).
    - A+B cues followed by a release (Karate Man's charged kick): the test harness holds A+B until the release cue arms; a no-input run can pass extra checkers that take no input (`checkers` in `tests/test-runtime.mjs`).
+   - Looping flows and the results screen: run `node tests/test-grading.mjs` with every game's id (with no ids it checks only the web-enabled games) and confirm each results screen can be left. A game's own looping flow must end when the results start, as the original's scene exit does (Monkey Watch and Launch Party stayed stuck on the results).
    - After merging main, refresh the enabled games' snapshots with `python3 tools/prepare-pages.py --snapshot`; new games stay web-disabled.
 
 ## Roadmap
