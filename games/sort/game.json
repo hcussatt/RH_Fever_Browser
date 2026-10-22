@@ -1,0 +1,31 @@
+{
+  "$schema": "../../schemas/game.schema.json",
+  "schemaVersion": 1,
+  "id": "sort",
+  "title": "Packing Pests",
+  "action": "Sort",
+  "platform": "wii",
+  "wii": {
+    "scene": "Sort",
+    "sceneVariant": 0,
+    "cellanim": "EN/content2/cellanim/sort/ver0/cellanim.szs",
+    "units": [
+      "Game/Sort/SceneSort.cpp",
+      "Game/Sort/MyChecker.cpp",
+      "Game/Sort/MyFlow.cpp",
+      "Game/Pseudo3D.cpp"
+    ],
+    "banks": [
+      "sort",
+      "sort_bg"
+    ],
+    "projection": [
+      832,
+      456
+    ],
+    "endsWithMusic": true
+  },
+  "web": {
+    "enabled": false
+  }
+}

@@ -22,6 +22,24 @@ CHART = json.loads(require(OUT/'original-chart.json').read_text())
 u16 = lambda b,o=0: struct.unpack_from('>H', b,o)[0]
 u32 = lambda b,o=0: struct.unpack_from('>I', b,o)[0]
 
+def rgb5a3(words):
+    opaque = (words&0x8000)!=0
+    rgba = np.empty(words.shape+(4,),dtype=np.uint8)
+    for ch,shift in enumerate([10,5,0]):
+        v=(words>>shift)&31
+        rgba[...,ch] = np.where(opaque,(v<<3)|(v>>2),((words>>[8,4,0][ch])&15)*17)
+    a=(words>>12)&7
+    rgba[...,3] = np.where(opaque,255,(a<<5)|(a<<2)|(a>>1))
+    return rgba
+
+def rgb565(words):
+    rgba = np.empty(words.shape+(4,),dtype=np.uint8)
+    for ch,(shift,bits) in enumerate([(11,5),(5,6),(0,5)]):
+        v=(words>>shift)&((1<<bits)-1)
+        rgba[...,ch] = (v<<(8-bits))|(v>>(2*bits-8))
+    rgba[...,3] = 255
+    return rgba
+
 def textures(prefix=''):
     data = (SOURCE/'cellanim.tpl').read_bytes()
     assert u32(data) == 0x20af30
@@ -29,8 +47,20 @@ def textures(prefix=''):
     for i in range(u32(data,4)):
         header = u32(data,u32(data,8)+i*8)
         h,w,fmt,start = struct.unpack_from('>HHII',data,header)
-        assert fmt in (5,6), f'Unsupported texture format {fmt}'
+        assert fmt in (5,6,9), f'Unsupported texture format {fmt}'
         name=f'{prefix}texture-{i}.png'
+        if fmt == 9:
+            # C8: 8x4 tiles of palette indices into the texture's palette (RGB565 or RGB5A3).
+            palette_header = u32(data,u32(data,8)+i*8+4)
+            count,_,palette_format,palette_start = struct.unpack_from('>HBxII',data,palette_header)
+            assert palette_format in (1,2), f'Unsupported palette format {palette_format}'
+            indices = np.frombuffer(data,dtype=np.uint8,count=w*h,offset=start)
+            indices = indices.reshape(h//4,w//8,4,8).transpose(0,2,1,3).reshape(h,w)
+            words = np.frombuffer(data,dtype='>u2',count=count,offset=palette_start).astype(np.uint16)
+            colors = rgb565(words) if palette_format == 1 else rgb5a3(words)
+            Image.fromarray(colors[indices],'RGBA').save(OUT/name)
+            paths.append(name)
+            continue
         if fmt == 6:
             # RGBA8: 4x4 tiles of 64 bytes, alpha/red pairs then green/blue pairs.
             tiles = np.frombuffer(data,dtype=np.uint8,count=w*h*4,offset=start).reshape(h//4,w//4,2,16,2)
@@ -43,14 +73,7 @@ def textures(prefix=''):
             continue
         words = np.frombuffer(data,dtype='>u2',count=w*h,offset=start).astype(np.uint16)
         words = words.reshape(h//4,w//4,4,4).transpose(0,2,1,3).reshape(h,w)
-        opaque = (words&0x8000)!=0
-        rgba = np.empty((h,w,4),dtype=np.uint8)
-        for ch,shift in enumerate([10,5,0]):
-            v=(words>>shift)&31
-            rgba[:,:,ch] = np.where(opaque,(v<<3)|(v>>2),((words>>[8,4,0][ch])&15)*17)
-        a=(words>>12)&7
-        rgba[:,:,3] = np.where(opaque,255,(a<<5)|(a<<2)|(a>>1))
-        Image.fromarray(rgba,'RGBA').save(OUT/name)
+        Image.fromarray(rgb5a3(words),'RGBA').save(OUT/name)
         paths.append(name)
     return paths
 

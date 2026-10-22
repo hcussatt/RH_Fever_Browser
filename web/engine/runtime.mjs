@@ -174,6 +174,7 @@ export async function loadGame(gameUrl,load=fetchBytes,{timeline:withTimeline=tr
  const live=new Map(),pending=new Map(); // checker address -> the target its last cue was read from, that cue's index
  function step(nextTick,press=false){
   const armedBefore=cueInputs.length;
+  const lead=[];if(!steps)for(let i=0,c;(c=core._checker_at(i)>>>0);i++)lead.push(c);
   const events=frame(nextTick-tick,press);tick=nextTick;
   // A checker's perfect tick: its target (mTickJust, +0x58) less the ticks it has counted (mTickPass,
   // +0x54), read when it is created. A hit can re-arm a checker for a later target (Screwbot
@@ -188,11 +189,16 @@ export async function loadGame(gameUrl,load=fetchBytes,{timeline:withTimeline=tr
    live.set(c,f32(c+0x58));pending.delete(c);
    if(u32(c+0x0c)!==0xffffffff){pending.set(c,cues.length);cues.push(tick+f32(c+0x58)-f32(c+0x54));cueInputs.push(u32(c+0x0c));cueWithdrawn.push(false);}
   };
+  // Checkers armed before the music started (Remix 5's first catch, armed in the chart's lead-in).
+  for(const c of lead)arm(c);
   for(const e of events)if(e[0]===9)arm(e[1]);
   for(let i=0,c;(c=core._checker_at(i)>>>0);i++)if(live.has(c)&&live.get(c)!==f32(c+0x58))arm(c);
   const armed=cueInputs.slice(armedBefore);
   if(press===6)pairHeld=armed.includes(20)?'held':cues.some((t,i)=>t>tick+12&&!cueWithdrawn[i]&&cueInputs[i]!==20)?'release':'wait';
   else if(pairHeld==='wait'&&armed.length)pairHeld=armed.includes(20)?'held':'release';
+  // A remix's next scene (24) ends the game whose release it waited for: let go before the new
+  // game's first cue, which the controller's cooldown after a release would otherwise swallow.
+  else if(pairHeld==='wait'&&events.some(e=>e[0]===24))pairHeld='release';
   handle(events,tick);
   steps++;
   return events;

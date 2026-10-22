@@ -1,0 +1,40 @@
+{
+  "$schema": "../../schemas/game.schema.json",
+  "schemaVersion": 1,
+  "id": "samurai",
+  "title": "Samurai Slice",
+  "action": "Slash",
+  "platform": "wii",
+  "wii": {
+    "scene": "Samurai",
+    "sceneVariant": 1,
+    "cellanim": "EN/content2/cellanim/samurai/ver0/cellanim.szs",
+    "units": [
+      "Game/Samurai/SceneSamurai.cpp",
+      "Game/Samurai/MyChecker.cpp",
+      "Game/Samurai/MyFlow.cpp",
+      "Game/WindParticle.cpp"
+    ],
+    "banks": [
+      "samurai",
+      "samurai_bg",
+      "samurai_bg2",
+      "samurai_demo0",
+      "samurai_demo1",
+      "samurai_demo2",
+      "samurai_demo3",
+      "samurai_demo4",
+      "samurai_enemy",
+      "samurai_other_00",
+      "samurai_words"
+    ],
+    "projection": [
+      832,
+      456
+    ],
+    "endsWithMusic": true
+  },
+  "web": {
+    "enabled": false
+  }
+}

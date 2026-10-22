@@ -1,0 +1,33 @@
+{
+  "$schema": "../../schemas/game.schema.json",
+  "schemaVersion": 1,
+  "id": "batting",
+  "title": "Exhibition Match",
+  "action": "Swing",
+  "platform": "wii",
+  "wii": {
+    "scene": "Batting",
+    "cellanim": "EN/content2/cellanim/batting/ver0/cellanim.szs",
+    "units": [
+      "Game/Batting/SceneBatting.cpp",
+      "Game/Batting/MyChecker.cpp",
+      "Game/Batting/MyFlow.cpp"
+    ],
+    "banks": [
+      "batting_01",
+      "batting_02",
+      "batting_bg",
+      "batting_bg_02",
+      "batting_cut_in",
+      "batting_effect_00"
+    ],
+    "projection": [
+      832,
+      456
+    ],
+    "endsWithMusic": true
+  },
+  "web": {
+    "enabled": false
+  }
+}

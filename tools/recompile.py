@@ -166,12 +166,13 @@ def generate(a,size,name):
         elif m=='sraw':
             # Shifts of 32 or more fill with the sign; carry is set when a negative value loses 1 bits.
             c=f'{{uint32_t n={q[2]}&63;int32_t x=(int32_t){q[1]};uint32_t lost=n>31?(uint32_t)x:(n?(uint32_t)x&((1u<<n)-1):0);carry=x<0&&lost!=0;{q[0]}=(uint32_t)(n>31?(x>>31):(x>>n));}}'
-        elif m in ['srwi','slwi','srawi','clrlwi','clrrwi','rlwinm']:
+        elif m in ['srwi','slwi','srawi','clrlwi','clrrwi','rlwinm','rotlwi']:
             if m=='srwi':v=f'{q[1]}>>{q[2]}'
             elif m=='slwi':v=f'{q[1]}<<{q[2]}'
             elif m=='srawi':
                 v=f'(int32_t){q[1]}>>{q[2]}'
                 c=f'carry=((int32_t){q[1]}<0 && ({q[1]} & ((1u<<{q[2]})-1)));'
+            elif m=='rotlwi':v=f'rotl({q[1]},{q[2]})'
             elif m=='clrlwi':v=f'{q[1]} & {hex((1<<(32-int(p[2],0)))-1)}u'
             elif m=='clrrwi':v=f'{q[1]} & {hex((0xffffffff<<int(p[2],0))&0xffffffff)}u'
             else:

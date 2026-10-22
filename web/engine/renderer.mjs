@@ -66,9 +66,14 @@ export async function createRenderer(g,canvas){
  // Rally's sky through the day) only the blend reruns, from the cell's pixels read once, into a
  // canvas reused from the ones dropped.
  const coloredCells=new Map(),cellPixels=new Map(),spare=[];
+ // The cell-animation render effect (CellAnimRenderEff.cpp, sCurrentEffType): 1 grayscale (the
+ // texture's red in every channel), 2 invert (fore and back swapped), 3 edges (inverted, and only
+ // pixels below full alpha drawn). The scene's front cell animations draw with it (CExScene::_1C).
+ let effect=0;
  function colored(texture,o,a){
-  const fore=[u8(a+0xa0),u8(a+0xa1),u8(a+0xa2)],back=[u8(a+0xa3),u8(a+0xa4),u8(a+0xa5)];
-  const region=[texture,o.sx,o.sy,o.w,o.h].join(),id=region+'/'+[...fore,...back].join();
+  let fore=[u8(a+0xa0),u8(a+0xa1),u8(a+0xa2)],back=[u8(a+0xa3),u8(a+0xa4),u8(a+0xa5)];
+  if(effect===2||effect===3)[fore,back]=[back,fore];
+  const region=[texture,o.sx,o.sy,o.w,o.h].join(),id=region+'/'+[...fore,...back].join()+'/'+effect;
   const hit=coloredCells.get(id);if(hit){coloredCells.delete(id);coloredCells.set(id,hit);return hit;}
   let src=cellPixels.get(region);
   if(!src){
@@ -82,7 +87,8 @@ export async function createRenderer(g,canvas){
   if(spare.length>32)spare.shift();
   const x=c.getContext('2d'),d=x.createImageData(o.w,o.h),p=d.data;
   const lut=[0,1,2].map(ch=>Uint8ClampedArray.from({length:256},(_,v)=>fore[ch]+(back[ch]-fore[ch])*v/255));
-  for(let i=0;i<p.length;i+=4){p[i]=lut[0][src[i]];p[i+1]=lut[1][src[i+1]];p[i+2]=lut[2][src[i+2]];p[i+3]=src[i+3];}
+  const [g,b]=effect===1?[0,0]:[1,2];
+  for(let i=0;i<p.length;i+=4){p[i]=lut[0][src[i]];p[i+1]=lut[1][src[i+g]];p[i+2]=lut[2][src[i+b]];p[i+3]=effect===3&&src[i+3]===255?0:src[i+3];}
   x.putImageData(d,0,0);coloredCells.set(id,c);return c;
  }
  // The screen bank's texture (CDynTex, see adapters/wii/platform.c): the layout's colours drawn
@@ -129,7 +135,7 @@ export async function createRenderer(g,canvas){
     if(bank.screen){if(!plain(a))throw new Error('Screen bank drawn with a tint');if(screenTex)drawScreen(om,alpha);}
     else{
      ctx.setTransform(...om);ctx.globalAlpha=alpha;
-     if(plain(a))ctx.drawImage(images[bank.texture],o.sx,o.sy,o.w,o.h,-o.w/2,-o.h/2,o.w,o.h);
+     if(plain(a)&&!effect)ctx.drawImage(images[bank.texture],o.sx,o.sy,o.w,o.h,-o.w/2,-o.h/2,o.w,o.h);
      else ctx.drawImage(colored(bank.texture,o,a),-o.w/2,-o.h/2,o.w,o.h);
     }
    }
@@ -145,6 +151,7 @@ export async function createRenderer(g,canvas){
   // Bank 255 stands in for the platform's own placeholder animations: never drawn, but
   // they can be bases for others.
   const actors=Array.from(pool).filter((a,i)=>active[i]);
+  effect=u32(0x803204d8);if(effect>3)effect=0; // fn_8009E204 draws any other type plainly
   current=new Set(actors);
   for(const a of matrices.keys())if(!current.has(a))matrices.delete(a);
   for(const a of actors)if(!u32(a+0xb0))makeMatrix(a,identity);

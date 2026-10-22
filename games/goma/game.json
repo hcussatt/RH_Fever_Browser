@@ -1,0 +1,32 @@
+{
+  "$schema": "../../schemas/game.schema.json",
+  "schemaVersion": 1,
+  "id": "goma",
+  "title": "Flipper-Flop",
+  "action": "Flip",
+  "platform": "wii",
+  "wii": {
+    "scene": "Goma",
+    "cellanim": "EN/content2/cellanim/goma/ver0/cellanim.szs",
+    "units": [
+      "Game/Goma/SceneGoma.cpp",
+      "Game/Goma/MyChecker.cpp",
+      "Game/Goma/MyFlow.cpp",
+      "Game/code_8008FF40.cpp",
+      "Game/code_800D2920.cpp"
+    ],
+    "banks": [
+      "captain",
+      "goma",
+      "goma_bg_00"
+    ],
+    "projection": [
+      832,
+      456
+    ],
+    "endsWithMusic": true
+  },
+  "web": {
+    "enabled": false
+  }
+}
