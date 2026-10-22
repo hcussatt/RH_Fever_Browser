@@ -1,0 +1,31 @@
+{
+  "$schema": "../../schemas/game.schema.json",
+  "schemaVersion": 1,
+  "id": "tambourine",
+  "title": "Tambourine",
+  "action": "Shake",
+  "platform": "wii",
+  "wii": {
+    "scene": "Tambourine",
+    "cellanim": "EN/content2/cellanim/tambourine/ver0/cellanim.szs",
+    "units": [
+      "Game/Tambourine/SceneTambourine.cpp",
+      "Game/Tambourine/MyChecker.cpp",
+      "Game/Tambourine/MyFlow.cpp",
+      "Game/code_800C378C.cpp",
+      "Game/code_800D2920.cpp"
+    ],
+    "banks": [
+      "tambourine",
+      "tambourine_frog"
+    ],
+    "projection": [
+      832,
+      456
+    ],
+    "endsWithMusic": true
+  },
+  "web": {
+    "enabled": false
+  }
+}

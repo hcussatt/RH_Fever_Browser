@@ -1,0 +1,30 @@
+{
+  "$schema": "../../schemas/game.schema.json",
+  "schemaVersion": 1,
+  "id": "rotation",
+  "title": "Board Meeting",
+  "action": "Spin",
+  "platform": "wii",
+  "wii": {
+    "scene": "Rotation",
+    "cellanim": "EN/content2/cellanim/rotation/ver0/cellanim.szs",
+    "units": [
+      "Game/Rotation/SceneRotation.cpp",
+      "Game/Rotation/MyChecker.cpp",
+      "Game/Rotation/MyFlow.cpp"
+    ],
+    "banks": [
+      "rotation",
+      "rotation_bg",
+      "secretary_00"
+    ],
+    "projection": [
+      832,
+      456
+    ],
+    "endsWithMusic": true
+  },
+  "web": {
+    "enabled": false
+  }
+}

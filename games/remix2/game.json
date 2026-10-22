@@ -1,0 +1,38 @@
+{
+  "$schema": "../../schemas/game.schema.json",
+  "schemaVersion": 1,
+  "id": "remix2",
+  "title": "Remix 2",
+  "action": "Play each game",
+  "platform": "wii",
+  "wii": {
+    "music": "WSD_KOMAGO_MAIL",
+    "scenes": [
+      {
+        "game": "fork",
+        "cellanim": "EN/content2/cellanim/fork/remix02/cellanim.szs"
+      },
+      {
+        "game": "rotation",
+        "cellanim": "EN/content2/cellanim/rotation/remix02/cellanim.szs"
+      },
+      {
+        "game": "tambourine",
+        "cellanim": "EN/content2/cellanim/tambourine/remix02/cellanim.szs"
+      },
+      {
+        "game": "watch",
+        "cellanim": "EN/content2/cellanim/watch/remix02/cellanim.szs"
+      }
+    ],
+    "epilogue": "EN/content2/cellanim/remix/ver2/cellanim_epilogue.szs",
+    "projection": [
+      832,
+      456
+    ],
+    "endsWithMusic": true
+  },
+  "web": {
+    "enabled": false
+  }
+}
