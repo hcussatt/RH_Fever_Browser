@@ -5,6 +5,5 @@
 #define GAME_FLOW_COMMAND 0x800a72b0  // MyFlow chart command dispatcher
 #define GAME_WRONG_INPUT 0x800a75dc   // reaction to a press with no cue
 #define GAME_FLOW_CREATE 0x800a7208   // MyFlow::create(chart, rest)
-#define GAME_CALLS \
-  case 0x80124550:r[3]=1;break; /* Widescreen presentation. */
+#define GAME_CALLS
 #define GAME_AFTER_UPDATE

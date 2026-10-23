@@ -23,9 +23,19 @@ static uint32_t actors[2048],actor_active[2048],actor_count;
 static uint32_t input_map[256];
 // A+B detection state (CController::unk1370, unk1374, unk136C, unk136D) and lone presses held back.
 static uint32_t combo_state,combo_frames,combo_down,combo_was_down,held_a,held_b,release_a,release_b;
+// CController's button cooldown for A and B (bit 0, 1): after a button is let go it is ignored for
+// its cool frames (6 unless the scene sets them, fn_801D5500), and a scene can block one for a time
+// (fn_801D55D8). hold is the buttons down now, before the cooldown.
+static uint32_t cool_frames[2],cool_timer[2],raw_hold;
+#define CONTROLLER 0x80420000 // the CController every channel returns (fn_801D5FF0)
+// WPAD A (0x800) and B (0x400) as bits 0 and 1.
+static uint32_t wpad_buttons(uint32_t mask){return (mask&0x800?1:0)|(mask&0x400?2:0);}
 static uint32_t checkers[128],checker_count,events[5120],event_count,frame_number;
 static uint32_t scene,layout[8],layout_count,canvas[10],base_canvas;
-static uint32_t canvas_timing[10][2];
+// Each canvas's CMyCanvasManager tweens: scale x and y, position x and y, angle.
+static uint32_t canvas_timing[10][5];
+#define RENDER_EFFECT 0x803204d8 // CellAnimRenderEff.cpp sCurrentEffType
+static const uint32_t canvas_field[5]={0x8c,0x90,0x84,0x88,0x94};
 static uint32_t hits,misses,through,stray,perfect_failed,score_sum,score_count,wrong_count;
 // Chart player: the original CTickFlow interpreter (translated with the game)
 // runs every chart script live. These stand in for CTickFlowManager.
@@ -150,17 +160,24 @@ static void end_actor_at(uint32_t i){
   actor_active[i]=0;
 }
 static void end_actor(uint32_t actor){for(uint32_t i=0;i<actor_count;i++)if(actors[i]==actor)end_actor_at(i);}
-static void set_canvas_timed(uint32_t index,uint32_t type,uint32_t power,float duration,float x,float y){
-  float target[2]={x,y};
-  for(int axis=0;axis<2;axis++){
-    uint32_t t=canvas_timing[index][axis];
-    if(!t){t=canvas_timing[index][axis]=alloc(64);invoke1(0x801ea590,t);}
-    wr32(t+12,type);wr8(t+16,power);
-    float start=rdf32(canvas[index]+0x8c+axis*4);
-    r[3]=t;f[1].d=start;f[2].d=target[axis];call(0x801ea698);
-    r[3]=t;r[4]=1;f[1].d=0;f[2].d=duration;call(0x801ea550);
-  }
+// A timed change of one canvas field (CMyCanvasManager fn_8007C000 scale, fn_8007C0C8 position,
+// fn_8007C190 angle): from its value now to the target over duration, with the ease type and power.
+static void set_canvas_tween(uint32_t index,uint32_t slot,uint32_t type,uint32_t power,float duration,float target){
+  uint32_t t=canvas_timing[index][slot];
+  if(!t){t=canvas_timing[index][slot]=alloc(64);invoke1(0x801ea590,t);}
+  wr32(t+12,type);wr8(t+16,power);
+  float start=rdf32(canvas[index]+canvas_field[slot]);
+  r[3]=t;f[1].d=start;f[2].d=target;call(0x801ea698);
+  r[3]=t;r[4]=1;f[1].d=0;f[2].d=duration;call(0x801ea550);
 }
+static void set_canvas_timed(uint32_t index,uint32_t type,uint32_t power,float duration,float x,float y){
+  set_canvas_tween(index,0,type,power,duration,x);set_canvas_tween(index,1,type,power,duration,y);
+}
+static void set_canvas_moving(uint32_t index,uint32_t type,uint32_t power,float duration,float x,float y){
+  set_canvas_tween(index,2,type,power,duration,x);set_canvas_tween(index,3,type,power,duration,y);
+}
+// Stops a canvas's tweens from slot first to last (the original clears each tween's running flag).
+static void stop_canvas_tweens(uint32_t index,int first,int last){for(int a=first;a<=last;a++)if(canvas_timing[index][a])wr8(canvas_timing[index][a]+37,0);}
 static void checkpoint(uint32_t category,uint32_t type){
   if(type==0)hits++;else if(type==1)misses++;else through++;
   emit(2,type,category);
@@ -215,7 +232,7 @@ static void register_bank(uint32_t file,uint32_t id){
 }
 static void canvas_default(uint32_t i){
   wrf32(canvas[i]+0x84,0);wrf32(canvas[i]+0x88,0);wrf32(canvas[i]+0x8c,1);wrf32(canvas[i]+0x90,1);wrf32(canvas[i]+0x94,0);
-  for(int a=0;a<2;a++)if(canvas_timing[i][a])wr8(canvas_timing[i][a]+37,0);
+  stop_canvas_tweens(i,0,4);
 }
 // CExScene::_20, the end of every scene: what the next scene would otherwise inherit is reset
 // (canvases, input checkers, the chart's input remaps and the layouts), flows above category 0 end
@@ -227,6 +244,8 @@ static void ex_scene_unload(void){
   for(uint32_t i=0;i<3;i++){r[3]=rd32(0x80320200+i*4);r[4]=base_canvas;r[5]=0;r[6]=0;call(0x801dcfa4);}
   checker_count=0;for(int i=0;i<256;i++)input_map[i]=i;
   wr32(rd32(0x80320170)+0x418,0); // the scene's wrong-input callback
+  wr32(RENDER_EFFECT,0); // fn_8009E1C4
+  cool_frames[0]=cool_frames[1]=6; // A and B cool frames back to 6 (fn_801D5500)
   layout_count=0;emit(15,MESG_CLEAR<<8,0); // CLayoutManager::fn_801D6BB0
   end_flows_above(0);register_flow(0x8008d2cc);
 }
@@ -279,6 +298,8 @@ static void exflow_command(void){
   else if(grading&&op==0x104)wr32(self+0x24,1);
   // A remix changes scene (CSceneManager::fn_80089FE0 then CGameManager::_20), sets the next
   // scene's version and asks whether it runs yet (CScene::eState_Active).
+  // Remix 5's chart changes to its first scene, already running here, before the music starts.
+  else if(op==0x100&&arg0==0&&!music_started&&scene_state==SCENE_ACTIVE&&find_profile(rd32(args))==(int)profile_index&&!rd32(args+4)){}
   else if(op==0x100&&arg0==0&&!song_ended&&find_profile(rd32(args))>=0){
     next_profile=find_profile(rd32(args));next_chart=rd32(args+4);
     scene_state=SCENE_SCHEDULE_DOWN;fader_state=FADER_WAIT1;fader_wait=5; // CScene::fn_801D8578, CFaderFlash::_10
@@ -372,10 +393,15 @@ static void exflow_command(void){
     else if(arg0==1)set_canvas_timed(index,rd32(args+4),rd32(args+8)&255,(float)(int32_t)rd32(args+12),(float)rd32(args+16)*unit,(float)rd32(args+20)*unit);
     else{r[4]=index;call(0x8007c200);}
   }
-  // CExFlow 0x126 0 places a canvas (CMyCanvasManager::fn_8007BFA8; Board Meeting shakes the base
-  // canvas this way). 1 (a timed move, fn_8007C0C8) and 2 (fn_8007C218) are not modelled yet.
+  // CExFlow 0x126 places a canvas: 0 at once (fn_8007BFA8; Board Meeting shakes the base canvas this
+  // way), 1 over time with an ease (fn_8007C0C8: type, power, duration, x, y), 2 stops that (fn_8007C218).
   else if(op==0x126&&arg0==0){r[4]=rd32(args);f[1].d=(float)(int32_t)rd32(args+4);f[2].d=(float)(int32_t)rd32(args+8);call(0x8007bfa8);}
+  else if(op==0x126&&arg0==1)set_canvas_moving(rd32(args),rd32(args+4),rd32(args+8)&255,(float)(int32_t)rd32(args+12),(float)(int32_t)rd32(args+16),(float)(int32_t)rd32(args+20));
+  else if(op==0x126&&arg0==2){r[4]=rd32(args);call(0x8007c218);}
   else if(op==0x126)panic(arg0,22);
+  // CExFlow 0x132 sets the cell-animation render effect (CellAnimRenderEff.cpp): args[0] 0 none,
+  // 1 grayscale, 2 invert, 3 edges; the renderer reads it from sCurrentEffType.
+  else if(op==0x132){uint32_t type=rd32(args);if(type<=3)wr32(RENDER_EFFECT,type);}
   else if(op==0x131)wr32(self+0x24,0); // Scene version / play-mode query: normal play.
   r[3]=0;
 }
@@ -422,6 +448,12 @@ static void call(uint32_t address){
     for(uint32_t i=n;i-->0;){r[4]=(uint32_t)-1;invoke1(dtor,a+i*size);}break;}
   case 0x80103b48:{uint32_t a=r[3],ctor=r[4],size=r[6],n=r[7];for(uint32_t i=0;i<n;i++)invoke1(ctor,a+i*size);r[3]=a;break;}
   case 0x801d3284:case 0x801d3370:r[3]=alloc(r[3]);break; // operator new and new[]
+  // CellAnimRenderEff.cpp's setters (fn_8009E1B4 sets a type, the others one each); each returns the type before.
+  case 0x8009e1b4:case 0x8009e1c4:case 0x8009e1d4:case 0x8009e1e4:case 0x8009e1f4:{
+    uint32_t before=rd32(RENDER_EFFECT);wr32(RENDER_EFFECT,address==0x8009e1b4?r[3]:(address-0x8009e1c4)/16);r[3]=before;break;}
+  case 0x80124550:r[3]=1;break; // SCGetAspectRatio: 16:9, the screen the 832x456 projection fills
+  case 0x80009fb4:r[3]=rd8(0x803201c1);break; // CExScene::fn_80009FB4: the video-frame mode flag (lbl_803201C1)
+  case 0x800fe640:break; // GXDrawDone: waits for the GPU, which the browser draws for itself
   case 0x801e9144:r[3]=alloc(r[4]);break;
   case 0x801d345c:case 0x801d34e0:case 0x801e9150:break; // operator delete and delete[]: the heap is never reused
   case 0x801eaa84:wr32(r[3]+4,0);wr32(r[3]+8,0);break;
@@ -499,9 +531,14 @@ static void call(uint32_t address){
   case 0x801dc164:base_canvas=r[4];break;
   case 0x801dc16c:r[3]=base_canvas;break;
   case 0x8007bf30:{uint32_t actor=r[4],index=r[5];r[3]=actor;r[4]=(int32_t)index<0?0:canvas[index];r[5]=0;r[6]=0;call(0x801dcfa4);break;}
-  case 0x8007bf6c:{uint32_t i=r[4];wrf32(canvas[i]+0x8c,f[1].d);wrf32(canvas[i]+0x90,f[2].d);for(int a=0;a<2;a++)if(canvas_timing[i][a])wr8(canvas_timing[i][a]+37,0);break;}
-  case 0x8007c200:{uint32_t i=r[4];for(int a=0;a<2;a++)if(canvas_timing[i][a])wr8(canvas_timing[i][a]+37,0);break;} // stops the canvas's scale tweens
-  case 0x8007bfa8:wrf32(canvas[r[4]]+0x84,f[1].d);wrf32(canvas[r[4]]+0x88,f[2].d);break;
+  case 0x8007bf6c:{uint32_t i=r[4];wrf32(canvas[i]+0x8c,f[1].d);wrf32(canvas[i]+0x90,f[2].d);stop_canvas_tweens(i,0,1);break;}
+  case 0x8007c200:stop_canvas_tweens(r[4],0,1);break; // stops the canvas's scale tweens
+  case 0x8007c218:stop_canvas_tweens(r[4],2,3);break; // its position tweens
+  case 0x8007c230:stop_canvas_tweens(r[4],4,4);break; // its angle tween
+  case 0x8007c0c8:{uint32_t index=r[4],type=r[5],power=r[6];float duration=f[1].d,x=f[2].d,y=f[3].d;set_canvas_moving(index,type,power,duration,x,y);break;}
+  case 0x8007c190:{uint32_t index=r[4],type=r[5],power=r[6];float duration=f[1].d,angle=f[2].d;set_canvas_tween(index,4,type,power,duration,angle);break;}
+  case 0x8007bfe4:wrf32(canvas[r[4]]+0x94,f[1].d);stop_canvas_tweens(r[4],4,4);break;
+  case 0x8007bfa8:wrf32(canvas[r[4]]+0x84,f[1].d);wrf32(canvas[r[4]]+0x88,f[2].d);stop_canvas_tweens(r[4],2,3);break;
   case 0x8007c000:{uint32_t index=r[4],type=r[5],power=r[6];float duration=f[1].d,x=f[2].d,y=f[3].d;set_canvas_timed(index,type,power,duration,x,y);break;}
   case 0x8007c244:{uint32_t i=r[4];union{float f;uint32_t u;}x={.f=rdf32(canvas[i]+0x8c)},y={.f=rdf32(canvas[i]+0x90)};r[3]=x.u;r[4]=y.u;break;}
   case 0x80008fc0:anim_tempo_update=r[4]&1;anim_tempo=(uint16_t)wave_tempo(r[5]&0xffff);break; // CExScene: animations follow the chart tempo
@@ -538,8 +575,10 @@ static void call(uint32_t address){
   case 0x801e3e2c:emit(13,r[4],fbits(f[1].d));break; // Backing track volume (13): fade frames, volume
   case 0x801e38cc:case 0x801e7334:r[3]=0;break; // stream playing / sound data loading
   case 0x801e6e08:case 0x801e6e4c:case 0x801e6ecc:case 0x801e7114:case 0x801e71c0:break; // player volumes
-  // Input-check settings (forced inputs, offsets, input recording) and button cooldown: normal play.
-  case 0x801e923c:case 0x801e9c30:case 0x801e9c38:case 0x801e9d7c:case 0x801e9d80:case 0x801e9d84:case 0x801d5500:break;
+  // Input-check settings (forced inputs, offsets, input recording): normal play.
+  case 0x801e923c:case 0x801e9c30:case 0x801e9c38:case 0x801e9d7c:case 0x801e9d80:case 0x801e9d84:break;
+  case 0x801d5500:{uint32_t b=wpad_buttons(r[4]);for(int i=0;i<2;i++)if(b&(1u<<i))cool_frames[i]=r[5]&255;break;} // CController::fn_801D5500
+  case 0x801d55d8:{uint32_t b=wpad_buttons(r[4]);for(int i=0;i<2;i++)if(b&(1u<<i))cool_timer[i]=r[5]&255;break;} // CController::fn_801D55D8
   case 0x8010a084:r[3]=0;break; // sprintf (only for input recording file names)
   // CBalloonLayout (message.brlyt): every scene places its speech balloon and the overlay strip
   // across the screen, and gives their text boxes to the message panes (CTickFlow::fn_801DEF58).
@@ -586,7 +625,7 @@ static void call(uint32_t address){
   case 0x801d422c:r[3]=1;break;
   case 0x801d4270:if(file_count>=512)panic(r[5],15);file_names[file_count]=r[5];r[3]=0x80410000+file_count++*32;break; // a file of a loaded archive, by name
   case 0x801d42e0:case 0x801d42fc:r[3]=1;break;
-  case 0x801d5ff0:r[3]=0x80420000;break;
+  case 0x801d5ff0:r[3]=CONTROLLER;break;
   case 0x801d6aec:break;
   case 0x801d6b2c:{ // CLayoutManager adds a layout and sets it up (_10)
     if(layout_count>=8)panic(layout_count,9);layout[layout_count++]=r[4];
@@ -639,6 +678,7 @@ EMSCRIPTEN_KEEPALIVE uint32_t install_named_bank(uint32_t scene_index,uint32_t n
 }
 EMSCRIPTEN_KEEPALIVE void reset_runtime(void){
   combo_state=combo_frames=combo_down=combo_was_down=held_a=held_b=release_a=release_b=0;
+  cool_frames[0]=cool_frames[1]=6;cool_timer[0]=cool_timer[1]=raw_hold=0; // CController's constructor
   for(int i=0;i<256;i++)input_map[i]=i;
   memset(ram,0,sizeof(ram));memset(r,0,sizeof(r));memset(f,0,sizeof(f));memset(cr,0,sizeof(cr));memset(banks,0,sizeof(banks));
   memset(tf_values,0,sizeof(tf_values));tf_values[0]=32;tf_values[1]=16;tf_values[2]=16;tf_values[3]=8; // CTickFlowManager::_10's defaults
@@ -680,6 +720,10 @@ EMSCRIPTEN_KEEPALIVE void initialize_scene(void){
    wrf32(0x80320220,0.0f);invoke1(0x801ea590,MASK_TWEEN);wr32(MASK_TWEEN+12,0);wr8(MASK_TWEEN+16,1);
    r[3]=MASK_TWEEN;f[1].d=0.0f;f[2].d=1.0f;call(0x801ea698);r[3]=MASK_TWEEN;r[4]=1;f[1].d=0.0f;f[2].d=96.0f;call(0x801ea550);wr8(MASK_TWEEN+37,0);}
   uint32_t other=persistent[persistent_count++]=create_actor(255,0);wr32(0x803201f8,other);wr32(0x803201fc,other);
+  // The scene before every game (its prologue, a CExScene) ends with CExScene::_20, which leaves
+  // canvas 2 as the default base: the game's actors are made on it (Ringside zooms it in by 1.3).
+  base_canvas=canvas[2];
+  invoke1(rd32(rd32(scene)+0x10),scene); // _10: load assets (Flock Step makes its birds' arrays here)
   invoke1(profiles[profile_index].init,scene);
   wr32(0x803201bc,7);wr8(0x803201b8,1);
   emit(4,scene,0);
@@ -789,7 +833,23 @@ static void single(uint32_t *held,uint32_t pressed,uint32_t type,uint32_t pair,u
   if(!pressed)return;
   if(rd8(rd32(0x80320170)+wait_flag)||pair_near(pair))*held=3;else press(type);
 }
+// CController::fn_801D4EA4: a button whose cooldown runs passes nothing; while it is still held when
+// the cooldown ends, the cooldown waits for it to be let go.
+// The buttons it passes are what games read from the controller (mButtonHold, mButtonTrig and
+// mButtonRelease at +0x1338, as WPAD bits): Samurai Slice checks A and B are still held.
+static void cool_buttons(uint32_t *trig,uint32_t *release){
+  raw_hold=(raw_hold|*trig)&~*release;
+  uint32_t hold=0;
+  for(int i=0;i<2;i++){
+    uint32_t bit=1u<<i;
+    if(cool_timer[i]){if(!--cool_timer[i]&&(raw_hold&bit))cool_timer[i]=1;*trig&=~bit;*release&=~bit;}
+    else{hold|=raw_hold&bit;if(*release&bit)cool_timer[i]=cool_frames[i];}
+  }
+  const uint32_t wpad[4]={0,0x800,0x400,0xc00};
+  wr32(CONTROLLER+0x1338,wpad[hold]);wr32(CONTROLLER+0x133c,wpad[*trig&3]);wr32(CONTROLLER+0x1340,wpad[*release&3]);
+}
 EMSCRIPTEN_KEEPALIVE void buttons(uint32_t trig,uint32_t release){
+  cool_buttons(&trig,&release);
   combo_was_down=combo_down;
   if(!combo_was_down){
     if(combo_state==0){
@@ -869,7 +929,7 @@ EMSCRIPTEN_KEEPALIVE void finish_frame(void){
   // including this frame's newly finalized throughs.
   invoke1(0x801eae20,rd32(0x8032016c));
   if(wrong_timer>0){wrong_timer-=delta_ticks;if(wrong_timer<0)wrong_timer=0;}
-  for(int i=0;i<10;i++)for(int a=0;a<2;a++){uint32_t t=canvas_timing[i][a];if(t&&rd8(t+37)){r[3]=t;r[4]=0;call(0x801e9de8);wrf32(canvas[i]+0x8c+a*4,rdf32(t+40));}}
+  for(int i=0;i<10;i++)for(int a=0;a<5;a++){uint32_t t=canvas_timing[i][a];if(t&&rd8(t+37)){r[3]=t;r[4]=0;call(0x801e9de8);wrf32(canvas[i]+canvas_field[a],rdf32(t+40));}}
   scene_frame();
   // The scene's draw hook (vtable +0x1C), which sets what is visible before drawing; the drawing
   // itself (CExScene::_1C) is the browser renderer's job.

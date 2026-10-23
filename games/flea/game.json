@@ -1,0 +1,32 @@
+{
+  "$schema": "../../schemas/game.schema.json",
+  "schemaVersion": 1,
+  "id": "flea",
+  "title": "Micro-Row",
+  "action": "Row",
+  "platform": "wii",
+  "wii": {
+    "scene": "Flea",
+    "sceneVariant": 0,
+    "cellanim": "EN/content2/cellanim/flea/ver0/cellanim.szs",
+    "units": [
+      "Game/Flea/SceneFlea.cpp",
+      "Game/Flea/MyChecker.cpp",
+      "Game/Flea/MyFlow.cpp",
+      "Game/code_800D2920.cpp"
+    ],
+    "banks": [
+      "flea_00",
+      "flea_effect"
+    ],
+    "projection": [
+      832,
+      456
+    ],
+    "endsWithMusic": true
+  },
+  "web": {
+    "enabled": true,
+    "expectedCues": 139
+  }
+}

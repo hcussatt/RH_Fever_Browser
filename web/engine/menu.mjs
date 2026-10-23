@@ -5,6 +5,8 @@ export const SETS=[
  {title:'Remix 1',games:['golf','robot','seesaw','date','remix1']},
  {title:'Remix 2',games:['fork','tambourine','rotation','watch','remix2']},
  {title:'Remix 3',games:['bun','seal','badminton','muscle','remix3']},
+ {title:'Remix 4',games:['interview','sort','flea','samurai','remix4']},
+ {title:'Remix 5',games:['fishing','goma','batting','birds','remix5']},
  {title:'Remix 6',games:['rocket','concons','receive','rap','remix6']},
  {title:'Remix 7',games:['taptroupe','shrimp','panel','karateman','remix7']},
 ];

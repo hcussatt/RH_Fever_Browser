@@ -8,10 +8,22 @@
   "wii": {
     "music": "WSD_REMIX7",
     "scenes": [
-      {"game": "karateman", "cellanim": "EN/content2/cellanim/karateman/remix07/cellanim.szs"},
-      {"game": "panel", "cellanim": "EN/content2/cellanim/panel/remix07/cellanim.szs"},
-      {"game": "shrimp", "cellanim": "EN/content2/cellanim/shrimp/remix07/cellanim.szs"},
-      {"game": "taptroupe", "cellanim": "EN/content2/cellanim/tap/remix07/cellanim.szs"}
+      {
+        "game": "karateman",
+        "cellanim": "EN/content2/cellanim/karateman/remix07/cellanim.szs"
+      },
+      {
+        "game": "panel",
+        "cellanim": "EN/content2/cellanim/panel/remix07/cellanim.szs"
+      },
+      {
+        "game": "shrimp",
+        "cellanim": "EN/content2/cellanim/shrimp/remix07/cellanim.szs"
+      },
+      {
+        "game": "taptroupe",
+        "cellanim": "EN/content2/cellanim/tap/remix07/cellanim.szs"
+      }
     ],
     "epilogue": "EN/content2/cellanim/remix/ver7/cellanim_epilogue.szs",
     "projection": [
@@ -21,6 +33,7 @@
     "endsWithMusic": true
   },
   "web": {
-    "enabled": false
+    "enabled": true,
+    "expectedCues": 175
   }
 }

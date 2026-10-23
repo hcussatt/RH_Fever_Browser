@@ -161,19 +161,38 @@ def remix_chart(profile, ids):
         raise SystemExit(f'Expected one TF_PREPARE_WAVE for sound {music}, found {len(prepares)}')
     scenes = [ids[s['game_scene']] for s in profile['scenes']]
     change = (2 << 10) | 0x100
+    is_change = lambda a: u32(a) == change and u32(a+4) in scenes and u32(a+8) == 0
+    # The scene change usually comes just before the music is prepared; Remix 5's entry chart
+    # prepares it first and changes scene a little later (the remix chart then plays the music).
     o = prepares[0]-4
-    while not (u32(o) == change and u32(o+4) in scenes and u32(o+8) == 0):
+    while not is_change(o) and prepares[0]-o <= 64:
         o -= 4
-        if prepares[0]-o > 64:
-            raise SystemExit('No scene change before the music')
-    start, scene = o+12, u32(o+4)
+    if not is_change(o):
+        o = prepares[0]+4
+        while not is_change(o):
+            o += 4
+            if o-prepares[0] > 256:
+                raise SystemExit('No scene change around the music')
+    # The chart starts after the scene change, or for Remix 5 at the music's preparation: its
+    # change to the first scene, which is already running, then only sets up its settings and the
+    # grading criteria (see exflow_command in adapters/wii/platform.c).
+    start, scene = (o+12 if o < prepares[0] else prepares[0]), u32(o+4)
+    # Remix 5's entry chart sets its category to 0 (TF_CATEGORY, op 4) just before the music: a flow
+    # starts in category 2000, and a scene change ends every flow above category 0.
+    if start == prepares[0] and u32(start-8) == (1 << 10) | 0x004:
+        start -= 8
     if not any(a == prepares[0] for a, *_ in commands(start)):
         raise SystemExit(f'Chart {start:#x} does not reach TF_PREPARE_WAVE')
     if u32(o-12) & 0x3fff != (2 << 10) | 0x101 or u32(o-8) != scene:
         raise SystemExit(f'No scene version before {o:#x}')
+    # The entry chart starts with TF 0x004 and is named by a pointer elsewhere (the game's scene
+    # table); Remix 5's has another TF 0x004 inside it.
+    pointers = {u32o(off) for off, _, size in SECTIONS for off in range(off, off+size, 4)}
     entry = o
-    while u32(entry) != (1 << 10) | 0x004:  # the entry chart's first command
+    while u32(entry) != (1 << 10) | 0x004 or entry not in pointers:  # the entry chart's first command
         entry -= 4
+        if o-entry > 0x1000:
+            raise SystemExit(f'No entry chart before {o:#x}')
     loads, todo, seen = [], [entry], set()
     while todo:
         address = todo.pop(0)

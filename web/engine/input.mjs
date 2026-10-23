@@ -13,7 +13,7 @@ export function createInputQueue(player=0){
 }
 
 // A: Space, Left Shift, X, left click, gamepad A. B: Right Shift, right click, gamepad B.
-// Escape pauses. Space or X also starts.
+// Escape / controller Start pauses or resumes. Space, X or controller A also starts.
 const KEYS={Space:A,KeyX:A,ShiftLeft:A,ShiftRight:B};
 export function bindControls(canvas,{press,pause,start}){
  // Each event passes its own timestamp, so a busy page does not make an input late.
@@ -36,12 +36,21 @@ export function bindControls(canvas,{press,pause,start}){
  window.addEventListener('pointermove',e=>{if(mouseDown)mouse(e);});
  window.addEventListener('pointerup',mouse);window.addEventListener('pointercancel',mouse);
  canvas.addEventListener('contextmenu',e=>e.preventDefault());
- let lastPad=0;
- // Called once per animation frame; gamepads have no press events.
+ let lastPad=0,lastPause=false,starting=false;
+ // Poll even while the game is stopped so A can start/resume and Start can unpause.
  return function pollGamepad(){
-  const pad=Array.from(navigator.getGamepads?.()||[]).find(Boolean);
-  const down=(pad?.buttons[0]?.pressed?A:0)|(pad?.buttons[1]?.pressed?B:0);
-  for(const button of [A,B])if((down^lastPad)&button)press(button,!!(down&button));
-  lastPad=down;
+  const pads=Array.from(navigator.getGamepads?.()||[]).filter(Boolean);
+  const down=pads.reduce((held,pad)=>held|(pad.buttons[0]?.pressed?A:0)|(pad.buttons[1]?.pressed?B:0),0);
+  const pauseDown=pads.some(pad=>pad.buttons[9]?.pressed);
+  if(document.hidden){lastPad=down;lastPause=pauseDown;return;}
+  if(pauseDown&&!lastPause){pause();lastPad=down;lastPause=pauseDown;return;}
+  for(const button of [A,B])if((down^lastPad)&button){
+   if(button===A){
+    if(down&A&&start()){starting=true;continue;}
+    if(!(down&A)&&starting){starting=false;continue;}
+   }
+   press(button,!!(down&button),performance.now());
+  }
+  lastPad=down;lastPause=pauseDown;
  };
 }

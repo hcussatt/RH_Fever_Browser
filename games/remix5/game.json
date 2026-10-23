@@ -1,0 +1,39 @@
+{
+  "$schema": "../../schemas/game.schema.json",
+  "schemaVersion": 1,
+  "id": "remix5",
+  "title": "Remix 5",
+  "action": "Play each game",
+  "platform": "wii",
+  "wii": {
+    "music": "WSD_ORA_FUNK",
+    "scenes": [
+      {
+        "game": "fishing",
+        "cellanim": "EN/content2/cellanim/fishing/remix05/cellanim.szs"
+      },
+      {
+        "game": "batting",
+        "cellanim": "EN/content2/cellanim/batting/remix05/cellanim.szs"
+      },
+      {
+        "game": "birds",
+        "cellanim": "EN/content2/cellanim/birds/remix05/cellanim.szs"
+      },
+      {
+        "game": "goma",
+        "cellanim": "EN/content2/cellanim/goma/remix05/cellanim.szs"
+      }
+    ],
+    "epilogue": "EN/content2/cellanim/remix/ver5/cellanim_epilogue.szs",
+    "projection": [
+      832,
+      456
+    ],
+    "endsWithMusic": true
+  },
+  "web": {
+    "enabled": true,
+    "expectedCues": 83
+  }
+}

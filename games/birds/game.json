@@ -1,0 +1,33 @@
+{
+  "$schema": "../../schemas/game.schema.json",
+  "schemaVersion": 1,
+  "id": "birds",
+  "title": "Flock Step",
+  "action": "Step",
+  "platform": "wii",
+  "wii": {
+    "scene": "Birds",
+    "cellanim": "EN/content2/cellanim/birds/ver0/cellanim.szs",
+    "units": [
+      "Game/Birds/SceneBirds.cpp",
+      "Game/Birds/MyChecker.cpp",
+      "Game/Birds/MyFlow.cpp"
+    ],
+    "banks": [
+      "birds_bg",
+      "birds_i",
+      "birds_stage_effect_00",
+      "birds_stage_effect_01",
+      "birds_stage_effect_02"
+    ],
+    "projection": [
+      832,
+      456
+    ],
+    "endsWithMusic": true
+  },
+  "web": {
+    "enabled": true,
+    "expectedCues": 256
+  }
+}

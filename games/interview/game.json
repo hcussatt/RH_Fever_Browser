@@ -1,0 +1,37 @@
+{
+  "$schema": "../../schemas/game.schema.json",
+  "schemaVersion": 1,
+  "id": "interview",
+  "title": "Ringside",
+  "action": "Pose",
+  "platform": "wii",
+  "wii": {
+    "scene": "Interview",
+    "cellanim": "EN/content2/cellanim/interview/ver0/cellanim.szs",
+    "units": [
+      "Game/Interview/SceneInterview.cpp",
+      "Game/Interview/MyChecker.cpp",
+      "Game/Interview/MyFlow.cpp",
+      "Game/code_800D2920.cpp"
+    ],
+    "banks": [
+      "interview_bg_00",
+      "interview_bg_01",
+      "interview_bg_02",
+      "interview_far_00",
+      "interview_far_01",
+      "interview_far_02",
+      "interview_girl",
+      "interview_wrestler_1P"
+    ],
+    "projection": [
+      832,
+      456
+    ],
+    "endsWithMusic": true
+  },
+  "web": {
+    "enabled": true,
+    "expectedCues": 45
+  }
+}

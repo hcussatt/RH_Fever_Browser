@@ -1,0 +1,31 @@
+{
+  "$schema": "../../schemas/game.schema.json",
+  "schemaVersion": 1,
+  "id": "fishing",
+  "title": "Catch of the Day",
+  "action": "Reel",
+  "platform": "wii",
+  "wii": {
+    "scene": "Fishing",
+    "cellanim": "EN/content2/cellanim/fishing/ver0/cellanim.szs",
+    "units": [
+      "Game/Fishing/SceneFishing.cpp",
+      "Game/Fishing/MyChecker.cpp",
+      "Game/Fishing/MyFlow.cpp"
+    ],
+    "banks": [
+      "fishing",
+      "fishing_02",
+      "fishing_bg"
+    ],
+    "projection": [
+      832,
+      456
+    ],
+    "endsWithMusic": true
+  },
+  "web": {
+    "enabled": true,
+    "expectedCues": 40
+  }
+}

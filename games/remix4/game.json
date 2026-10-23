@@ -1,0 +1,39 @@
+{
+  "$schema": "../../schemas/game.schema.json",
+  "schemaVersion": 1,
+  "id": "remix4",
+  "title": "Remix 4",
+  "action": "Play each game",
+  "platform": "wii",
+  "wii": {
+    "music": "WSD_REMIX4",
+    "scenes": [
+      {
+        "game": "samurai",
+        "cellanim": "EN/content2/cellanim/samurai/remix04/cellanim.szs"
+      },
+      {
+        "game": "interview",
+        "cellanim": "EN/content2/cellanim/interview/remix04/cellanim.szs"
+      },
+      {
+        "game": "sort",
+        "cellanim": "EN/content2/cellanim/sort/remix04/cellanim.szs"
+      },
+      {
+        "game": "flea",
+        "cellanim": "EN/content2/cellanim/flea/remix04/cellanim.szs"
+      }
+    ],
+    "epilogue": "EN/content2/cellanim/remix/ver4/cellanim_epilogue.szs",
+    "projection": [
+      832,
+      456
+    ],
+    "endsWithMusic": true
+  },
+  "web": {
+    "enabled": true,
+    "expectedCues": 93
+  }
+}

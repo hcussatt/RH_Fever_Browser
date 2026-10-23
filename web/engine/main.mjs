@@ -43,7 +43,7 @@ try{
  document.querySelector('h1').textContent=title;
  // What the cues wait for: A (4), A and B together (6), or both in a remix.
  const inputs=new Set(g.timeline.cueInputs);
- const controls=!inputs.has(6)?'Space / X / click · '+action:!inputs.has(4)?`A + B together · ${action} (A: Space / Left Shift / click, B: Right Shift / right click)`:`${action} · A: Space / X / Left Shift / click · B: Right Shift / right click · some cues need A + B together`;for(const e of document.querySelectorAll('.controls'))e.textContent=controls;
+ const controls=!inputs.has(6)?'Space / X / click / controller A · '+action:!inputs.has(4)?`A + B together · ${action} (A: Space / Left Shift / click / controller A, B: Right Shift / right click / controller B)`:`${action} · A: Space / X / Left Shift / click / controller A · B: Right Shift / right click / controller B · some cues need A + B together`;for(const e of document.querySelectorAll('.controls'))e.textContent=controls+' · Start / Escape: pause';
  renderer=await createRenderer(g,canvas);renderer.draw();music=await musicData;sfx=await createAudio(audio,gameUrl,{envelope:g.envelope});
  results=await createResults(g,canvas);
  window.rhf={g,renderer,audio,sfx,results,inputs:input.presses,metrics,heardTime,stats:g.stats,result:null,crashLog,get startTime(){return startTime;},get track(){return track;},get phase(){return phase;},get frame(){return frame;}};
@@ -136,8 +136,11 @@ function advance(target){
 }
 const pollGamepad=bindControls(canvas,{press,
  pause(){if(running)pause();else if(paused)play.click();},
- start(){if(!running&&!play.disabled){play.click();return true;}return false;}});
-// Starts solo shortly ahead, or at the multiplayer music deadline.
+ start(){if(!running&&!play.disabled){if(audio?.state==='suspended'&&navigator.userActivation&&!navigator.userActivation.hasBeenActive){status.textContent='Click Play once to enable controller audio.';return true;}play.click();return true;}return false;}});
+// Controls remain active on the Play and Resume overlays, independent of simulation.
+function pollControllers(){pollGamepad();requestAnimationFrame(pollControllers);}
+requestAnimationFrame(pollControllers);
+// Starts the song. A later versus mode calls this when both players are ready.
 async function start(at){
  needsReset=true;
  // A scene can sound a lead-in before the music (Double Date's count-in from tick -144), so the
@@ -164,7 +167,6 @@ function finish(){
  multiplayer?.finish(result);
 }
 function loop(){if(!running)return;try{
- pollGamepad();
  if(phase==='results'){
   results.draw(heardTime()-resultsStart);
   if(results.done){running=false;sfx.stop();audio.suspend();if(!multiplayer?.active)location.href=new URL('../',gameUrl).href;return;}
