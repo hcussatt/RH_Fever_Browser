@@ -1,12 +1,14 @@
-import {siteRoot,readLibrary,writeLibrary,deployment} from '../engine/assets.mjs';
+import {siteRoot,readLibrary,writeLibrary,deployment,withStorageLock} from '../engine/assets.mjs';
 import {mountMultiplayer} from '../engine/multiplayer.mjs';
-import {WII_COMMON_KEY} from './common-key.mjs';
-import {groupGames} from '../engine/menu.mjs';
+import {availableDisc,rememberDisc,chooseDisc,forgetDisc,validateDisc} from './disc.mjs';
+import {prepareGame} from './client.mjs';
+import {readStoredAsset} from '../engine/storage.mjs';
+import {groupGames,menuColumns,iconLoadOrder} from '../engine/menu.mjs';
 const $=s=>document.querySelector(s);
-let worker,build,games,selected;
+let worker,build,games,selected,chosenFile;
 const iconURLs=new Map();
 const status=(message,error=false)=>{$('#progress').textContent=message;$('#progress').classList.toggle('error',error);};
-function busy(value){$('#import').disabled=value;$('#iso').disabled=value;$('#remove').disabled=value;$('#cancel').hidden=!value;$('#busy').hidden=!value;}
+function busy(value){$('#import').disabled=value;$('#iso').disabled=value;$('#remove').disabled=value;$('#cancel').hidden=!value;$('#busy').hidden=!value;$('#choose-disc').disabled=value;$('#optimize').disabled=value;}
 let menuGroups=[],renderVersion=0;
 const reducedMotion=()=>matchMedia('(prefers-reduced-motion: reduce)').matches;
 function selectGame(id,{focus=false,reveal=true,animate=true}={}){
@@ -18,10 +20,14 @@ function selectGame(id,{focus=false,reveal=true,animate=true}={}){
  $('#selected-number').textContent=card.dataset.number;
  $('#selected-title').textContent=card.dataset.title;
  $('#selected-art').dataset.game=id;$('#selected-art').replaceChildren(card.querySelector('.game-art').cloneNode(true));$('#selected-art').hidden=false;
- $('#selected-status').textContent=card.dataset.ready==='true'?'Ready when you are.':card.dataset.update==='true'?'Import your disc for this update.':'Load your disc to bring this game to life.';
+ $('#selected-status').textContent=card.dataset.ready==='true'?'Ready when you are.':card.dataset.indexed==='true'?'Prepared from your disc when you play.':card.dataset.update==='true'?'Import your disc for this update.':'Load your disc to bring this game to life.';
  $('#selected-action').replaceChildren();
- if(card.dataset.ready==='true'){
-  const a=Object.assign(document.createElement('a'),{className:'play',textContent:'LET’S PLAY',href:new URL(id+'/',siteRoot)});$('#selected-action').append(a);
+ if(card.dataset.ready==='true'||card.dataset.indexed==='true'){
+  const a=Object.assign(document.createElement('a'),{className:'play',textContent:'LET’S PLAY',href:new URL(id+'/',siteRoot)});
+  a.onclick=async e=>{if(card.dataset.ready==='true'||build.local)return;e.preventDefault();if(a.getAttribute('aria-busy')==='true')return;a.setAttribute('aria-busy','true');
+   try{if(await availableDisc())await prepareGame(id,{build,onprogress:message=>{$('#selected-status').textContent=message;}});location.href=a.href;}
+   catch(error){$('#selected-status').textContent=error.message;a.removeAttribute('aria-busy');}
+  };$('#selected-action').append(a);
  }else{const button=Object.assign(document.createElement('button'),{className:'screen-button',textContent:'Load disc'});button.onclick=openImport;$('#selected-action').append(button);}
  $('#current-set').textContent=group.title;
  for(const dot of $('#set-dots').children)dot.setAttribute('aria-current',String(dot.dataset.group===card.dataset.group));
@@ -38,7 +44,16 @@ function selectGame(id,{focus=false,reveal=true,animate=true}={}){
 async function render(){
  const version=++renderVersion,focused=document.activeElement?.classList.contains('game');
  const library=await readLibrary(),fragment=document.createDocumentFragment();
- menuGroups=groupGames(games).map(group=>({...group,games:[...group.games.filter(g=>g.id===group.title.toLowerCase().replace(' ','')),...group.games.filter(g=>g.id!==group.title.toLowerCase().replace(' ',''))]}));
+ const availability=new Map(await Promise.all(games.map(async({id})=>{
+  const entry=library.games[id],ready=entry?.version===(build.assetVersion||build.version),url=new URL(id+'/assets/original-timeline.json',siteRoot);
+  const stored=build.local?(await fetch(url,{method:'HEAD'})).ok:ready&&await(await caches.open(entry.cache)).match(url);
+  const iconCache=library.icons?.cache||entry?.cache,key=iconCache+':'+id;let icon=iconURLs.get(key);
+  if(stored&&build.local)icon=new URL(id+'/assets/menu-icon.png',siteRoot);
+  else if(!icon&&iconCache){const response=await(await caches.open(iconCache)).match(new URL(id+'/assets/menu-icon.png',siteRoot));if(response){icon=URL.createObjectURL(await(await readStoredAsset(response)).blob());iconURLs.set(key,icon);}}
+  return [id,{entry,stored,icon}];
+ })));
+ if(version!==renderVersion)return;
+ menuGroups=menuColumns(games);
  const order=new Map(groupGames(games).flatMap(group=>group.games).map((game,i)=>[game.id,i+1]));let readyCount=0;
  for(const [column,group] of menuGroups.entries()){
   const set=document.createElement('section');set.className='game-set';set.setAttribute('aria-labelledby','set-'+column);set.style.setProperty('--set-hue',String(column*47));
@@ -46,24 +61,17 @@ async function render(){
   const grid=document.createElement('div');grid.className='set-games';set.append(grid);
   for(const [row,{id,title}] of group.games.entries()){
    const number=order.get(id),cardNumber=String(number).padStart(2,'0');
-   const entry=library.games[id],ready=entry?.version===(build.assetVersion||build.version);
-   const stored=build.local?(await fetch(new URL(id+'/assets/original-timeline.json',siteRoot),{method:'HEAD'})).ok:ready&&await (await caches.open(entry.cache)).match(new URL(id+'/assets/original-timeline.json',siteRoot));
+   const {entry,stored,icon}=availability.get(id);
    if(stored)readyCount++;
    const card=document.createElement('button');card.type='button';card.className='game';card.setAttribute('aria-pressed',String(id===selected));card.setAttribute('aria-label',title);card.tabIndex=id===selected?0:-1;
-   Object.assign(card.dataset,{game:id,title,group:String(column),row:String(row),number:String(number).padStart(2,'0'),ready:String(!!stored),update:String(!!entry&&!stored),remix:String(id.startsWith('remix'))});
+   Object.assign(card.dataset,{game:id,title,group:String(column),row:String(row),number:String(number).padStart(2,'0'),ready:String(!!stored),indexed:String(!!library.icons),update:String(!!entry&&!stored),remix:String(id.startsWith('remix'))});
    card.onclick=()=>selectGame(id);card.ondblclick=()=>$('#selected-action .play')?.click();
    const art=document.createElement('span');art.className='game-art';art.setAttribute('aria-hidden','true');
-   let icon;
-   if(stored&&build.local)icon=new URL(id+'/assets/menu-icon.png',siteRoot);
-   else if(stored){
-    const key=entry.cache,cache=await caches.open(key),response=await cache.match(new URL(id+'/assets/menu-icon.png',siteRoot));
-    if(response){if(!iconURLs.has(key))iconURLs.set(key,URL.createObjectURL(await response.blob()));icon=iconURLs.get(key);}
-   }
    if(icon){const img=new Image();img.src=icon;img.alt='';img.onerror=()=>{art.textContent=cardNumber;};art.append(img);}else art.textContent=id.startsWith('remix')?'MIX '+id.slice(5):String(number).padStart(2,'0');
    card.append(art);
    card.append(Object.assign(document.createElement('span'),{className:'game-index',textContent:String(number).padStart(2,'0')}));
    card.append(Object.assign(document.createElement('h3'),{textContent:title}));
-   card.append(Object.assign(document.createElement('p'),{textContent:stored?'Ready to play':entry?'Update required':'Load disc to play'}));
+   card.append(Object.assign(document.createElement('p'),{textContent:stored?'Ready to play':library.icons?'Prepare on play':entry?'Update required':'Load disc to play'}));
    grid.append(card);
   }
   fragment.append(set);
@@ -76,7 +84,8 @@ async function render(){
  $('#collection-count').textContent=String(readyCount).padStart(2,'0')+' / '+String(games.length).padStart(2,'0');
  selectGame(selected,{focus:focused,animate:false});
  const estimate=await navigator.storage?.estimate?.();
- $('#storage').textContent=estimate?`${Math.round((estimate.usage||0)/1048576)} MB stored by this origin. Clearing site data removes your games.`:'Clearing site data removes your imported games.';
+ const saved=library.storage?.savedBytes||Object.values(library.games).reduce((n,g)=>n+Math.max(0,(g.rawBytes||g.bytes||0)-(g.bytes||0)),0);
+ $('#storage').textContent=(saved?`${Math.round(saved/1048576)} MB saved with lossless compression. `:'')+(estimate?`${Math.round((estimate.usage||0)/1048576)} MB stored by this origin. Clearing site data removes your games.`:'Clearing site data removes your imported games.');
 }
 function moveSelection(dx,dy){
  const current=$('#games .game[aria-pressed=true]');if(!current)return;
@@ -114,36 +123,42 @@ try{
  mountMultiplayer({games,version:build.version,openImport});
  if(!build.local&&'serviceWorker' in navigator)navigator.serviceWorker.register(new URL('sw.js',siteRoot),{scope:siteRoot.pathname}).catch(console.warn);
 }catch(e){status(e.message,true);$('#import').disabled=true;}
+$('#choose-disc').hidden=typeof showOpenFilePicker!=='function';
+$('#choose-disc').onclick=async()=>{try{chosenFile=await chooseDisc();$('#disc-name').textContent=chosenFile.name;$('#iso').required=false;}catch(e){if(e.name!=='AbortError')status(e.message,true);}};
+$('#iso').onchange=()=>{chosenFile=null;$('#disc-name').textContent='';$('#iso').required=true;};
+let iconRenderPending=false;
+function startWorker(data,doneMessage){
+ busy(true);worker=new Worker(new URL('worker.mjs',import.meta.url),{type:'module'});
+ worker.onmessage=async({data})=>{
+  if(data.type==='progress')status(data.message);
+  if(data.type==='icon'){
+   for(const [key,url] of iconURLs)if(key.endsWith(':'+data.id)){URL.revokeObjectURL(url);iconURLs.delete(key);}
+   if(!iconRenderPending){iconRenderPending=true;requestAnimationFrame(()=>{iconRenderPending=false;render();});}
+  }
+  if(data.type==='done'||data.type==='error'){
+   worker?.terminate();worker=null;busy(false);await render();
+   status(data.type==='done'?doneMessage:data.message,data.type==='error');
+  }
+ };
+ worker.onerror=e=>{status(e.message||'The importer stopped. Try again.',true);worker?.terminate();worker=null;busy(false);};
+ worker.postMessage(data);
+}
 $('#import-form').onsubmit=async e=>{
  e.preventDefault();if(worker||!build)return;
- const file=$('#iso').files[0],key=WII_COMMON_KEY;
- if(!file)return;
- if(file.size!==4699979776){status('Select the raw USA ISO (4,699,979,776 bytes).',true);return;}
- if(new TextDecoder().decode(await file.slice(0,6).arrayBuffer())!=='SOME01'){status('This disc is not Rhythm Heaven Fever USA (SOME01).',true);return;}
- if(!/^[a-f0-9]{32}$/i.test(key)){status('Enter the 32 hexadecimal digits of your Wii common key.',true);return;}
- busy(true);
  try{
-  const persistent=await navigator.storage?.persist?.();
-  status(persistent?'Preparing games. Local storage persistence granted.':'Preparing games. Your browser may reclaim storage when space is low.');
-  worker=new Worker(new URL('worker.mjs',import.meta.url),{type:'module'});
-  worker.onmessage=async({data})=>{
-   if(data.type==='progress')status(data.message);
-   if(data.type==='game'){status(data.title+' is ready.');await render();}
-   if(data.type==='done'||data.type==='error'){
-    worker?.terminate();worker=null;busy(false);await render();
-    status(data.type==='done'?'Your games are ready. Select Play above.':data.message,data.type==='error');
-   }
-  };
-  worker.onerror=e=>{status(e.message||'The importer stopped. Try again.',true);worker?.terminate();worker=null;busy(false);};
-  worker.postMessage({file,key,version:build.assetVersion||build.version,games});
- }catch(e){worker?.terminate();worker=null;busy(false);status(e.message,true);}
+  const file=chosenFile||$('#iso').files[0];if(!file)return;
+  await validateDisc(file);await rememberDisc(file);await navigator.storage?.persist?.();
+  status('Reading your game icons. Games are prepared only when you play.');
+  startWorker({mode:'icons',file,version:build.assetVersion||build.version,games:iconLoadOrder(games)},'All icons are ready. Choose a game to prepare and play.');
+ }catch(e){status(e.message,true);}
 };
+$('#optimize').onclick=()=>{if(!worker)startWorker({mode:'compact'},'Saved games are losslessly compressed. Your disc is not needed.');};
 $('#cancel').onclick=()=>{worker?.terminate();worker=null;busy(false);status('Import cancelled. Any games already prepared remain available.');render();};
 $('#remove').onclick=()=>$('#confirm-remove').showModal();
 $('#confirm-remove').onclose=async()=>{
  if($('#confirm-remove').returnValue!=='remove')return;
- await writeLibrary({games:{}});
- for(const name of await caches.keys())if(name.startsWith('rhf-assets:'+siteRoot.pathname+':'))await caches.delete(name);
+ await withStorageLock(async()=>{const generation=((await readLibrary()).generation||0)+1;await writeLibrary({games:{},generation});await forgetDisc();
+ for(const name of await caches.keys())if(name.startsWith('rhf-assets:'+siteRoot.pathname+':')||name.startsWith('rhf-icons:'+siteRoot.pathname+':')||name.startsWith('rhf-blobs:'+siteRoot.pathname+':'))await caches.delete(name);});
  await render();status('Local game data removed.');
 };
 window.addEventListener('beforeunload',e=>{if(worker){e.preventDefault();e.returnValue='';}});
