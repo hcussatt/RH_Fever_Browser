@@ -9,7 +9,7 @@ import {createTrack} from './clock.mjs';
 import {assetResponse,requireAssets} from './assets.mjs';
 const gameUrl=new URL('./',location.href);
 const canvas=document.querySelector('canvas'),overlay=document.querySelector('#overlay'),play=document.querySelector('#play'),status=document.querySelector('#status');
-let g,renderer,audio,music,startTime,running=false,frame=0,sfx,paused=false,results,resultsStart,phase='game',track,backing;const input=createInputQueue(),metrics=[];
+let g,renderer,audio,music,startTime,running=false,frame=0,sfx,paused=false,results,resultsStart,phase='game',track,backing,multiplayer,needsReset=false;const input=createInputQueue(),metrics=[];
 // Crash log: every runtime error is kept in this browser's storage with the game, frame and chart
 // tick, so a reload does not lose it. rhf.crashLog() returns it; after a crash the page offers it
 // as a file.
@@ -25,6 +25,7 @@ addEventListener('unhandledrejection',e=>logCrash(e.reason,'unhandled rejection'
 // Debug and QA handle (tests and audio checks read it).
 window.rhf={crashLog};
 function fail(e){
+ multiplayer?.interrupt('Runtime error interrupted the round.');
  running=false;audio?.suspend();overlay.hidden=false;play.disabled=true;play.textContent='Runtime error';status.textContent=e.message;console.error(e);window.rhf.error=e.stack;
  logCrash(e,'runtime error');
  if(!overlay.querySelector('#crash-log')){
@@ -45,7 +46,7 @@ try{
  const controls=!inputs.has(6)?'Space / X / click · '+action:!inputs.has(4)?`A + B together · ${action} (A: Space / Left Shift / click, B: Right Shift / right click)`:`${action} · A: Space / X / Left Shift / click · B: Right Shift / right click · some cues need A + B together`;for(const e of document.querySelectorAll('.controls'))e.textContent=controls;
  renderer=await createRenderer(g,canvas);renderer.draw();music=await musicData;sfx=await createAudio(audio,gameUrl,{envelope:g.envelope});
  results=await createResults(g,canvas);
- window.rhf={g,renderer,audio,sfx,results,inputs:input.presses,metrics,heardTime,stats:g.stats,result:null,crashLog,get track(){return track;},get phase(){return phase;},get frame(){return frame;}};
+ window.rhf={g,renderer,audio,sfx,results,inputs:input.presses,metrics,heardTime,stats:g.stats,result:null,crashLog,get startTime(){return startTime;},get track(){return track;},get phase(){return phase;},get frame(){return frame;}};
  play.disabled=false;play.textContent='Play';
  const embedded=window.parent!==window&&new URLSearchParams(location.search).get('lobby')==='1';
  let session;
@@ -110,12 +111,11 @@ function heardTime(){
  if(t&&t.performanceTime>0&&performance.now()-t.performanceTime<100)return Math.min(audio.currentTime,t.contextTime+(performance.now()-t.performanceTime)/1000);
  return audio.currentTime-(audio.outputLatency||0)-(audio.baseLatency||0);
 }
-function press(){if(!running||heardTime()<startTime)return;if(phase==='results'){results.input(true);return;}input.push(Math.max(frame+1,Math.floor(Math.max(0,heardTime()-startTime)*60)+1));}
 // An input belongs to the first frame after the audio heard when it happened, as the original
 // reads the controller once a frame. That frame runs as soon as its time is heard, not at the
 // next screen refresh, so the game's answer (a hit sound) is not held back by up to a frame.
 function press(button,down,at=performance.now()){
- if(!running)return;
+ if(!running||heardTime()<startTime)return;
  if(phase==='results'){if(button===A)results.input(down);return;}
  const heard=heardTime()-Math.max(0,performance.now()-at)/1000;
  const due=Math.max(frame+1,Math.floor(Math.max(0,heard-startTime)*60)+1);
@@ -137,15 +137,13 @@ function advance(target){
 const pollGamepad=bindControls(canvas,{press,
  pause(){if(running)pause();else if(paused)play.click();},
  start(){if(!running&&!play.disabled){play.click();return true;}return false;}});
-// Starts solo shortly ahead, or at the multiplayer deadline on the monotonic clock.
+// Starts solo shortly ahead, or at the multiplayer music deadline.
 async function start(at){
- needsReset=true;startTime=at===undefined?audio.currentTime+.1:heardTime()+(at-performance.now())/1000;track=createTrack();backing=sfx.playMusic(music,startTime);
-// Starts the song. A later versus mode calls this when both players are ready.
-async function start(){
+ needsReset=true;
  // A scene can sound a lead-in before the music (Double Date's count-in from tick -144), so the
  // music waits for it.
  const first=Math.min(0,...g.timeline.sounds.map(s=>s.tick),...g.sounds.map(s=>s.tick));
- startTime=audio.currentTime+.1-g.secondsAtTick(first);track=createTrack();backing=sfx.playMusic(music,startTime);
+ startTime=at===undefined?audio.currentTime+.1-g.secondsAtTick(first):heardTime()+(at-performance.now())/1000;track=createTrack();backing=sfx.playMusic(music,startTime);
  // A remix's entry chart first plays its mode sound (SE_REMIX_MODE_SET_REMIXn, silent), which sets
  // the sequence variable the games' remix sounds read (see tools/chart-index.py). Then the chart's
  // own sounds, then the scene's setup and lead-in sounds (before the music start).
@@ -157,9 +155,6 @@ play.onclick=async()=>{
  try{await audio.resume();play.disabled=false;overlay.hidden=true;if(paused){paused=false;running=true;requestAnimationFrame(loop);return;}await start();}catch(e){fail(e);}
 };
 document.querySelector('#restart').onclick=()=>{if(multiplayer?.active){multiplayer.interrupt('Restart interrupted the round.');return;}location.reload();};
-// The song ends at this second of the backing track.
-const endSeconds=()=>g.manifest.wii.endsWithMusic?Math.max(music.duration,g.secondsAtTick(g.timeline.endTick)):g.secondsAtTick(g.timeline.endTick);
-document.querySelector('#restart').onclick=()=>location.reload();
 // The original chart owns the outro; a longer backing wave must not delay grading.
 const endSeconds=()=>g.secondsAtTick(g.timeline.endTick);
 function finish(){
@@ -176,12 +171,6 @@ function loop(){if(!running)return;try{
   requestAnimationFrame(loop);return;
  }
  const began=performance.now();const elapsed=Math.max(0,heardTime()-startTime);
- const target=Math.min(Math.floor(elapsed*60),Math.ceil(track.wallAt(endSeconds())*60));
- while(frame<target){frame++;
-  const pressed=input.take(frame);
-  g.step(g.tickAtSeconds(track.posAt(frame/60)),pressed);
-  liveEvents();
- }
  const target=Math.floor(elapsed*60);
  advance(target);
  schedule();

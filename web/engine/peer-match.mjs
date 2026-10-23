@@ -93,7 +93,7 @@ export class PeerMatch {
   finally{this.preparing=false;this.changed();}
  }
  selectGame(id){
-  if(!this.host||!this.connected||!this.games.includes(id)||!['lobby','finished','interrupted'].includes(this.state))return false;
+  if(!this.host||!this.connected||!this.games.includes(id)||!['lobby','finished','interrupted'].includes(this.state)||this.state==='finished'&&!this.remoteResult)return false;
   this.selectedGame=id;const round=this.round+1;this.send('select',{round,game:id});this.resetRound(round);this.onselect(id);return true;
  }
  maybeSync(){if(!this.host||!this.localReady||!this.peerReady||this.state!=='lobby')return;this.state='syncing';this.syncAt=performance.now();this.samples=[];this.pingCount=0;this.changed('Synchronizing clocks…');}

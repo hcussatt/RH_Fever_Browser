@@ -19,7 +19,7 @@ export function mountMultiplayer({games,version,openImport}){
  entry.onclick=show;
  function update(p){
   $('lobby-setup').hidden=!!p.connected;$('lobby-connected').hidden=!p.connected;
-  const idle=['lobby','finished','interrupted'].includes(p.state);
+  const idle=p.state==='lobby'||p.state==='interrupted'||p.state==='finished'&&p.remoteResult;
   $('lobby-game').disabled=!p.host||!idle||!p.connected;
   $('lobby-role').textContent=p.host?'You are the host. Choose a game for both players.':'The host chooses the game. Your browser follows automatically.';
   if(p.selectedGame)$('lobby-game').value=p.selectedGame;
@@ -60,7 +60,7 @@ export function mountMultiplayer({games,version,openImport}){
  function create(){
   if(peer)throw new Error('Leave this lobby before creating another connection.');
   peer=new PeerMatch({identity:'lobby-v2:'+version,games:games.map(g=>g.id),name:$('lobby-name').value.trim()||'Player',onchange:update,onselect:id=>load(id),
-   prepare:async()=>{if(!api||loading)throw new Error('Wait for the selected game to load.');const active=api;await active.prepare();return fingerprint();},
+   prepare:async()=>{if(!api||loading)throw new Error('Wait for the selected game to load.');const active=api;await active.prepare();if(active!==api||loading)throw new Error('The selected game changed. Ready again after it loads.');return fingerprint();},
    start:at=>{if(!api)throw new Error('Selected game is unavailable.');api.start(at+performance.timeOrigin-frame.contentWindow.performance.timeOrigin);frame.contentWindow.focus();},stop:()=>api?.stop(),snapshot:()=>api?.snapshot()});
   window.rhfLobby={peer,get frame(){return frame;},get api(){return api;}};return peer;
  }
