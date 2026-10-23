@@ -98,3 +98,18 @@ The focused integrated-lobby browser smoke check connected from the main arcade,
 switched the host from Hole in One to Tap Trial, verified the guest followed with
 a locked selector, and reached scheduled play in both embedded games. No second
 full-song test pass was run for this integration. Test sessions were closed.
+
+## Integration update, 2026-10-23
+
+Integrated the current main engine while preserving A/B controls, lead-ins, remix
+prelude sounds, original end-of-chart grading and crash logging. Removed duplicate
+startup declarations left by the previous merge, repaired local arcade loading,
+and retained the current arcade styling. Hosts wait for both results before
+changing games. The protocol suite is included in the normal test command.
+
+The Pages browser suite now exercises actual WebRTC invite/answer exchange,
+host selection, both Ready orders, countdown, result comparison, interruption,
+rematch and narrow layout, using disc-free iframe fixtures. These checks validate
+lobby integration; they do not establish game fidelity or WAN/NAT connectivity.
+Local browser execution is unavailable because this environment blocks HTTP
+listeners. GitHub Actions must pass before merge.
