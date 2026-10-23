@@ -26,6 +26,7 @@
     "endsWithMusic": true
   },
   "web": {
-    "enabled": false
+    "enabled": true,
+    "expectedCues": 98
   }
 }

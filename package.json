@@ -2,7 +2,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test tests/import-codecs.test.mjs tests/layout-window.test.mjs tests/pages.test.mjs"
+    "test": "node --test tests/controller.test.mjs tests/import-codecs.test.mjs tests/layout-window.test.mjs tests/pages.test.mjs"
   },
   "devDependencies": {
     "playwright": "1.56.1"

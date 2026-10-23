@@ -22,7 +22,7 @@ test('Pages project path, local import errors, storage isolation, and offline sh
  });
  await new Promise(r=>server.listen(0,'127.0.0.1',r));
  const base=`http://127.0.0.1:${server.address().port}${prefix}`;
- const browser=await chromium.launch({headless:true});
+ const browser=await chromium.launch({headless:true,channel:process.env.RHF_BROWSER_CHANNEL||undefined});
  try{
   const context=await browser.newContext();const page=await context.newPage();
   const errors=[];page.on('pageerror',e=>errors.push(e.message));
@@ -43,6 +43,20 @@ test('Pages project path, local import errors, storage isolation, and offline sh
   await page.locator('.game').first().press('ArrowRight');
   await page.waitForFunction(()=>document.querySelectorAll('.game')[1].getAttribute('aria-pressed')==='true');
   assert.equal(await page.locator('.game').nth(1).evaluate(el=>document.activeElement===el),true);
+  // Controller edges move once per press, and modal dialogs keep menu input out.
+  await page.evaluate(()=>{
+   window.testPad={buttons:Array.from({length:16},()=>({pressed:false})),axes:[0,0]};
+   Object.defineProperty(navigator,'getGamepads',{value:()=>[window.testPad]});
+   window.testPad.buttons[15].pressed=true;
+  });
+  await page.waitForFunction(()=>document.querySelectorAll('.game')[2].getAttribute('aria-pressed')==='true');
+  await page.evaluate(()=>window.testPad.buttons[15].pressed=false);
+  await page.locator('#help').click();
+  await page.evaluate(()=>window.testPad.axes[0]=1);
+  await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+  assert.equal(await page.locator('.game').nth(2).getAttribute('aria-pressed'),'true');
+  await page.locator('#close-help').click();
+  await page.evaluate(()=>window.testPad.axes[0]=0);
   await page.setViewportSize({width:390,height:844});
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
   await page.setViewportSize({width:1280,height:720});

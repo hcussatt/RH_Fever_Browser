@@ -91,7 +91,7 @@ CORS support on the actual download/redirect endpoint, streaming, integrity
 checks, and cancellation/resume handling. A normal browser download followed by
 local ISO selection already uses the same import path.
 
-The public release currently includes the three games with approved `runtime-src/` snapshots. Additional upstream game manifests remain available to local builds; publish them after preparing and validating their runtime snapshots.
+Every registered game and remix is enabled for Pages with an approved runtime snapshot. CI discovers the catalog from the manifests.
 
 ## Game-select artwork
 
@@ -101,3 +101,9 @@ after local import. `web.icon` in each source manifest names a texture in
 `menu-icon.png` in the game’s private asset cache. The public site contains only
 CSS and numbered placeholders; Nintendo menu artwork is never published.
 Existing imports without icons remain usable; reimport adds the artwork.
+
+The Pages catalog includes all 37 registered games and remixes. Standard controllers
+use the bottom face button (A / Cross) for A, the right face button (B / Circle)
+for B, and Start / Options to pause or resume. A also starts or resumes a game.
+Press a controller button after connecting it so Chrome exposes the device.
+If Chrome blocks audio before a page interaction, click Play once.

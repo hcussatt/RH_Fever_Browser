@@ -99,3 +99,22 @@ $('#confirm-remove').onclose=async()=>{
  await render();status('Local game data removed.');
 };
 window.addEventListener('beforeunload',e=>{if(worker){e.preventDefault();e.returnValue='';}});
+
+// Standard gamepad navigation uses the same selection and action as the keyboard menu.
+let lastControllerDirection=0,lastControllerA=false;
+function pollMenuController(){
+ const pad=Array.from(navigator.getGamepads?.()||[]).find(Boolean);
+ const direction=pad?.buttons[12]?.pressed||pad?.axes[1]<-.5?-2:pad?.buttons[13]?.pressed||pad?.axes[1]>.5?2:pad?.buttons[14]?.pressed||pad?.axes[0]<-.5?-1:pad?.buttons[15]?.pressed||pad?.axes[0]>.5?1:0;
+ const a=!!pad?.buttons[0]?.pressed;
+ if(!document.hidden&&!document.querySelector('dialog[open]')){
+  if(direction&&direction!==lastControllerDirection){
+   const cards=[...$('#games').querySelectorAll('.game')],columns=getComputedStyle($('#games')).gridTemplateColumns.split(' ').length;
+   const index=cards.findIndex(card=>card.dataset.game===selected),offset=Math.sign(direction)*(Math.abs(direction)===2?columns:1);
+   const next=cards[(index+offset+cards.length)%cards.length];
+   if(next){selected=next.dataset.game;next.focus();render();}
+  }
+  if(a&&!lastControllerA)$('#selected-action .play')?.click();
+ }
+ lastControllerDirection=direction;lastControllerA=a;requestAnimationFrame(pollMenuController);
+}
+requestAnimationFrame(pollMenuController);

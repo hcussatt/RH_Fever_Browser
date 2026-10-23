@@ -17,7 +17,7 @@
           <p class="game-number">GAME <span id="selected-number">01</span> / <span id="game-count">…</span></p><h2 id="selected-title">Hole in One</h2><p id="selected-status">Prepare from your disc</p><div id="selected-action"><button class="screen-button" id="screen-import">Load disc</button></div>
         </section>
       </div>
-      <div class="screen-bottom"><span>Choose a tile, then play.</span><span>A · Space / X / Click</span></div>
+      <div class="screen-bottom"><span>Choose a tile · D-pad / stick</span><span>A · Space / X / Click / Controller</span></div>
     </div>
   </section>
   <section class="control-deck" aria-label="Menu controls"><span>Keep the rhythm going.</span><div class="deck-buttons"><button id="open-import" aria-label="Load your disc">Load disc</button><button id="help" aria-label="How to play">Controls</button></div></section>
@@ -29,7 +29,7 @@
 <div class="actions"><button id="import" class="primary" type="submit">PREPARE MY GAMES →</button><button id="cancel" class="secondary" type="button" hidden>Cancel import</button></div></form>
 <p id="progress" role="status" aria-live="polite">Keep this tab open while your games are prepared.</p><progress id="busy" aria-label="Preparing local game data" hidden></progress>
 <div class="storage-row"><p class="hint" id="storage"></p><button id="remove" class="text-button" type="button">Remove local game data</button></div></div></dialog>
-<dialog id="help-dialog"><div class="dialog-top"><span>HOW TO PLAY</span><button id="close-help" class="close" aria-label="Close help">×</button></div><div class="dialog-body"><h2>It’s all in the timing.</h2><p>Load your disc once, pick a game, and follow the rhythm.</p><dl><dt>Play / A</dt><dd>Space, X, click, or gamepad A</dd><dt>B</dt><dd>Right Shift, right click, or gamepad B</dd><dt>A + B</dt><dd>Both Shift keys together. Hold and release together for Screwbot Factory.</dd><dt>Pause</dt><dd>Escape</dd></dl><p>Desktop Chrome recommended. Games stay on this device until you clear site data.</p></div></dialog>
+<dialog id="help-dialog"><div class="dialog-top"><span>HOW TO PLAY</span><button id="close-help" class="close" aria-label="Close help">×</button></div><div class="dialog-body"><h2>It’s all in the timing.</h2><p>Load your disc once, pick a game, and follow the rhythm.</p><dl><dt>Menu</dt><dd>D-pad or left stick to select; A / Cross to play an imported game</dd><dt>Play / A</dt><dd>Space, X, click, or gamepad A</dd><dt>B</dt><dd>Right Shift, right click, or gamepad B</dd><dt>A + B</dt><dd>Both Shift keys together. Or hold both controller face buttons together. Hold and release together for Screwbot Factory.</dd><dt>Pause</dt><dd>Escape or controller Start / Options</dd></dl><p>Desktop Chrome recommended. Games stay on this device until you clear site data.</p></div></dialog>
 <dialog id="confirm-remove"><div class="dialog-body"><h2>Remove local game data?</h2><p>You’ll need your ISO to prepare these games again.</p><form method="dialog" class="actions"><button value="cancel" class="secondary">Keep games</button><button value="remove" class="primary">Remove data</button></form></div></dialog>
 <script type="module" src="import/library.mjs"></script>
 </html>
