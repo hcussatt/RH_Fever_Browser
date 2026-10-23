@@ -21,7 +21,7 @@ async function render(){
   card.dataset.game=id;
   const art=document.createElement('span');art.className='game-art';art.setAttribute('aria-hidden','true');
   let icon;
-  if(stored){
+  if(stored&&!build.local){
    const key=entry.cache,cache=await caches.open(key),response=await cache.match(new URL(id+'/assets/menu-icon.png',siteRoot));
    if(response){if(!iconURLs.has(key))iconURLs.set(key,URL.createObjectURL(await response.blob()));icon=iconURLs.get(key);}
   }
@@ -62,7 +62,6 @@ try{
  if(!isSecureContext||!globalThis.caches)throw new Error('Use HTTPS or localhost in a browser with site storage enabled.');
  const deploymentResponse=await fetch(new URL('deployment.json',siteRoot));
  [build,games]=await Promise.all([deploymentResponse.status===404?Promise.resolve({version:'local',local:true}):deployment(),fetch(new URL('games.json',siteRoot)).then(r=>r.json())]);
- [build,games]=await Promise.all([deployment(),fetch(new URL('games.json',siteRoot)).then(r=>r.json())]);
  if(!games.length)throw new Error('No web games are available in this deployment.');
  $('#games').style.setProperty('--columns',Math.min(4,games.length));
  selected=groupGames(games)[0].games[0].id;$('#game-count').textContent=String(games.length).padStart(2,'0');
