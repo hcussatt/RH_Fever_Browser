@@ -73,3 +73,11 @@ test('game-version mismatch prevents a countdown',async()=>{
  const [a,b]=pair();try{await flush();a.prepare=async()=> 'one';b.prepare=async()=> 'two';await a.ready();await flush();await b.ready();await flush();assert.equal(a.state,'interrupted');assert.equal(b.state,'interrupted');
  }finally{a.close();b.close();}
 });
+
+test('host waits for both final results before changing games',async()=>{
+ const [a,b]=pair();try{await flush();a.games=b.games=['golf','tap'];
+  a.state='finished';a.localResult=stats();a.remoteResult=null;
+  assert.equal(a.selectGame('tap'),false);
+  a.remoteResult=stats();assert.equal(a.selectGame('tap'),true);
+ }finally{a.close();b.close();}
+});
