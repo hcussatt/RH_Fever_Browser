@@ -1,8 +1,7 @@
 # Rhythm Heaven Fever for the browser
 
 Standalone browser versions of Rhythm Heaven Fever minigames, built from the
-community decompilation and from your own copy of the game. The long-term goal
-is a real-time multiplayer mod.
+community decompilation and from your own copy of the game. Private two-player versus uses direct WebRTC connections with manual invite/answer exchange. See [multiplayer](docs/multiplayer.md).
 
 > **AI disclosure.** All of the code in this repository was written by Claude
 > (Anthropic) through Claude Code. A human tests every major build. This project

@@ -86,6 +86,50 @@ test('Pages project path, local import errors, storage isolation, and offline sh
   await page.waitForFunction(()=>document.querySelector('#progress').textContent.includes('removed'));
   assert.equal(await page.locator('.play').count(),0);
   assert.ok(await page.evaluate(async()=>(await caches.keys()).includes('rhf-assets:/another-project/:keep')));
+  // Real WebRTC signaling and lobby controls; the iframe is a disc-free engine fixture.
+  const guestContext=await browser.newContext({serviceWorkers:'block'});
+  const hostContext=await browser.newContext({serviceWorkers:'block'});
+  try{
+   const host=await hostContext.newPage(),guest=await guestContext.newPage();
+   for(const c of [hostContext,guestContext]){
+    await c.route('**/assets/original-timeline.json',r=>r.fulfill({json:{}}));
+    await c.route('**/?lobby=1',r=>r.fulfill({contentType:'text/html',body:`<!doctype html><p>Local engine fixture</p><script>
+     const id=location.pathname.split('/').filter(Boolean).at(-1);let began=0;
+     window.rhf={multiplayer:{attach(){},game:()=>({manifest:{id},chart:{}}),gameUrl:new URL('./',location.href),
+      prepare:async()=>{},start:at=>{began=at;},stop:()=>{began=0;},snapshot:()=>({hits:0,misses:0,through:0,stray:0,perfectFailed:0,position:began?Math.max(0,(performance.now()-began)/1000):0})}};
+    </script>`}));
+   }
+   await host.goto(base);await guest.goto(base);
+   await host.locator('#open-multiplayer').click();await guest.locator('#open-multiplayer').click();
+   await guest.locator('#lobby-incoming').fill('invalid');await guest.locator('#lobby-join').click();
+   await guest.locator('#lobby-status').getByText(/Invalid/).waitFor();
+   await host.locator('#lobby-create').click();await host.waitForFunction(()=>document.querySelector('#lobby-output').value.length>0);
+   await guest.locator('#lobby-incoming').fill(await host.locator('#lobby-output').inputValue());await guest.locator('#lobby-join').click();
+   await guest.waitForFunction(()=>document.querySelector('#lobby-output').value.length>0);
+   await host.locator('#lobby-incoming').fill(await guest.locator('#lobby-output').inputValue());await host.locator('#lobby-accept').click();
+   for(const p of [host,guest])await p.waitForFunction(()=>window.rhfLobby?.peer.connected&&window.rhfLobby?.api);
+   assert.equal(await guest.locator('#lobby-game').isEnabled(),false);
+   const next=catalog[1].id;await host.locator('#lobby-game').selectOption(next);
+   await guest.waitForFunction(id=>window.rhfLobby.peer.selectedGame===id&&window.rhfLobby.api?.game().manifest.id===id,next);
+   await host.waitForFunction(id=>window.rhfLobby.api?.game().manifest.id===id,next);
+   await guest.locator('#lobby-ready').click();await host.locator('#lobby-ready').click();
+   for(const p of [host,guest])await p.waitForFunction(()=>window.rhfLobby.peer.state==='playing');
+   const result={hits:10,misses:0,through:0,stray:0,perfectFailed:0};
+   await host.evaluate(r=>window.rhfLobby.peer.finish(r),result);
+   assert.equal(await host.locator('#lobby-game').isEnabled(),false);
+   await guest.evaluate(r=>window.rhfLobby.peer.finish(r),result);
+   for(const p of [host,guest])await p.waitForFunction(()=>window.rhfLobby.peer.state==='finished'&&window.rhfLobby.peer.remoteResult);
+   assert.equal(await host.locator('#lobby-status').textContent(),'Draw');
+   await host.locator('#lobby-rematch').click();
+   for(const p of [host,guest])await p.waitForFunction(()=>window.rhfLobby.peer.state==='lobby');
+   await host.locator('#lobby-ready').click();await guest.locator('#lobby-ready').click();
+   for(const p of [host,guest])await p.waitForFunction(()=>window.rhfLobby.peer.state==='playing');
+   await host.evaluate(()=>window.rhfLobby.peer.interrupt('Pause test'));
+   for(const p of [host,guest])await p.waitForFunction(()=>window.rhfLobby.peer.state==='interrupted');
+   await guest.locator('#lobby-rematch').click();
+   for(const p of [host,guest])await p.waitForFunction(()=>window.rhfLobby.peer.state==='lobby'&&!window.rhfLobby.peer.localReady);
+   await host.setViewportSize({width:390,height:844});assert.equal(await host.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+  }finally{await hostContext.close();await guestContext.close();}
   // Wait for install to finish, then verify the static shell survives an offline reload.
   await page.evaluate(async()=>{await navigator.serviceWorker.ready;});
   await page.waitForFunction(()=>!!navigator.serviceWorker.controller);
