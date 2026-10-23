@@ -65,7 +65,7 @@ export async function createRenderer(g,canvas){
  // A tinted cell is drawn once per colour and kept; when a colour changes every frame (Air
  // Rally's sky through the day) only the blend reruns, from the cell's pixels read once, into a
  // canvas reused from the ones dropped.
- const coloredCells=new Map(),cellPixels=new Map(),spare=[];
+ const coloredCells=new Map(),cellPixels=new Map(),spare=[],COLORED_PIXELS=16<<20;let coloredPixels=0;
  // The cell-animation render effect (CellAnimRenderEff.cpp, sCurrentEffType): 1 grayscale (the
  // texture's red in every channel), 2 invert (fore and back swapped), 3 edges (inverted, and only
  // pixels below full alpha drawn). The scene's front cell animations draw with it (CExScene::_1C).
@@ -80,8 +80,10 @@ export async function createRenderer(g,canvas){
    const c=document.createElement('canvas');c.width=o.w;c.height=o.h;const x=c.getContext('2d',{willReadFrequently:true});
    x.drawImage(images[texture],o.sx,o.sy,o.w,o.h,0,0,o.w,o.h);src=x.getImageData(0,0,o.w,o.h).data;cellPixels.set(region,src);
   }
-  // The least recently drawn tint makes way when too many are kept.
-  if(coloredCells.size>=96){const [old,c]=coloredCells.entries().next().value;coloredCells.delete(old);spare.push(c);}
+  // The least recently drawn tint makes way when too many are kept. The budget holds a whole
+  // frame's tints (Packing Pests draws ~320 tinted cells, each in its own depth fog), so a scene
+  // whose colours hold still never blends again.
+  while(coloredCells.size&&(coloredCells.size>=4096||coloredPixels+o.w*o.h>COLORED_PIXELS)){const [old,c]=coloredCells.entries().next().value;coloredCells.delete(old);coloredPixels-=c.width*c.height;spare.push(c);}
   const i=spare.findIndex(c=>c.width===o.w&&c.height===o.h);
   const c=i>=0?spare.splice(i,1)[0]:Object.assign(document.createElement('canvas'),{width:o.w,height:o.h});
   if(spare.length>32)spare.shift();
@@ -89,7 +91,7 @@ export async function createRenderer(g,canvas){
   const lut=[0,1,2].map(ch=>Uint8ClampedArray.from({length:256},(_,v)=>fore[ch]+(back[ch]-fore[ch])*v/255));
   const [g,b]=effect===1?[0,0]:[1,2];
   for(let i=0;i<p.length;i+=4){p[i]=lut[0][src[i]];p[i+1]=lut[1][src[i+g]];p[i+2]=lut[2][src[i+b]];p[i+3]=effect===3&&src[i+3]===255?0:src[i+3];}
-  x.putImageData(d,0,0);coloredCells.set(id,c);return c;
+  x.putImageData(d,0,0);coloredCells.set(id,c);coloredPixels+=o.w*o.h;return c;
  }
  // The screen bank's texture (CDynTex, see adapters/wii/platform.c): the layout's colours drawn
  // over black, and its alpha pass as grey. Drawn with the cell's usual blend, the screen becomes

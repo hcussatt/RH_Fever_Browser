@@ -720,6 +720,9 @@ EMSCRIPTEN_KEEPALIVE void initialize_scene(void){
    wrf32(0x80320220,0.0f);invoke1(0x801ea590,MASK_TWEEN);wr32(MASK_TWEEN+12,0);wr8(MASK_TWEEN+16,1);
    r[3]=MASK_TWEEN;f[1].d=0.0f;f[2].d=1.0f;call(0x801ea698);r[3]=MASK_TWEEN;r[4]=1;f[1].d=0.0f;f[2].d=96.0f;call(0x801ea550);wr8(MASK_TWEEN+37,0);}
   uint32_t other=persistent[persistent_count++]=create_actor(255,0);wr32(0x803201f8,other);wr32(0x803201fc,other);
+  // The scene before every game (its prologue, a CExScene) ends with CExScene::_20, which leaves
+  // canvas 2 as the default base: the game's actors are made on it (Ringside zooms it in by 1.3).
+  base_canvas=canvas[2];
   invoke1(rd32(rd32(scene)+0x10),scene); // _10: load assets (Flock Step makes its birds' arrays here)
   invoke1(profiles[profile_index].init,scene);
   wr32(0x803201bc,7);wr8(0x803201b8,1);
