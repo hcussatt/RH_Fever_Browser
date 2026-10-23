@@ -3,7 +3,10 @@
 set -eu
 cd "$(dirname "$0")/.."
 mkdir -p dist
-cp web/index.html dist/
+cp web/library.html dist/index.html
+cp -R web/import dist/
+mkdir -p dist/engine
+cp web/engine/*.mjs dist/engine/
 node -e '
 const fs=require("fs");
 const games=fs.readdirSync("dist").filter(d=>fs.existsSync(`dist/${d}/game.json`)).sort()

@@ -1,4 +1,5 @@
 import {siteRoot,readLibrary,writeLibrary,deployment} from '../engine/assets.mjs';
+import {mountMultiplayer} from '../engine/multiplayer.mjs';
 import {WII_COMMON_KEY} from './common-key.mjs';
 import {groupGames} from '../engine/menu.mjs';
 const $=s=>document.querySelector(s);
@@ -15,12 +16,12 @@ async function render(){
   if(titles.has(id)){const h=document.createElement('h4');h.className='set-title';h.textContent=titles.get(id);$('#games').append(h);}
   const entry=library.games[id],ready=entry?.version===(build.assetVersion||build.version);
   // Verify that storage eviction has not left just the library pointer.
-  const stored=ready&&await (await caches.open(entry.cache)).match(new URL(id+'/assets/original-timeline.json',siteRoot));
+  const stored=build.local?(await fetch(new URL(id+'/assets/original-timeline.json',siteRoot),{method:'HEAD'})).ok:ready&&await (await caches.open(entry.cache)).match(new URL(id+'/assets/original-timeline.json',siteRoot));
   const card=document.createElement('button');card.type='button';card.className='game';card.setAttribute('aria-pressed',String(id===selected));card.onclick=()=>{selected=id;render();};
   card.dataset.game=id;
   const art=document.createElement('span');art.className='game-art';art.setAttribute('aria-hidden','true');
   let icon;
-  if(stored){
+  if(stored&&!build.local){
    const key=entry.cache,cache=await caches.open(key),response=await cache.match(new URL(id+'/assets/menu-icon.png',siteRoot));
    if(response){if(!iconURLs.has(key))iconURLs.set(key,URL.createObjectURL(await response.blob()));icon=iconURLs.get(key);}
   }
@@ -59,12 +60,14 @@ $('#help').onclick=()=>$('#help-dialog').showModal();
 $('#close-help').onclick=()=>$('#help-dialog').close();
 try{
  if(!isSecureContext||!globalThis.caches)throw new Error('Use HTTPS or localhost in a browser with site storage enabled.');
- [build,games]=await Promise.all([deployment(),fetch(new URL('games.json',siteRoot)).then(r=>r.json())]);
+ const deploymentResponse=await fetch(new URL('deployment.json',siteRoot));
+ [build,games]=await Promise.all([deploymentResponse.status===404?Promise.resolve({version:'local',local:true}):deployment(),fetch(new URL('games.json',siteRoot)).then(r=>r.json())]);
  if(!games.length)throw new Error('No web games are available in this deployment.');
  $('#games').style.setProperty('--columns',Math.min(4,games.length));
  selected=groupGames(games)[0].games[0].id;$('#game-count').textContent=String(games.length).padStart(2,'0');
  $('#version').textContent=build.version;await render();
- if('serviceWorker' in navigator)navigator.serviceWorker.register(new URL('sw.js',siteRoot),{scope:siteRoot.pathname}).catch(console.warn);
+ mountMultiplayer({games,version:build.version,openImport});
+ if(!build.local&&'serviceWorker' in navigator)navigator.serviceWorker.register(new URL('sw.js',siteRoot),{scope:siteRoot.pathname}).catch(console.warn);
 }catch(e){status(e.message,true);$('#import').disabled=true;}
 $('#import-form').onsubmit=async e=>{
  e.preventDefault();if(worker||!build)return;
