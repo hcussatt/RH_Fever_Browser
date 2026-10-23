@@ -51,11 +51,12 @@
         "perfectActive": {"type": "boolean"},
         "endsWithMusic": {"type": "boolean"},
         "messageLayout": {
-          "description": "The game's own layout whose text boxes the chart's message panes use (Hole in One's CMyLayout); the shared speech balloon needs no entry.",
+          "description": "The game's own layout whose text boxes the chart's message panes use (Hole in One's CMyLayout, the lyric layout's lines in Cheer Readers); the shared speech balloon needs no entry.",
           "type": "object", "additionalProperties": false, "required": ["archive", "file"],
           "properties": {
             "archive": {"$ref": "#/$defs/discPath"},
-            "file": {"type": "string", "pattern": "^[A-Za-z0-9_-]+\\.brlyt$"}
+            "file": {"type": "string", "pattern": "^[A-Za-z0-9_-]+\\.brlyt$"},
+            "font": {"description": "Index of the layout's font its message text boxes use (default 0).", "type": "integer", "minimum": 0}
           }
         },
         "layout": {
@@ -67,7 +68,14 @@
             "animations": {"type": "array", "items": {"type": "array", "minItems": 2, "maxItems": 2, "items": {"$ref": "#/$defs/name"}}},
             "startAtEnd": {"type": "array", "uniqueItems": true, "items": {"type": "integer", "minimum": 0}},
             "texts": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/name"}},
-            "panes": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/name"}}
+            "panes": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/name"}},
+            "hidden": {"description": "Panes the game's layout setup hides.", "type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/name"}},
+            "messages": {"description": "The messages its texts show: main (riq_E.bmg, the default) or bonus (riq_bonus_E.bmg, a vocal song's title card).", "enum": ["main", "bonus"]},
+            "screen": {
+              "description": "The layout is drawn only into the game's dynamic texture, shown by its screen bank (Shrimp Shuffle's shore); additive lists the panes whose alpha pass adds.",
+              "type": "object", "additionalProperties": false, "required": ["additive"],
+              "properties": {"additive": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/name"}}}
+            }
           }
         }
       }

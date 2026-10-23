@@ -1,0 +1,56 @@
+{
+  "$schema": "../../schemas/game.schema.json",
+  "schemaVersion": 1,
+  "id": "shrimp",
+  "title": "Shrimp Shuffle",
+  "action": "Tap",
+  "platform": "wii",
+  "wii": {
+    "scene": "Shrimp",
+    "sceneVariant": 0,
+    "cellanim": "EN/content2/cellanim/shrimp/ver0/cellanim.szs",
+    "units": [
+      "Game/Shrimp/SceneShrimp.cpp",
+      "Game/Shrimp/MyChecker.cpp",
+      "Game/Shrimp/MyFlow.cpp"
+    ],
+    "banks": [
+      "shrimp"
+    ],
+    "projection": [
+      854,
+      480
+    ],
+    "endsWithMusic": true,
+    "layout": {
+      "archive": "EN/content2/layout/layout_shrimp.szs",
+      "file": "wave.brlyt",
+      "animations": [
+        [
+          "RootPane",
+          "wave_wave_loop"
+        ]
+      ],
+      "startAtEnd": [],
+      "texts": [],
+      "panes": [],
+      "screen": {
+        "additive": [
+          "P_wave_00",
+          "P_waveMark_00",
+          "P_starfish_00",
+          "P_starfish_01",
+          "P_starfish_02",
+          "P_starfish_03",
+          "P_starfish_04",
+          "P_starfish_05",
+          "P_starfish_06",
+          "P_starfish_07"
+        ]
+      }
+    }
+  },
+  "web": {
+    "enabled": false
+  }
+}

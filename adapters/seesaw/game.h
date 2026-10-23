@@ -5,7 +5,6 @@
 #define GAME_FLOW_COMMAND 0x8002f4c8  // MyFlow chart command dispatcher
 #define GAME_WRONG_INPUT 0x8002cf80   // reaction to a press with no cue: none (an empty function)
 #define GAME_FLOW_CREATE 0x8002f420   // MyFlow::create(chart, rest)
-#define GAME_END_CHECKER_ON_HIT 0
 // The wrong-input handler is a lone blr that the split places in the Rocket unit, so it
 // is not translated with See-Saw.
 #define GAME_CALLS \

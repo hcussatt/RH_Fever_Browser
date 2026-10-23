@@ -50,6 +50,14 @@ built games for the picker page.
   (`cueInputs`).
 - A checker listing input type -1 takes no press and hits itself on its beat
   (See-Saw's partner, who plays itself in one-player mode), so it is not a cue.
+- A checker re-armed before its cue comes never waits for that cue, so the cue
+  is withdrawn, and a cue still ahead when the level ends is dropped (Bossa
+  Nova puts a ball's checker off 256 beats when the ball turns out to be the
+  partner's).
+- A checker whose press scores nothing is not a cue either: Bossa Nova's
+  partner's catch, where a press only bumps the player's head
+  (`SE_BOSSA_MISS_HEAD`). `traceTimeline` finds them by pressing every cue and
+  repeats the run without pressing those that gave no hit or miss.
 
 ## Charts
 
@@ -108,6 +116,26 @@ current profile.
   the renderer which bank an id now draws).
 - `tools/extract-assets.py` numbers textures across the scenes
   (`<game>-texture-<n>.png`) and keys banks `<game>/<name>`.
+- The entry chart plays the remix's mode sound (`SE_REMIX_MODE_SET_REMIXn`, op
+  `0x23`) before the first scene; it only sets sequence variable 22, which the
+  games' remix versions of their sounds read (Remix 6's Launch Party counts,
+  Bossa Nova and Love Rap voices). `chart-index.py` lists these as
+  `preludeSounds` and the page plays them first (`main.mjs`).
+- Each scene with a game layout (`wii.layout` in its game's manifest) gets its
+  own: `extract-layout.py` writes `layout-<game>.json` and `layouts.json`, the
+  renderer draws the running scene's (scene changes are event 24), and a new
+  scene rebuilds its layout.
+- Actors made while a scene's base canvas is set attach to it, so one canvas
+  can carry a whole scene (Launch Party: over 600 animations).
+
+### Dynamic textures
+
+Shrimp Shuffle draws its shore layout into a texture (`CDynTex`) and shows it
+through one cell (`CCellAnimManager::createBankScreen`, event 27). Its callback
+draws the layout twice, keeping the first pass's colour and the second's alpha
+(additive panes, named in the manifest's `layout.screen.additive`). The
+renderer repeats both passes on 640 by 456 canvases and draws the screen bank's
+actors with them, snapping texture edges to whole pixels as the EFB copy does.
 
 ## Layouts
 
@@ -121,7 +149,11 @@ two colour registers, animations stepped once per game frame like
 A material with its own TEV stages (the Superb stamp's stars) is combined per
 texel like GX, with its texture SRT and colour register animations (RLTS,
 RLMC). Each glyph is cut from the font sheet with a clear border, so scaled
-text does not pick up its neighbours' edges.
+text does not pick up its neighbours' edges. Fonts may be I4 or IA4 (the lyric
+layout's), kept as intensity and alpha. Indirect TEV stages (Shrimp Shuffle's
+waves) offset a stage's texture lookup by an indirect texture through its
+matrix, as `SetupGX` unpacks them; any indirect setting the converter does not
+model raises.
 The game's layout class is replaced in `adapters/<id>/game.h` by layout events
 (kind 11: play or stop an animation, set a text box's message, offset a pane),
 indexing the manifest's `animations`, `texts` and `panes` lists.
@@ -141,6 +173,40 @@ commands as message events (kind 15); `web/engine/message.mjs` draws them with
 game plays its two animations (`baseball_frm_change_00/01`, forward, reversed or
 straight to the end) as it changes view, and the same events drive them. `tools/extract-layout.py` writes `message-layouts.json` for every
 game.
+
+### "You" markers
+
+`CExScene::_08` makes three cell animations from the permanent bank
+(`permanent.brcad`): `permanent_you`, `_you_1P` and `_you_2P`, stored at
+`0x80320200..08` under canvas 2 at layer -100. Games that mark the player's
+character (Hole in One, Love Rap, See-Saw, Donk-Donk, Bossa Nova) place and show
+them through the original `CExScene` calls; the others never enable them.
+`tools/extract-results.py` stores the bank in `results.json`, `platform.c`
+installs it as bank 254 (`install_permanent`), `CExScene::_20` hides the markers
+again on scene changes, and the renderer hides marker 0 in instruction-example
+mode like `CExScene::_1C`.
+
+### Screen mask, fader and song title card
+
+Charts can also drive three screen effects through ExFlow:
+
+- The screen mask (`0x112`-`0x116`): `CExScene::_08`'s `permanent_mask` under
+  canvas 1, which the chart shows, tints (`setBackColor`), layers and fades,
+  stepped after the game's update like `CExScene::_18`. Working Dough's opening
+  red alarm light is one. The renderer draws a cell animation's fore and back
+  colours as `CCellAnimManager`'s TEV stage does.
+- `CFaderFlash`'s black cover (`0x10A` in play): Remix 3's black cuts between
+  scenes. The renderer draws it over everything (`fader_cover`).
+- A vocal song's title card (`0x13B`): the scene's lyric layout
+  (`CExScene::mLyricLayout`, `lyrics.brlyt` in `layout_common.szs`) gets the
+  title and singer from `riq_bonus_E.bmg` and plays `lyrics_title_show`. Working
+  Dough registers it, so its manifest `layout` is the lyric layout with
+  `"messages": "bonus"`; Remix 3 opens on it with "Tonight".
+- The same layout's two lyric lines (`T_lyrics_Top_00`, `T_lyrics_Down_00`)
+  are message panes when a game registers them (`CLyricLayout::fn_800907D0`
+  and `fn_80090854`, targets `0x30` and `0x31`): Cheer Readers' calls. Its
+  manifest names `lyrics.brlyt` as `wii.messageLayout` with that layout's own
+  font (`"font": 1`).
 
 ## Audio
 
@@ -171,7 +237,17 @@ original nw4r sound code where it matters for how a game sounds:
 - Sounds played before the chart starts (scene setup and pre-roll) are kept.
 - Event kinds: 1 game sound, 3 perfect failed, 5 chart sound, 7 end, 8 chart
   command, 10 tune, 11 layout, 12 game sound from a chart command, 13 music
-  volume, 14 speed, 15 message pane. Each event is 5 words: kind, value, extra, frame, handle.
+  volume, 14 speed, 15 message pane, 26 sequence variable set by the game's user procedure
+  for the sound played just before. Each event is 5 words: kind, value, extra, frame, handle.
+- Sequence variables 16-31 are global to the sequence player and kept between sounds, as in
+  nw4r. A sound whose notes depend on them, on the game's user procedure (F0 E0) or on a random
+  variable is traced again by `web/engine/sequence.mjs` when it plays; the others play the notes
+  `tools/extract-sfx.py` traced and apply the globals they set. `tests/test-sequence.mjs` checks
+  that both tracers agree.
+- A track's volume, pan and pitch bend reach the notes it is still playing, as in nw4r's
+  SeqTrack: each traced note carries `changes`, the later sets and timed moves (0xa3, one step
+  a sequence tick) of its track, and `web/engine/audio.mjs` follows them on the note's gains,
+  pan and detune (Built to Scale's siren, Tap Trial's falling triple-tap call). A random parameter (0xa0) is drawn once per play for each range.
 - Pitch interpolation, LFO and filters are approximated.
 
 `web/engine/qa/audio-check.mjs` renders a whole autoplay run offline and reports
@@ -205,7 +281,7 @@ See [multiplayer.md](multiplayer.md) for use, protocol, limits and validation.
    wrong-input addresses and the flow constructor, plus any extra platform calls the game makes
    (`GAME_CALLS`) and per-frame hooks (`GAME_AFTER_UPDATE`). The build fails with
    the address of any call that is still missing.
-3. `./build.sh <iso>` builds and tests every game that has a manifest.
+3. `./build.sh <iso>` builds and tests every game that has a manifest, several games at a time (`RHF_JOBS`), reusing cached disassembly, decoded samples and unchanged WASM.
 4. Add the game to its remix set in `web/engine/menu.mjs` (the first remix whose
    graphics it has on the disc, `cellanim/<game>/remix0N`); games in no remix are
    listed under Other games.

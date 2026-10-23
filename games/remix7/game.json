@@ -1,0 +1,26 @@
+{
+  "$schema": "../../schemas/game.schema.json",
+  "schemaVersion": 1,
+  "id": "remix7",
+  "title": "Remix 7",
+  "action": "Play each game",
+  "platform": "wii",
+  "wii": {
+    "music": "WSD_REMIX7",
+    "scenes": [
+      {"game": "karateman", "cellanim": "EN/content2/cellanim/karateman/remix07/cellanim.szs"},
+      {"game": "panel", "cellanim": "EN/content2/cellanim/panel/remix07/cellanim.szs"},
+      {"game": "shrimp", "cellanim": "EN/content2/cellanim/shrimp/remix07/cellanim.szs"},
+      {"game": "taptroupe", "cellanim": "EN/content2/cellanim/tap/remix07/cellanim.szs"}
+    ],
+    "epilogue": "EN/content2/cellanim/remix/ver7/cellanim_epilogue.szs",
+    "projection": [
+      854,
+      480
+    ],
+    "endsWithMusic": true
+  },
+  "web": {
+    "enabled": false
+  }
+}

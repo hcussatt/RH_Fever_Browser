@@ -50,6 +50,13 @@ with tempfile.TemporaryDirectory() as tmp:
 extract.SOURCE=DISC/'permanent'
 with tempfile.TemporaryDirectory() as tmp:
     extract.OUT=Path(tmp);textures=extract.textures();bank=extract.bank('permanent')
+    # The whole permanent bank, for the cell animations CExScene::_08 makes from it that the port
+    # draws: the "you" markers (permanent_you, _you_1P, _you_2P) over the player's character and the
+    # screen mask (permanent_mask) a chart can tint and fade.
+    if len(textures)!=1:raise ValueError('permanent cellanim: expected one texture')
+    metadata['permanent']={'textures':['results-prompt.png'],'bank':{**bank,'texture':0},
+                           'you':[bank['labels'][n] for n in ('permanent_you','permanent_you_1P','permanent_you_2P')],
+                           'mask':bank['labels']['permanent_mask']}
     # The two original A/Next animations reference only cells 0 and 1.
     bank['animations']=bank['animations'][:2];bank['cells']=bank['cells'][:2]
     bank['labels']={k:v for k,v in bank['labels'].items() if v<2}

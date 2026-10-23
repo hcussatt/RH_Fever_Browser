@@ -1,0 +1,26 @@
+{
+  "$schema": "../../schemas/game.schema.json",
+  "schemaVersion": 1,
+  "id": "remix3",
+  "title": "Remix 3",
+  "action": "Play each game",
+  "platform": "wii",
+  "wii": {
+    "music": "WSD_I_FEEL_FINE",
+    "scenes": [
+      {"game": "bun", "cellanim": "EN/content2/cellanim/bun/remix03/cellanim.szs"},
+      {"game": "seal", "cellanim": "EN/content2/cellanim/seal/remix03/cellanim.szs"},
+      {"game": "badminton", "cellanim": "EN/content2/cellanim/badminton/remix03/cellanim.szs"},
+      {"game": "muscle", "cellanim": "EN/content2/cellanim/muscle/remix03/cellanim.szs"}
+    ],
+    "epilogue": "EN/content2/cellanim/remix/ver3/cellanim_epilogue.szs",
+    "projection": [
+      854,
+      480
+    ],
+    "endsWithMusic": true
+  },
+  "web": {
+    "enabled": false
+  }
+}

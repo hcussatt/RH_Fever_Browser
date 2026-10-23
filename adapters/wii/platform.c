@@ -45,6 +45,8 @@ static uint32_t prompt_exit_frames,prompt_exit_remaining;
 enum{SCENE_INITIAL,SCENE_LOADING,SCENE_READY,SCENE_ACTIVE,SCENE_SCHEDULE_DOWN,SCENE_DOWN,SCENE_DEAD};
 enum{FADER_IDLE=0,FADER_WAIT1=2,FADER_WAIT2=3};
 static uint32_t profile_index,next_profile,next_chart,scene_state,fader_state,fader_wait,flow_create_fn;
+// CFaderFlash's black cover (mAlpha, mAlphaStep): faded by the chart (ExFlow 0x10A), drawn over all.
+static float fader_alpha,fader_step;
 // The platform's own cell animations (canvases, Perfect markers) outlive every scene.
 static uint32_t persistent[16],persistent_count;
 // Cell-animation banks: every bank of every scene is installed up front (install_bank); a scene's
@@ -55,6 +57,10 @@ static uint32_t named_bank_count,file_names[512],file_count;
 void finish_frame(void);
 typedef struct {uint32_t count,animations,cells;} Bank;
 static Bank banks[256];
+// Bank 255 is the platform's never-drawn placeholder; 254 holds the permanent bank (install_permanent).
+#define PERMANENT_BANK 254
+#define MASK_TWEEN 0x8032a1c0 // CExScene's CTRFloat lbl_8032A1C0
+static uint32_t you_animations[3],mask_animation;
 EM_JS(void,panic_js,(uint32_t address,uint32_t kind,uint32_t pc,uint32_t stack,uint32_t depth),{console.error(Array.from(HEAPU32.subarray(stack/4,stack/4+depth)).map(x=>x.toString(16)));throw new Error('Original code '+kind+' at 0x'+address.toString(16)+' after 0x'+pc.toString(16));});
 #define panic(a,k) panic_js(a,k,lr,(uint32_t)(uintptr_t)trace,call_depth)
 static uint32_t idx(uint32_t a){if(a<0x80000000u||a>=0x82000000u)panic(a,1);return a-0x80000000u;}
@@ -74,18 +80,22 @@ static uint32_t rotl(uint32_t v,uint32_t n){return n?(v<<n)|(v>>(32-n)):v;}
 static void cmp(unsigned field,int64_t a,int64_t b){cr[field*4]=a<b;cr[field*4+1]=a>b;cr[field*4+2]=a==b;cr[field*4+3]=0;}
 static void fcmp(unsigned field,double a,double b){cr[field*4]=a<b;cr[field*4+1]=a>b;cr[field*4+2]=a==b;cr[field*4+3]=isnan(a)||isnan(b);}
 static void call(uint32_t address);
+// A paired-single quantized store's conversion (Gekko, as Dolphin models it): saturate, then
+// truncate toward zero; NaN stores the minimum.
+static int32_t fast_cast(double x,float lo,float hi){float v=(float)x;return (int32_t)(v>=lo?(v<=hi?v:hi):lo);}
 #include "original-functions.inc"
 static uint32_t alloc(uint32_t size){uint32_t a=heap;heap=(heap+size+31)&~31u;if(heap>=0x81600000)panic(a,2);return a;}
 // Each scene's original addresses, from adapters/<game>/game.h (a remix lists several; see
 // tools/recompile.py). id: the original ESceneID a remix's chart names; version: where the scene
-// keeps its version (CSceneManager::fn_8008A4DC).
-typedef struct{uint32_t id,version,create,init,update,flow_command,wrong_input,flow_create,end_on_hit;void(*after_update)(void);} SceneProfile;
+// keeps its version (CSceneManager::fn_8008A4DC). wrong_input names the callback the scene's init
+// registers; presses reach the registered one (see press()).
+typedef struct{uint32_t id,version,create,init,update,flow_command,wrong_input,flow_create;void(*after_update)(void);} SceneProfile;
 #ifdef GAME_SCENE_PROFILES
 GAME_SCENE_PROFILES
 #else
 #define GAME_SCENE_COUNT 1
 static void after_update_0(void){GAME_AFTER_UPDATE}
-static const SceneProfile profiles[1]={{0xffffffffu,0,GAME_SCENE_CREATE,GAME_SCENE_INIT,GAME_SCENE_UPDATE,GAME_FLOW_COMMAND,GAME_WRONG_INPUT,GAME_FLOW_CREATE,GAME_END_CHECKER_ON_HIT,after_update_0}};
+static const SceneProfile profiles[1]={{0xffffffffu,0,GAME_SCENE_CREATE,GAME_SCENE_INIT,GAME_SCENE_UPDATE,GAME_FLOW_COMMAND,GAME_WRONG_INPUT,GAME_FLOW_CREATE,after_update_0}};
 #endif
 static int find_profile(uint32_t id){for(int i=0;i<GAME_SCENE_COUNT;i++)if(profiles[i].id==id)return i;return -1;}
 static int is_flow_command(uint32_t address){for(int i=0;i<GAME_SCENE_COUNT;i++)if(profiles[i].flow_command==address)return 1;return 0;}
@@ -98,11 +108,12 @@ static void emit(uint32_t kind,uint32_t value,uint32_t extra){emit_handle(kind,v
 // Hole in One's CMyLayout) is announced when the scene adds it; MESG_CLEAR drops them all when
 // the scene ends. MESG_REGISTER gives a pane a text box (CTickFlow::fn_801DEF58): 0 none,
 // 0x10 the balloon (with its window), 0x11 the balloon's text alone, 0x12 the overlay strip,
-// 0x20+i Hole in One's message i. MESG_FRAME plays one of the screen frame's animations in Hole
-// in One's layout: extra = animation<<2 | reverse<<1 | jump to its end.
+// 0x20+i Hole in One's message i, 0x30/0x31 the lyric layout's top/bottom line. MESG_FRAME plays one of the screen frame's animations in Hole
+// in One's layout: extra = animation<<2 | reverse<<1 | jump to its end. MESG_TEXT_Y moves a
+// pane's text box to y (extra = float bits).
 enum{MESG_VISIBLE,MESG_TEXT,MESG_STRING,MESG_REGISTER,MESG_LAYOUT,MESG_CLEAR,MESG_TAIL,
-  MESG_BOX_X,MESG_BOX_Y,MESG_BOX_W,MESG_BOX_H,MESG_TAIL_X,MESG_TAIL_Y,MESG_OVERLAY_Y,MESG_OVERLAY_H,MESG_FRAME};
-enum{MESG_LAYOUT_BALLOON=1,MESG_LAYOUT_GOLF=2};
+  MESG_BOX_X,MESG_BOX_Y,MESG_BOX_W,MESG_BOX_H,MESG_TAIL_X,MESG_TAIL_Y,MESG_OVERLAY_Y,MESG_OVERLAY_H,MESG_FRAME,MESG_TAIL_FLIP,MESG_TEXT_Y};
+enum{MESG_LAYOUT_BALLOON=1,MESG_LAYOUT_GOLF=2,MESG_LAYOUT_LYRIC=3};
 static uint32_t fbits(float x){union{float v;uint32_t u;}b={.v=x};return b.u;}
 // The rest of the flow running now; 0 outside the chart (a press, a scene update).
 static uint32_t flow_rest(void){return current_flow?rd32(current_flow+0x1c):0;}
@@ -162,9 +173,13 @@ static uint32_t message_id(uint32_t p){uint32_t id=0;for(;rd8(p);p++){uint32_t c
 // CMessageManager::fn_80087708: a message id string is seven digits (Tap Trial's has a trailing
 // space); 0xffffffff if not.
 static uint32_t bmg_id(uint32_t s){uint32_t v=0;for(int i=0;i<7;i++){uint8_t c=rd8(s+i);if(c<'0'||c>'9')return 0xffffffff;v=v*10+c-'0';}return v;}
+static void end_flows_above(int32_t category);
 static void enter_grading(void){
   uint32_t cp=rd32(0x8032016c),gs=alloc(256);grading_scene=gs;grading=1;grading_ready=grading_pressed=0;
   wr32(rd32(0x80320180)+4,gs);wr32(gs+0x34,alloc(256));wr32(gs+0x38,rd32(cp+0x2fc));wr8(gs+0x3c,rd8(cp+0xdf));
+  // Leaving the game scene (CExScene::_20) ends its flows above category 0 (fn_801E2490): a game's
+  // looping flow (Monkey Watch, Launch Party) would otherwise keep the results from finishing.
+  end_flows_above(0);
 }
 // CTickFlowManager::fn_801E1CC0: create a flow with the game's own flow class
 // and push it at the head of the list, as the original does.
@@ -206,8 +221,12 @@ static void canvas_default(uint32_t i){
 // (canvases, input checkers, the chart's input remaps and the layouts), flows above category 0 end
 // and the rest carry on as plain CExFlows until the next scene registers its own class.
 static void ex_scene_unload(void){
+  // The "you" markers: hidden, scale 1, back on the default base (canvas 2).
+  for(uint32_t i=0;i<3;i++){uint32_t you=rd32(0x80320200+i*4);wr8(you+0xa7,0);wrf32(you+0x8c,1);wrf32(you+0x90,1);}
   base_canvas=canvas[2];for(uint32_t i=2;i<=9;i++)canvas_default(i);
+  for(uint32_t i=0;i<3;i++){r[3]=rd32(0x80320200+i*4);r[4]=base_canvas;r[5]=0;r[6]=0;call(0x801dcfa4);}
   checker_count=0;for(int i=0;i<256;i++)input_map[i]=i;
+  wr32(rd32(0x80320170)+0x418,0); // the scene's wrong-input callback
   layout_count=0;emit(15,MESG_CLEAR<<8,0); // CLayoutManager::fn_801D6BB0
   end_flows_above(0);register_flow(0x8008d2cc);
 }
@@ -281,8 +300,31 @@ static void exflow_command(void){
   // group up front. fn_800836E0 only keeps its flag.
   else if(op>=0x12c&&op<=0x12e){}
   else if(op==0x12f&&arg0==0)wr8(0x80326ec0-27264,rd32(args)!=0);
-  // CExScene::updatePerfectStatus returns at once outside the Perfect campaign, which is not ported.
-  else if(op==0x129&&!rd8(0x80326ec0-27912)){}
+  // CExScene::updatePerfectStatus shows or hides the Perfect campaign's icon and message
+  // (lbl_803201F8/FC), placeholders here: the port tracks Perfect failure but has no campaign.
+  else if(op==0x129){if(rd8(0x803201b8)){wr8(rd32(0x803201f8)+0xa7,arg0!=0);wr8(rd32(0x803201fc)+0xa7,arg0!=0);}}
+  // The screen mask (CExScene::fn_80009A64, 70, 7C, 90 and fn_80008DF8, fn_80008E68).
+  else if(op==0x112)wr8(rd32(0x8032020c)+0xa7,rd32(args)!=0);
+  else if(op==0x113)wr8(rd32(0x8032020c)+0xa6,rd32(args));
+  else if(op==0x114){uint32_t mask=rd32(0x8032020c);wr8(mask+0xa3,rd32(args));wr8(mask+0xa4,rd32(args+4));wr8(mask+0xa5,rd32(args+8));}
+  else if(op==0x115){r[3]=rd32(0x8032020c);r[4]=rd32(args);call(0x801dcf94);}
+  else if(op==0x116&&arg0==0){
+    float v=(float)rd8(rd32(0x8032020c)+0xa6),target=(float)(uint8_t)rd32(args);
+    wrf32(0x8032021c,v);wrf32(0x80320224,target);wrf32(0x80320220,(target-v)/(float)(int32_t)rd32(args+4));
+  }
+  else if(op==0x116&&arg0==1){
+    r[3]=MASK_TWEEN;f[1].d=(float)rd8(rd32(0x8032020c)+0xa6);f[2].d=(float)(uint8_t)rd32(args);call(0x801ea698);
+    r[3]=MASK_TWEEN;f[1].d=0.0f;f[2].d=(float)(int32_t)rd32(args+4);call(0x801ea514);
+  }
+  // The song title card of the scene's lyric layout (CExScene::mLyricLayout, +0x18; CLyricLayout in
+  // LyricLayout.cpp): title and singer from the bonus messages (riq_bonus_E.bmg, fn_800908D8 and
+  // fn_80090934), then lyrics_title_show (fn_80090990). The layout's spec lists T_title_00 and
+  // T_singer_00 as its texts 0 and 1 and lyrics_title_show as its animation 0 (Working Dough).
+  else if(op==0x13b&&arg0<=2){
+    uint32_t lyric=rd32(scene+0x18);
+    if(!lyric||rd32(lyric)!=0x802ed678)panic(lyric,21);
+    if(arg0<2)emit(11,0x300|arg0,bmg_id(rd32(args)));else emit(11,0x100,0);
+  }
   else if(op==0x124)emit(15,(MESG_TEXT<<8)|(arg0&255),bmg_id(rd32(args))); // CMessageManager::fn_80088FEC(pane, fn_80087708(id))
   else if(grading&&op==0x123){
     if(arg0==0)emit(16,0,rd32(args));
@@ -291,10 +333,69 @@ static void exflow_command(void){
     else if(arg0==1){prompt_exit_remaining=prompt_exit_frames+1;emit(16,1,prompt_exit_frames);}
     else if(arg0==2)wr32(self+0x24,prompt_exit_remaining==0);
   }
+  // In play the chart fades CFaderFlash's cover (Remix 3's black cuts): over args[1] frames, or
+  // args[1] ticks when args[0] is 0. The steps keep the original's 256 (fn_800080B0, fn_800080C0).
+  else if(!song_ended&&op==0x10a&&arg0<=1){
+    float frames;
+    if(rd32(args))frames=(float)(int32_t)rd32(args+4);
+    else{r[3]=rd32(0x80320174);f[1].d=(float)(int32_t)rd32(args+4);call(0x801e26b4);frames=(float)(int32_t)f[1].d;}
+    fader_step=(arg0?-256.0f:256.0f)/frames;
+  }
   else if(song_ended&&op==0x10a){emit(20,arg0?6:7,rd32(self+0x1c));emit(22,arg0,rd32(args)?rd32(args+4):(uint32_t)((float)rd32(args+4)*60/(current_tempo*.8f)));}
   else if(op==0x12a)wr8(0x803201b9,arg0);
-  else if(op==0x121||op==0x131)wr32(self+0x24,0); // Scene version / play-mode queries: normal play.
+  // The "you" markers (CExScene::fn_80009950/99A0/99F0 and fn_80009A40/4C/58): marker arg0 moves
+  // to (x, y) or is shown or hidden. Donk-Donk's chart hides its marker when the ship takes off.
+  else if(op==0x110&&arg0<=2){uint32_t you=rd32(0x80320200+arg0*4);wrf32(you+0x84,(float)(int32_t)rd32(args));wrf32(you+0x88,(float)(int32_t)rd32(args+4));}
+  else if(op==0x111&&arg0<=2)wr8(rd32(0x80320200+arg0*4)+0xa7,rd32(args)!=0);
+  // CExFlow 0x121 (0x8008da44): a per-section miss record. 0/1 reset its counter (lbl_803201A4) and
+  // the missed flag (lbl_803201A0) that a Perfect fail (fn_80009ABC) sets; 2 counts the section when
+  // nothing was missed; 3 and 7 read them back; 4 fails Perfect; 5-9 set or read two more flags
+  // (fn_80009D60..D7C; 5 also prints a debug line). Tap Troupe clears the flag before each combo
+  // and cheers only when it is clear, so leaving it set stopped every cheer after the first miss.
+  else if(op==0x121){switch(arg0){
+    case 0:wr32(0x803201a4,0);break;
+    case 1:wr8(0x803201a0,0);break;
+    case 2:if(!rd8(0x803201a0))wr32(0x803201a4,rd32(0x803201a4)+1);break;
+    case 3:wr32(self+0x24,rd32(0x803201a4));break;
+    case 4:call(0x80009abc);break;
+    case 5:wr8(0x803201c0,1);break;
+    case 6:wr32(self+0x24,rd8(0x803201c0));break;
+    case 7:wr32(self+0x24,rd8(0x803201a0));break;
+    case 8:wr8(0x803201a2,rd32(args)!=0);break;
+    case 9:wr32(self+0x24,rd8(0x803201a2));break;
+  }}
+  // CExFlow 0x125 scales a canvas (args in 1/256ths): 0 at once (fn_8007BF6C), 1 over time with an
+  // ease (fn_8007C000: type, power, duration, x, y), 2 stops that (fn_8007C200).
+  else if(op==0x125&&arg0<=2){
+    const float unit=rdf32(0x80328fe0-15424);uint32_t index=rd32(args);
+    if(arg0==0){r[4]=index;f[1].d=(float)rd32(args+4)*unit;f[2].d=(float)rd32(args+8)*unit;call(0x8007bf6c);}
+    else if(arg0==1)set_canvas_timed(index,rd32(args+4),rd32(args+8)&255,(float)(int32_t)rd32(args+12),(float)rd32(args+16)*unit,(float)rd32(args+20)*unit);
+    else{r[4]=index;call(0x8007c200);}
+  }
+  // CExFlow 0x126 0 places a canvas (CMyCanvasManager::fn_8007BFA8; Board Meeting shakes the base
+  // canvas this way). 1 (a timed move, fn_8007C0C8) and 2 (fn_8007C218) are not modelled yet.
+  else if(op==0x126&&arg0==0){r[4]=rd32(args);f[1].d=(float)(int32_t)rd32(args+4);f[2].d=(float)(int32_t)rd32(args+8);call(0x8007bfa8);}
+  else if(op==0x126)panic(arg0,22);
+  else if(op==0x131)wr32(self+0x24,0); // Scene version / play-mode query: normal play.
   r[3]=0;
+}
+// The game's sequence user procedure (F0 E0 in a sound's program): it sets sequence variables from
+// the game's state, which the sound's notes then depend on. It runs when a sound is played, as
+// the sound's sequence starts, and each global it sets follows the sound as a sequence variable
+// event (26): value = the variable (16-31), extra = its value. web/engine/sequence.mjs applies
+// them where the sound calls the procedure; a sound that does not call it ignores them.
+static uint32_t userproc_fn,userproc_arg,userproc_param;
+static void userproc(void){
+  if(!userproc_fn)return;
+  uint32_t saved_r[32];FPR saved_f[32];uint8_t saved_cr[32];memcpy(saved_r,r,sizeof r);memcpy(saved_f,f,sizeof f);memcpy(saved_cr,cr,sizeof cr);
+  // SeqUserprocCallbackParam {s16* localVariable; s16* globalVariable; s16* trackVariable; bool cmpFlag}.
+  if(!userproc_param)userproc_param=alloc(16+3*32);
+  uint32_t p=userproc_param,globals=p+48;
+  wr32(p,p+16);wr32(p+4,globals);wr32(p+8,p+80);wr8(p+12,0);
+  for(int i=0;i<16;i++)wr16(globals+i*2,0x8001); // unset: a value no procedure here stores
+  r[3]=0;r[4]=p;r[5]=userproc_arg;call(userproc_fn);
+  for(uint32_t i=0;i<16;i++){uint16_t v=rd16(globals+i*2);if(v!=0x8001)emit(26,16+i,(uint32_t)(int32_t)(int16_t)v);}
+  memcpy(r,saved_r,sizeof r);memcpy(f,saved_f,sizeof f);memcpy(cr,saved_cr,sizeof cr);
 }
 static void call(uint32_t address){
   trace[call_depth]=address;
@@ -312,10 +413,17 @@ static void call(uint32_t address){
   }
   switch(address){
   GAME_CALLS
+  // __construct_new_array(block, ctor, dtor, size, n): the block starts with size and count; each
+  // element is built with ctor(element, 1) and the elements' start is returned.
+  case 0x80103988:{uint32_t block=r[3],ctor=r[4],size=r[6],n=r[7];if(!block){r[3]=0;break;}
+    wr32(block,size);wr32(block+4,n);for(uint32_t i=0;ctor&&i<n;i++){r[4]=1;invoke1(ctor,block+16+i*size);}r[3]=block+16;break;}
+  // __destroy_new_array(elements, dtor): each element, last first, gets dtor(element, -1).
+  case 0x80103cb8:{uint32_t a=r[3],dtor=r[4];if(!a||!dtor)break;uint32_t size=rd32(a-16),n=rd32(a-12);
+    for(uint32_t i=n;i-->0;){r[4]=(uint32_t)-1;invoke1(dtor,a+i*size);}break;}
   case 0x80103b48:{uint32_t a=r[3],ctor=r[4],size=r[6],n=r[7];for(uint32_t i=0;i<n;i++)invoke1(ctor,a+i*size);r[3]=a;break;}
-  case 0x801d3284:r[3]=alloc(r[3]);break;
+  case 0x801d3284:case 0x801d3370:r[3]=alloc(r[3]);break; // operator new and new[]
   case 0x801e9144:r[3]=alloc(r[4]);break;
-  case 0x801d345c:case 0x801e9150:break;
+  case 0x801d345c:case 0x801d34e0:case 0x801e9150:break; // operator delete and delete[]: the heap is never reused
   case 0x801eaa84:wr32(r[3]+4,0);wr32(r[3]+8,0);break;
   case 0x801eaaa0:break;
   case 0x801dbe7c:{uint32_t bank=r[4],anim=r[5];r[3]=create_actor(bank,anim);break;}
@@ -332,6 +440,9 @@ static void call(uint32_t address){
   case 0x801e4178:r[3]=1;break;
   case 0x801e9158:if(checker_count>=128)panic(checker_count,7);checkers[checker_count++]=r[4];emit(9,r[4],0);break; // new input checker (9): the dry run reads its target tick
   case 0x801e9488:score_sum+=(r[4]?r[4]:wrong_count*5);score_count++;wrong_count=0;break;
+  // CInputCheckManager::fn_801E94E8(type): a press of A or A+B (unk430) restarts the wrong-press
+  // timer, as a press with no cue does in press() (Bossa Nova's checker calls it itself).
+  case 0x801e94e8:if(r[4]==4||r[4]==6)wrong_timer=48;break;
   case 0x801e9d58:input_map[r[4]&255]=r[5];break;
   case 0x801e9c40:for(int i=0;i<256;i++)input_map[i]=i;break;
   case 0x80004714:memset(ram+idx(r[3]),r[4],r[5]);break;
@@ -346,13 +457,20 @@ static void call(uint32_t address){
   // played (12) or one from a press or the scene's own update (1).
   // A start below 0 delays the sound by that many ticks; above 0 it starts that many ticks in.
   case 0x801e4f60:{uint32_t handle=r[5];if(handle)attach(handle);
-    emit_handle(chart_sound?5:current_flow?12:1,r[4],flow_rest(),handle);if(f[1].d!=0)emit(10,3,fbits(f[1].d));break;}
+    emit_handle(chart_sound?5:current_flow?12:1,r[4],flow_rest(),handle);if(f[1].d!=0)emit(10,3,fbits(f[1].d));userproc();break;}
+  // CSoundManager's setSeqUserprocCallback (nw4r SoundArchivePlayer::SetSeqUserprocCallback).
+  case 0x801e7344:userproc_fn=r[4];userproc_arg=r[5];break;
   // Tuning (10): value = type | fade frames << 8 (0 volume, 1 pitch, 2 pan, 3 start, 4 stop,
-  // 5 pause), extra = float bits (pause: 1 or 0), on the handle's sound or the one played last.
+  // 5 pause, 6 end the handle), extra = float bits (pause: 1 or 0), on the handle's sound or the one played last.
   case 0x801e65f4:emit_handle(10,0|r[4]<<8,fbits(f[1].d),r[5]);break;
   case 0x801e676c:emit_handle(10,1,fbits(f[1].d),r[4]);break;
   case 0x801e68e0:emit_handle(10,2,fbits(f[1].d),r[4]);break;
   case 0x801e62b8:emit_handle(10,4|r[4]<<8,0,r[5]);break;
+  // ~SNDHandle: CSoundManager::end_sound_handle drops the handle's sounds still waiting to start (6).
+  // Its stand-in sound slot is freed for the next handle (a game can make a handle per checker).
+  case 0x801e4198:{uint32_t handle=r[3];emit_handle(10,6,0,handle);
+    for(uint32_t i=0;i<handle_count;i++)if(handle_sounds[i][0]==handle){handle_sounds[i][0]=handle_sounds[--handle_count][0];handle_sounds[i][1]=handle_sounds[handle_count][1];break;}
+    break;}
   case 0x801e6440:emit_handle(10,5|r[5]<<8,r[4]&1,r[6]);break;
   case 0x801ad8b0:wr8(r[3],r[4]&1);emit_handle(10,5|r[5]<<8,r[4]&1,handle_of(r[3]));break; // nw4r BasicSound::Pause on a game handle
   case 0x801adb10:r[3]=rd8(r[3]);break; // BasicSound::IsPause
@@ -363,6 +481,12 @@ static void call(uint32_t address){
       wr8(0x803201ba,1);perfect_failed=reason;emit(3,reason,0);
     }break;}
   case 0x80009a9c:case 0x80009e58:break; // Input visualizer / Perfect hit icon.
+  // CExScene::fn_8000975C(pos): moves the skip button and instruction example (lbl_803201D0/D4),
+  // which show only in a practice; the port plays no practice and does not create them (Cheer Readers).
+  case 0x8000975c:break;
+  // CExScene::fn_80009F24(channel): rumbles the Wii Remote with pattern "*****-----------"
+  // (Cheer Readers' big finish flip). Browsers have no Wii Remote motor; nothing else follows from it.
+  case 0x80009f24:break;
   case 0x801a7a20:case 0x801a7a90:{ // nw4r::math::SinFIdx / CosFIdx: 256-step table at 0x802dfe70 with deltas
     float x=f[1].d,a=fabsf(x);while(a>65536.0f)a-=65536.0f;uint32_t i=(uint32_t)a&0xffff;float frac=a-(float)i;uint32_t e=0x802dfe70+(i&0xff)*16;
     if(address==0x801a7a20){float v=rdf32(e)+frac*rdf32(e+8);f[1].d=x<0.0f?-v:v;}else f[1].d=rdf32(e+4)+frac*rdf32(e+12);break;}
@@ -370,8 +494,13 @@ static void call(uint32_t address){
   case 0x801a7850:f[1].d=expf(f[1].d);break;
   case 0x801a78f0:f[1].d=logf(f[1].d);break;
   case 0x8007bef8:base_canvas=(int32_t)r[4]<0?0:canvas[r[4]];break;
+  // CCellAnimManager::setBaseDefault / getBaseDefault: the base new animations attach to
+  // (Karate Man sets its own), the same value MyCanvas's base selection (0x8007bef8) sets.
+  case 0x801dc164:base_canvas=r[4];break;
+  case 0x801dc16c:r[3]=base_canvas;break;
   case 0x8007bf30:{uint32_t actor=r[4],index=r[5];r[3]=actor;r[4]=(int32_t)index<0?0:canvas[index];r[5]=0;r[6]=0;call(0x801dcfa4);break;}
   case 0x8007bf6c:{uint32_t i=r[4];wrf32(canvas[i]+0x8c,f[1].d);wrf32(canvas[i]+0x90,f[2].d);for(int a=0;a<2;a++)if(canvas_timing[i][a])wr8(canvas_timing[i][a]+37,0);break;}
+  case 0x8007c200:{uint32_t i=r[4];for(int a=0;a<2;a++)if(canvas_timing[i][a])wr8(canvas_timing[i][a]+37,0);break;} // stops the canvas's scale tweens
   case 0x8007bfa8:wrf32(canvas[r[4]]+0x84,f[1].d);wrf32(canvas[r[4]]+0x88,f[2].d);break;
   case 0x8007c000:{uint32_t index=r[4],type=r[5],power=r[6];float duration=f[1].d,x=f[2].d,y=f[3].d;set_canvas_timed(index,type,power,duration,x,y);break;}
   case 0x8007c244:{uint32_t i=r[4];union{float f;uint32_t u;}x={.f=rdf32(canvas[i]+0x8c)},y={.f=rdf32(canvas[i]+0x90)};r[3]=x.u;r[4]=y.u;break;}
@@ -421,6 +550,10 @@ static void call(uint32_t address){
     break;
   }
   case 0x80039e00:emit(15,(MESG_REGISTER<<8)|(r[4]&255),r[5]?0x10:0x11);break;
+  // CBalloonLayout::fn_80039F30(x, y, flip): the straight tail's place, turned upside down or not.
+  case 0x80039f30:
+    if(rd32(rd32(r[3])+0x10)!=0x800399e4)panic(r[3],20);
+    emit(15,MESG_TAIL_X<<8,fbits(f[1].d));emit(15,MESG_TAIL_Y<<8,fbits(f[2].d));emit(15,MESG_TAIL_FLIP<<8,r[4]!=0);break;
   case 0x8003a418: // fn_8003A418(pane, y, height)
     emit(15,(MESG_REGISTER<<8)|(r[4]&255),0x12);
     emit(15,(MESG_OVERLAY_Y<<8)|(r[4]&255),fbits(f[1].d));emit(15,(MESG_OVERLAY_H<<8)|(r[4]&255),fbits(f[2].d));break;
@@ -437,6 +570,17 @@ static void call(uint32_t address){
   // Archive/bank registration is completed by the static browser asset loader.
   case 0x801d3644:case 0x801d369c:case 0x801d3f94:case 0x801d41cc:case 0x801ed7d4:case 0x800db700:break;
   case 0x801db568:register_bank(r[4],r[6]&255);break; // CCellAnimManager::registBank(brcad, tpl, id)
+  // Shrimp Shuffle's shore: CDynTex renders the game's layout (its waves) into a 640x456 texture
+  // each frame. update calls the scene's callback (fn_8003669C), which draws the layout's colours,
+  // copies them out clearing only alpha (colour update off), then draws its alpha alone with the
+  // waves and starfish added (fn_8007C6C0, fn_8007C8A0); update copies the result into the texture.
+  // createBankScreen makes a bank whose one cell shows that texture across the screen. The port
+  // renders nothing into textures: the screen bank gets the placeholder bank's one-frame animation,
+  // and event 27 tells the renderer to draw the layout's two passes where that bank is drawn.
+  case 0x8007c288:wr32(r[3]+0x30,r[4]);wr16(r[3]+0x2c,640);wr16(r[3]+0x2e,456);break; // CDynTex(fn)
+  case 0x8007c348:break; // ~CDynTex: its texture memory is the port's, never allocated
+  case 0x8007c3a0:break; // CDynTex::update: see above
+  case 0x801db9c0:banks[r[5]&255]=banks[255];emit(27,r[5]&255,0);break; // createBankScreen(tex, id)
   case 0x801dba98:break; // endBank frees the bank's data; the browser keeps every bank and the next registBank replaces the id.
   case 0x801dc068:{uint32_t bank=r[4]&255;for(uint32_t i=0;i<actor_count;i++)if(actor_active[i]&&rd8(actors[i]+12)==bank)end_actor_at(i);break;} // endCellAnimByBank
   case 0x801d422c:r[3]=1;break;
@@ -448,11 +592,22 @@ static void call(uint32_t address){
     if(layout_count>=8)panic(layout_count,9);layout[layout_count++]=r[4];
     uint32_t setup=rd32(rd32(r[4])+0x10);
     if(setup==0x800399e4)emit(15,MESG_LAYOUT<<8,MESG_LAYOUT_BALLOON); // CBalloonLayout
+    else if(setup==0x80090408)emit(15,MESG_LAYOUT<<8,MESG_LAYOUT_LYRIC); // CLyricLayout
+    // Shrimp Shuffle's wave layout (fn_8007C474) binds wave_wave_loop, its game layout's
+    // animation 0, and plays it looping from the start. The game draws it only into its CDynTex
+    // (draw disabled here), which web/engine/renderer.mjs shows through the screen bank.
+    else if(setup==0x8007c474){emit(11,0x800,1);emit(11,0x100,0);}
     // Hole in One's CMyLayout gives its four messages to panes 0-3, hidden (fn_80072428).
     else if(setup==0x80072428){emit(15,MESG_LAYOUT<<8,MESG_LAYOUT_GOLF);for(uint32_t i=0;i<4;i++){emit(15,(MESG_REGISTER<<8)|i,0x20+i);emit(15,(MESG_VISIBLE<<8)|i,0);}}
     break;
   }
   case 0x801d6c50:r[3]=layout[r[4]];break;
+  // CLyricLayout::fn_800907D0 and fn_80090854 (Cheer Readers): message pane r4 shows the top or
+  // bottom lyric line (CTickFlow::fn_801DEF58), which moves to y = -f1, z 0.
+  case 0x800907d0:case 0x80090854:{
+    int bottom=address==0x80090854;wr32(r[3]+(bottom?0x40:0x3c),r[4]);
+    emit(15,(MESG_REGISTER<<8)|(r[4]&255),bottom?0x31:0x30);emit(15,(MESG_TEXT_Y<<8)|(r[4]&255),fbits(-(float)f[1].d));break;
+  }
   case 0x801d9a2c:wr32(r[3],0x80430000);break;
   case 0x801e1cc0:r[3]=create_flow(r[4],f[1].d);break;
   case 0x800dc460:case 0x80199b80:break;
@@ -471,6 +626,10 @@ EMSCRIPTEN_KEEPALIVE uint32_t events_count(void){return event_count;}
 EMSCRIPTEN_KEEPALIVE void events_clear(void){event_count=0;}
 EMSCRIPTEN_KEEPALIVE uint32_t allocate(uint32_t size){return alloc(size);}
 EMSCRIPTEN_KEEPALIVE void install_bank(uint32_t id,uint32_t count,uint32_t animations,uint32_t cells){banks[id]=(Bank){count,animations,cells};}
+// The permanent bank (CExScene::_08's registBank of permanent.brcad) and its "you" animations.
+EMSCRIPTEN_KEEPALIVE void install_permanent(uint32_t count,uint32_t animations,uint32_t cells,uint32_t you,uint32_t you_1p,uint32_t you_2p,uint32_t mask){
+  banks[PERMANENT_BANK]=(Bank){count,animations,cells};you_animations[0]=you;you_animations[1]=you_1p;you_animations[2]=you_2p;mask_animation=mask;
+}
 // A bank of one scene's archive, registered by name when the scene asks for it (registBank).
 EMSCRIPTEN_KEEPALIVE uint32_t install_named_bank(uint32_t scene_index,uint32_t name,uint32_t count,uint32_t animations,uint32_t cells){
   if(named_bank_count>=64)panic(name,18);NamedBank*b=&named_banks[named_bank_count];
@@ -485,7 +644,7 @@ EMSCRIPTEN_KEEPALIVE void reset_runtime(void){
   memset(tf_values,0,sizeof(tf_values));tf_values[0]=32;tf_values[1]=16;tf_values[2]=16;tf_values[3]=8; // CTickFlowManager::_10's defaults
   sound_handle=envelope=0;speed=1;anim_tempo_update=anim_tempo=handle_count=0;
   chart_flow_count=chart_rerun=chart_instances=current_flow=music_started=song_ended=0;
-  profile_index=next_profile=next_chart=fader_wait=flow_create_fn=persistent_count=named_bank_count=file_count=0;scene_state=SCENE_ACTIVE;fader_state=FADER_IDLE;grading=grading_scene=grading_ready=grading_pressed=grading_done=prompt_press=prompt_release=prompt_exit_remaining=message_table=message_count=0;prompt_exit_frames=5;music_sound=0xffffffff;frame_ticks=0;heap=0x80500000;call_depth=actor_count=checker_count=event_count=frame_number=layout_count=0;
+  profile_index=next_profile=next_chart=fader_wait=flow_create_fn=persistent_count=named_bank_count=file_count=0;scene_state=SCENE_ACTIVE;fader_state=FADER_IDLE;grading=grading_scene=grading_ready=grading_pressed=grading_done=prompt_press=prompt_release=prompt_exit_remaining=message_table=message_count=0;prompt_exit_frames=5;fader_alpha=fader_step=0.0f;music_sound=0xffffffff;frame_ticks=0;heap=0x80500000;call_depth=actor_count=checker_count=event_count=frame_number=layout_count=0;
   hits=misses=through=stray=perfect_failed=score_sum=score_count=wrong_count=0;wrong_timer=0;
   memset(canvas_timing,0,sizeof(canvas_timing));base_canvas=0;
   r[1]=0x81800000;r[2]=0x80328fe0;r[13]=0x80326ec0;
@@ -505,7 +664,21 @@ EMSCRIPTEN_KEEPALIVE void initialize_scene(void){
     canvas[i]=persistent[persistent_count++]=create_actor(255,0);
     if(i){r[3]=canvas[i];r[4]=canvas[i-1];r[5]=0;r[6]=0;call(0x801dcfa4);}
   }
-  uint32_t you=persistent[persistent_count++]=create_actor(255,0);wr32(0x80320200,you);wr8(you+0xa7,0);
+  // CExScene::_08's "you" markers (permanent_you, _you_1P, _you_2P) from the permanent bank, made
+  // under canvas 2 at layer -100 and hidden; the scenes that have them move, enable and attach
+  // them (CExScene::fn_80009950..fn_80009A58). Without the permanent bank they are placeholders.
+  for(uint32_t i=0;i<3;i++){
+    uint32_t you=persistent[persistent_count++]=banks[PERMANENT_BANK].count?create_actor(PERMANENT_BANK,you_animations[i]):create_actor(255,0);
+    wr32(0x80320200+i*4,you);wr32(you+0x98,(uint32_t)-100);wr8(you+0xa7,0);
+    r[3]=you;r[4]=canvas[2];r[5]=0;r[6]=0;call(0x801dcfa4);
+  }
+  // CExScene::_08's screen mask (lbl_8032020C, permanent_mask) under canvas 1 at layer 0, hidden;
+  // the chart tints and fades it (ExFlow 0x112-0x116: Working Dough's red alarm light). Its fade
+  // tween (lbl_8032A1C0) as _08 sets it up.
+  {uint32_t mask=persistent[persistent_count++]=banks[PERMANENT_BANK].count?create_actor(PERMANENT_BANK,mask_animation):create_actor(255,0);
+   wr32(0x8032020c,mask);wr8(mask+0xa7,0);r[3]=mask;r[4]=canvas[1];r[5]=0;r[6]=0;call(0x801dcfa4);r[3]=mask;r[4]=0;call(0x801dcf94);
+   wrf32(0x80320220,0.0f);invoke1(0x801ea590,MASK_TWEEN);wr32(MASK_TWEEN+12,0);wr8(MASK_TWEEN+16,1);
+   r[3]=MASK_TWEEN;f[1].d=0.0f;f[2].d=1.0f;call(0x801ea698);r[3]=MASK_TWEEN;r[4]=1;f[1].d=0.0f;f[2].d=96.0f;call(0x801ea550);wr8(MASK_TWEEN+37,0);}
   uint32_t other=persistent[persistent_count++]=create_actor(255,0);wr32(0x803201f8,other);wr32(0x803201fc,other);
   invoke1(profiles[profile_index].init,scene);
   wr32(0x803201bc,7);wr8(0x803201b8,1);
@@ -544,7 +717,14 @@ EMSCRIPTEN_KEEPALIVE uint32_t chart_flow_count_value(void){return chart_flow_cou
 EMSCRIPTEN_KEEPALIVE uint32_t chart_flow_at(uint32_t i){return i<chart_flow_count?chart_flows[i]:0;}
 // Once the chart has switched to grading, its flows wait for the results screen (grading_frame):
 // a game that plays on to the end of its music would otherwise reach the result prompt early.
-EMSCRIPTEN_KEEPALIVE void begin_frame(void){if(!grading)run_flows();}
+// Ended cell animations leave the pool between frames, keeping the others in creation order
+// (the draw order of equal layers): a game that makes short-lived ones every beat would fill it.
+static void compact_actors(void){
+  uint32_t n=0;
+  for(uint32_t i=0;i<actor_count;i++)if(actor_active[i]){actors[n]=actors[i];actor_active[n++]=1;}
+  actor_count=n;
+}
+EMSCRIPTEN_KEEPALIVE void begin_frame(void){if(actor_count>1024)compact_actors();if(!grading)run_flows();}
 // One note's volume envelope from the original nw4r EnvGenerator, as the mixer would apply it:
 // amplitude ratios at each 3 ms update, released after release_ms (negative: never). Returns the count.
 EMSCRIPTEN_KEEPALIVE uint32_t envelope_curve(int attack,int hold,int decay,int sustain,int release,int release_ms,uint32_t out,uint32_t max){
@@ -577,13 +757,17 @@ static void press(uint32_t type){
     call(rd32(rd32(c)+0x20));uint32_t judgment=r[3];
     if(judgment<=1){
       consumed=1;r[3]=c;r[4]=type;call(rd32(rd32(c)+(judgment==0?0x24:0x28)));
-      if(r[3]){uint32_t grade=rd8(quality);score_sum+=grade;score_count++;wrong_count=0;r[3]=rd32(0x8032016c);r[4]=rd8(c+0x78);r[5]=judgment;call(0x801eaf2c);
-        if(profiles[profile_index].end_on_hit&&rd8(c+0x70)){invoke1(rd32(rd32(c)+0x14),c);checker_count--;memmove(checkers+i,checkers+i+1,(checker_count-i)*4);}
-      }
+      if(r[3]){uint32_t grade=rd8(quality);score_sum+=grade;score_count++;wrong_count=0;r[3]=rd32(0x8032016c);r[4]=rd8(c+0x78);r[5]=judgment;call(0x801eaf2c);}
+      // A judged checker that ends on its judgment (unk70) and waits for no release (unk50) leaves
+      // the list (CList::removeCurrent, whose finalDestroy is the checker's _14).
+      if(rd8(c+0x70)&&!rd8(c+0x50)){invoke1(rd32(rd32(c)+0x14),c);checker_count--;memmove(checkers+i,checkers+i+1,(checker_count-i)*4);}
     }
   }
   if(!consumed){
-    r[3]=type;call(profiles[profile_index].wrong_input);
+    // The scene's wrong-input callback (CInputCheckManager +0x418), set in its _onInit and cleared by
+    // CExScene::_20: a press before the next scene's init reaches none.
+    uint32_t wrong=rd32(rd32(0x80320170)+0x418);
+    if(wrong){r[3]=type;call(wrong);}
     // CInputCheckManager::fn_801E94E8 and the stray count only follow A and A+B (unk430).
     if(type==4||type==6){stray++;wrong_timer=48;wrong_count=wrong_count<6?wrong_count+1:6;}
   }
@@ -631,8 +815,17 @@ EMSCRIPTEN_KEEPALIVE void buttons(uint32_t trig,uint32_t release){
   else{single(&release_a,release&1,18,20,0x49a);single(&release_b,release&2,19,20,0x49b);}
 }
 // The scene's update (_onCalc) and its cell animations (CCellAnimManager::_18 in CExScene::_18).
+// CExScene::_18 after the game's own update (_28): the screen mask's fade, a step a frame towards
+// its target (fn_80008DF8) or else its tween (fn_80008E68).
+static void mask_frame(void){
+  uint32_t mask=rd32(0x8032020c);float step=rdf32(0x80320220);if(!mask)return;
+  if(step!=0.0f){float v=rdf32(0x8032021c)+step,target=rdf32(0x80320224);
+    if((step>0.0f&&v>=target)||(step<0.0f&&v<=target)){v=target;wrf32(0x80320220,0.0f);}
+    wrf32(0x8032021c,v);wr8(mask+0xa6,(uint8_t)v);}
+  else if(rd8(MASK_TWEEN+37)){r[3]=MASK_TWEEN;r[4]=0;call(0x801e9de8);wr8(mask+0xa6,(uint8_t)rdf32(MASK_TWEEN+40));}
+}
 static void calc_scene(void){
-  invoke1(profiles[profile_index].update,scene);
+  invoke1(profiles[profile_index].update,scene);mask_frame();
   for(uint32_t i=0;i<actor_count;i++)if(actor_active[i]){invoke1(0x801dc314,actors[i]);if(r[3])end_actor_at(i);}
 }
 static int is_persistent(uint32_t actor){for(uint32_t i=0;i<persistent_count;i++)if(persistent[i]==actor)return 1;return 0;}
@@ -657,10 +850,16 @@ static void scene_frame(void){
   }
   if(fader_state==FADER_WAIT1){if(fader_wait)fader_wait--;else{fader_state=FADER_WAIT2;fader_wait=2;}}
   else if(fader_state==FADER_WAIT2&&!--fader_wait)fader_state=FADER_IDLE;
+  // CFaderFlash::_08's fade (the tick flow is never paused here).
+  if(fader_step!=0.0f){fader_alpha+=fader_step;
+    if(fader_step>0.0f&&fader_alpha>=255.0f){fader_alpha=255.0f;fader_step=0.0f;}
+    else if(fader_step<0.0f&&fader_alpha<=0.0f){fader_alpha=0.0f;fader_step=0.0f;}}
 }
 // CScene::fn_801D8554: only these states draw; CFaderFlash::_0C covers the screen while it waits.
 static int scene_drawn(void){return scene_state==SCENE_READY||scene_state==SCENE_ACTIVE||scene_state==SCENE_SCHEDULE_DOWN;}
 EMSCRIPTEN_KEEPALIVE uint32_t screen_state(void){return scene_drawn()|((fader_state!=FADER_IDLE)<<1);}
+// CFaderFlash::fn_80007DD8: the cover's alpha, drawn over the frame when not 0.
+EMSCRIPTEN_KEEPALIVE uint32_t fader_cover(void){return (uint8_t)fader_alpha;}
 EMSCRIPTEN_KEEPALIVE void finish_frame(void){
   for(int i=(int)checker_count-1;i>=0;i--){
     uint32_t c=checkers[i];invoke1(rd32(rd32(c)+0x18),c);

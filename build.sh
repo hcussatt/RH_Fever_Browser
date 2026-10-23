@@ -32,31 +32,29 @@ echo "== Reading files from your ISO"
 
 # Every game with a manifest in games/<id>/game.json.
 games=$("$RHF_PYTHON" -c 'import sys; sys.path.insert(0, "tools"); from paths import GAMES; print(*GAMES)')
-for game in $games; do
-  echo "== $game: translating original code"
-  RHF_GAME=$game "$RHF_PYTHON" tools/recompile.py
-  tools/build-core.sh "$game"
-  echo "== $game: finding the chart"
-  RHF_GAME=$game "$RHF_PYTHON" tools/chart-index.py
-  echo "== $game: converting assets"
-  RHF_GAME=$game "$RHF_PYTHON" tools/extract-assets.py >/dev/null
-  RHF_GAME=$game "$RHF_PYTHON" tools/extract-sfx.py >/dev/null
-  RHF_GAME=$game "$RHF_PYTHON" tools/extract-layout.py >/dev/null
-  RHF_GAME=$game "$RHF_PYTHON" tools/extract-menu.py
-  RHF_GAME=$game "$RHF_PYTHON" tools/extract-results.py
-  RHF_GAME=$game "$RHF_PYTHON" tools/decode-music.py
-  tools/stage-web.sh "$game"
-  node tools/chart-timeline.mjs "$game"
-done
+# Games build side by side, one per CPU core unless RHF_JOBS says otherwise. Each game's
+# output goes to build/logs/<game>-<step>.log and is shown in full if that game fails.
+jobs=${RHF_JOBS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 2)}
+# Decoded sound samples are kept by their bytes, so games that share sounds decode them once.
+export RHF_DSP_CACHE="$PWD/build/cache/dsp"
+mkdir -p build/logs
+# The engine is copied once; each game step then finds it in place.
+mkdir -p dist/engine
+cp -R web/engine/. dist/engine/
+rm dist/engine/index.html
+run_each() {
+  # run_each <label> <command>: run "<command> <game>" for every game, $jobs at a time.
+  printf '%s\n' $games | xargs -P "$jobs" -I{} sh -c '
+    log=build/logs/$1-$0.log
+    if $2 "$1" >"$log" 2>&1; then echo "   $1: $0 ok"; else cat "$log"; echo "== $1: $0 failed (log: $log)" >&2; exit 255; fi' "$1" {} "$2"
+}
+echo "== Building $(echo $games | wc -w | tr -d ' ') games, $jobs at a time"
+run_each build tools/build-game.sh
 tools/stage-index.sh
 
 if [ "$skip_tests" != "--skip-tests" ]; then
   echo "== Running tests"
-  for game in $games; do
-    if [ -f "tests/test-$game-timing.mjs" ]; then node "tests/test-$game-timing.mjs" >/dev/null; fi
-    node tests/test-runtime.mjs "$game" >/dev/null
-    node tests/test-runtime.mjs "$game" --auto >/dev/null
-  done
+  run_each test tools/test-game.sh
   node tests/test-grading.mjs >/dev/null
   echo "All tests passed."
 fi

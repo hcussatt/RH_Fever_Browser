@@ -28,13 +28,21 @@ export async function loadGame(gameUrl,load=fetchBytes,{timeline:withTimeline=tr
  const scenes=profile.scenes?assets.scenes.map(sc=>sc.banks.map(n=>[n,assets.banks[sc.game+'/'+n]])):[profile.banks.map(n=>[n,assets.banks[n]])];
  const banks=[],named=[];
  banks[255]={texture:0,cells:[[]],animations:Array.from({length:256},()=>[{cell:0,frames:1,x:0,y:0,scaleX:1,scaleY:1,angle:0,alpha:255}])};
+ // Cells and keys as registBank lays them out in memory (CellAnim_CellOBJ: the object's position
+ // sits at +10/+12, not at the file's +12/+14), which game code reads (Karate Man's hit points).
  function install(b){
   const ap=alloc(b.animations.length*8),cp=alloc(b.cells.length*8);
   b.animations.forEach((keys,i)=>{const p=alloc(keys.length*24);w16(ap+i*8,keys.length);w32(ap+i*8+4,p);keys.forEach((k,j)=>{const a=p+j*24;w16(a,k.cell);w16(a+2,k.frames);w16(a+4,k.x);w16(a+6,k.y);wf(a+8,k.scaleX);wf(a+12,k.scaleY);wf(a+16,k.angle);w8(a+20,k.alpha);});});
-  b.cells.forEach((objects,i)=>{const p=alloc(objects.length*32);w16(cp+i*8,objects.length);w32(cp+i*8+4,p);objects.forEach((o,j)=>{const a=p+j*32;[o.sx,o.sy,o.w,o.h,o.palette,o.reserved,o.x,o.y].forEach((v,k)=>w16(a+k*2,v));wf(a+16,o.scaleX);wf(a+20,o.scaleY);wf(a+24,o.angle);w8(a+28,o.flipX);w8(a+29,o.flipY);w8(a+30,o.alpha);});});
+  b.cells.forEach((objects,i)=>{const p=alloc(objects.length*32);w16(cp+i*8,objects.length);w32(cp+i*8+4,p);objects.forEach((o,j)=>{const a=p+j*32;[o.sx,o.sy,o.w,o.h,o.palette,o.x,o.y].forEach((v,k)=>w16(a+k*2,v));wf(a+16,o.scaleX);wf(a+20,o.scaleY);wf(a+24,o.angle);w8(a+28,o.flipX);w8(a+29,o.flipY);w8(a+30,o.alpha);});});
   return [b.animations.length,ap,cp];
  }
  core._install_bank(255,...install(banks[255]));
+ // The permanent bank (bank 254): the "you" markers over the player's character (see platform.c).
+ // An import from before it was extracted has none, and the markers stay placeholders.
+ if(gradingData.permanent){
+  banks[254]={...gradingData.permanent.bank,texture:assets.textures.length};
+  core._install_permanent(...install(banks[254]),...gradingData.permanent.you,gradingData.permanent.mask);
+ }
  scenes.forEach((list,scene)=>list.forEach(([name,b])=>{
   const p=alloc(name.length+1);for(let i=0;i<name.length;i++)w8(p+i,name.charCodeAt(i));w8(p+name.length,0);
   named[core._install_named_bank(scene,p,...install(b))]=b;
@@ -52,11 +60,20 @@ export async function loadGame(gameUrl,load=fetchBytes,{timeline:withTimeline=tr
  const f32bits=new DataView(new ArrayBuffer(4));
  const rest=bits=>(f32bits.setUint32(0,bits),f32bits.getFloat32(0));
  let tick=0,ended=false,endTick=null;
- const resultEvents=[];const sounds=[],chartSounds=[],gameSounds=[],commands=[],cues=[],cueInputs=[];const options={chartAudioScheduled:false};
+ const resultEvents=[];const sounds=[],chartSounds=[],gameSounds=[],commands=[],cues=[],cueInputs=[],cueWithdrawn=[];const options={chartAudioScheduled:false};
  // Each event: kind, value, extra, frame, sound handle (see platform.c emit_handle).
  // A bank registered under an id (25) is what the renderer draws for that id from then on.
- function drain(){const n=core._events_count(),p=core._events_ptr();const out=[];for(let i=0;i<n;i++)out.push(Array.from(core.HEAPU32.subarray(p/4+i*5,p/4+i*5+5)));core._events_clear();for(const e of out)if(e[0]===25)banks[e[1]]=named[e[2]];return out;}
+ // CCellAnimManager::createBankScreen (event 27): one cell of the 640x456 dynamic texture, centred,
+ // scaled to 608 by 456 units and widened by 832/608 on a wide screen (renderer.mjs draws it).
+ const screenBank={screen:true,cells:[[{sx:0,sy:0,w:640,h:456,x:-320,y:-228,scaleX:1,scaleY:1,angle:0,flipX:0,flipY:0,alpha:255}]],
+  animations:[[{cell:0,frames:1,x:0,y:0,scaleX:608/640*(832/608),scaleY:1,angle:0,alpha:255}]]};
+ function drain(){const n=core._events_count(),p=core._events_ptr();const out=[];for(let i=0;i<n;i++)out.push(Array.from(core.HEAPU32.subarray(p/4+i*5,p/4+i*5+5)));core._events_clear();for(const e of out){if(e[0]===25)banks[e[1]]=named[e[2]];else if(e[0]===27)banks[e[1]]=screenBank;}return out;}
  let tapped=0;
+ // A+B (6) stays held after its press for the release (20) its checker then waits for, armed in
+ // the same frame (Screwbot Factory) or later (Karate Man's charged kick, armed about 72 ticks
+ // on). Until a release cue arms it is held provisionally ('wait'); it is let go the next frame when
+ // another cue (past the one just pressed, 12 ticks on) is already waiting or arms first (Working Dough's big balls, pressed again soon after).
+ let pairHeld=false;
  function frame(ticks,press){
   core._set_delta(ticks);core._set_frame_ticks(ticks);
   core._set_tempo(clock.tempoAtTick(tick));
@@ -66,6 +83,8 @@ export async function loadGame(gameUrl,load=fetchBytes,{timeline:withTimeline=tr
   // for an A tap.
   let trig=0,release=tapped;tapped=0;
   if(press===true)press=4;
+  if(pairHeld==='release'||pairHeld&&typeof press==='number'&&press<16){release|=3;pairHeld=false;}
+  else if(pairHeld&&press===20)pairHeld=false;
   if(typeof press==='number'){const b={4:1,5:2,6:3,18:1,19:2,20:3}[press]||0;if(press<16){trig=b;if(press<6)tapped=b;}else release|=b;}
   else if(press){trig=press.trig|0;release|=press.release|0;}
   core._buttons(trig,release);
@@ -90,7 +109,7 @@ export async function loadGame(gameUrl,load=fetchBytes,{timeline:withTimeline=tr
  // (a hit or a miss starts one, for example) are not in them, so their sounds play live.
  // Layout events (11): the game's 2D layouts (Love Rap's lyric captions), drawn by layout.mjs.
  // Message events (15): the speech balloon and the message panes, drawn by message.mjs.
- const layoutEvents=[],messageEvents=[];let steps=0;
+ const layoutEvents=[],messageEvents=[];let steps=0,scene=chart.firstScene||0;
  const consumed=new Set();
  function prescheduled(sound,at){
   const list=timeline?.sounds||[];
@@ -101,6 +120,8 @@ export async function loadGame(gameUrl,load=fetchBytes,{timeline:withTimeline=tr
  // the browser applies to sounds already playing (tunes), song speed changes (speeds) and backing
  // track volume fades (musicVolumes), each at its chart tick.
  const handles=new Map(),tunes=[],speeds=[],musicVolumes=[];
+ // Sounds started with a delay (a start below 0), which a handle's end can still drop.
+ const delayed=new WeakSet();
  const TUNE=['volume','pitch','pan'];
  function handle(events,frameTick){
   let last=null;
@@ -113,7 +134,7 @@ export async function loadGame(gameUrl,load=fetchBytes,{timeline:withTimeline=tr
     let sound={sound:e[1],tick:at,tempo:clock.tempoAtTick(at)};
     // A start offset follows its sound (CSoundManager::play): below 0 it waits that many ticks.
     const next=events[i+1];
-    if(next&&next[0]===10&&(next[1]&255)===3&&!next[4]){const start=rest(next[2]);i++;if(start<0){sound.tick-=start;sound.tempo=clock.tempoAtTick(sound.tick);}else sound.offset=start;}
+    if(next&&next[0]===10&&(next[1]&255)===3&&!next[4]){const start=rest(next[2]);i++;if(start<0){sound.tick-=start;delayed.add(sound);sound.tempo=clock.tempoAtTick(sound.tick);}else sound.offset=start;}
     if(e[0]===5)chartSounds.push(sound);else if(e[0]===12)gameSounds.push(sound);
     const scheduled=e[0]!==1&&options.chartAudioScheduled?prescheduled(e[1],sound.tick):null;
     if(scheduled)sound=scheduled;else sounds.push(sound);
@@ -126,12 +147,18 @@ export async function loadGame(gameUrl,load=fetchBytes,{timeline:withTimeline=tr
     const type=e[1]&255,frames=e[1]>>8,value=type===5?e[2]:rest(e[2]);
     // Set together with the sound itself: it plays with it from the start.
     if(type<3&&!frames&&target===last&&!target.voice){target[TUNE[type]]=value;continue;}
+    // A handle's end only drops a sound still waiting out its start delay (CSoundManager::end_sound_handle).
+    if(type===6&&!(delayed.has(target)&&target.tick>frameTick))continue;
     const op={type,value,frames,tick:frameTick};
     tunes.push({target,op});
    }
+   // The sequence variables the game's user procedure set for the sound played last (see audio.mjs).
+   else if(e[0]===26){if(last)(last.userproc||={})[e[1]]=e[2]|0;}
    else if(e[0]===8)commands.push({tick:frameTick+rest(e[2]),op:e[1]});
    else if(e[0]===7){ended=true;endTick=frameTick+rest(e[2]);}
-   else if(e[0]===11)layoutEvents.push({frame:steps,action:e[1],value:e[2]});
+   else if(e[0]===11)layoutEvents.push({frame:steps,scene,action:e[1],value:e[2]});
+   // A new scene (a remix's next game) builds its layout again (see renderer.mjs).
+   else if(e[0]===24){scene=e[1];layoutEvents.push({frame:steps,scene,action:-1});}
    else if(e[0]===15)messageEvents.push({frame:steps,field:e[1]>>8,pane:e[1]&255,value:e[2]});
    else if(e[0]===13)musicVolumes.push({tick:frameTick,frames:e[1],volume:rest(e[2])});
    else if(e[0]===14)speeds.push({tick:frameTick+rest(e[2]),speed:rest(e[1])});
@@ -144,17 +171,28 @@ export async function loadGame(gameUrl,load=fetchBytes,{timeline:withTimeline=tr
  options.chartAudioScheduled=!!timeline;
  preroll.forEach((events,n)=>handle(events,tick-(preroll.length-1-n)*nominal));
  options.chartAudioScheduled=false;
- const live=new Map(); // checker address -> the target its last cue was read from
+ const live=new Map(),pending=new Map(); // checker address -> the target its last cue was read from, that cue's index
  function step(nextTick,press=false){
+  const armedBefore=cueInputs.length;
   const events=frame(nextTick-tick,press);tick=nextTick;
   // A checker's perfect tick: its target (mTickJust, +0x58) less the ticks it has counted (mTickPass,
   // +0x54), read when it is created. A hit can re-arm a checker for a later target (Screwbot
   // Factory's release after its press), which is a new cue; the input it waits for is its first
   // input type (+0x0c). A checker waiting for input type -1 takes no press and hits itself on its
   // target tick (See-Saw's partner, who plays itself in one-player mode), so it is not a cue.
-  const arm=c=>{live.set(c,f32(c+0x58));if(u32(c+0x0c)!==0xffffffff){cues.push(tick+f32(c+0x58)-f32(c+0x54));cueInputs.push(u32(c+0x0c));}};
+  // A checker re-armed before its cue comes (Bossa Nova's ball checker, put off 256 beats when a
+  // closer checker takes over its catch) never waits for that cue, which is withdrawn
+  // (cueWithdrawn). A cue still ahead when the level ends is never reached either (traceTimeline).
+  const arm=c=>{
+   const last=pending.get(c);if(last!==undefined&&cues[last]>tick)cueWithdrawn[last]=true;
+   live.set(c,f32(c+0x58));pending.delete(c);
+   if(u32(c+0x0c)!==0xffffffff){pending.set(c,cues.length);cues.push(tick+f32(c+0x58)-f32(c+0x54));cueInputs.push(u32(c+0x0c));cueWithdrawn.push(false);}
+  };
   for(const e of events)if(e[0]===9)arm(e[1]);
   for(let i=0,c;(c=core._checker_at(i)>>>0);i++)if(live.has(c)&&live.get(c)!==f32(c+0x58))arm(c);
+  const armed=cueInputs.slice(armedBefore);
+  if(press===6)pairHeld=armed.includes(20)?'held':cues.some((t,i)=>t>tick+12&&!cueWithdrawn[i]&&cueInputs[i]!==20)?'release':'wait';
+  else if(pairHeld==='wait'&&armed.length)pairHeld=armed.includes(20)?'held':'release';
   handle(events,tick);
   steps++;
   return events;
@@ -183,5 +221,5 @@ export async function loadGame(gameUrl,load=fetchBytes,{timeline:withTimeline=tr
   if(press){core._grading_input(1);core._grading_input(0);}core._grading_frame();gradingFrame++;
   return drain().map(e=>({kind:e[0],value:e[1],extra:e[2],frame:gradingFrame,seconds:gradingFrame/60+((e[0]===5||e[0]===20||e[0]===21)?rest(e[2])/(core._grading_tempo()*.8):0)}));
  }
- return {manifest,base,core,options,assets,chart,clock,secondsAtTick:clock.secondsAtTick,tickAtSeconds:clock.tickAtSeconds,banks,timeline,step,drain,sounds,chartSounds,gameSounds,tunes,speeds,musicVolumes,commands,cues,cueInputs,layoutEvents,messageEvents,get steps(){return steps;},envelope,stats,result,gradingData,resultEvents,startGrading,stepGrading,u8,u16,u32,f32,w8,w16,w32,wf,alloc,offset,get tick(){return tick;},get ended(){return ended;},get endTick(){return endTick;}};
+ return {manifest,base,core,options,assets,chart,clock,secondsAtTick:clock.secondsAtTick,tickAtSeconds:clock.tickAtSeconds,banks,timeline,step,drain,sounds,chartSounds,gameSounds,tunes,speeds,musicVolumes,commands,cues,cueInputs,cueWithdrawn,layoutEvents,messageEvents,get steps(){return steps;},envelope,stats,result,gradingData,resultEvents,startGrading,stepGrading,u8,u16,u32,f32,w8,w16,w32,wf,alloc,offset,get tick(){return tick;},get ended(){return ended;},get endTick(){return endTick;}};
 }

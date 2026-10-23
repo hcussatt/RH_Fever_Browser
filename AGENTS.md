@@ -9,7 +9,7 @@
 
 ## Scope and fidelity
 
-This project ports original Rhythm Heaven Fever minigames into standalone client-side browser games. It uses static PowerPC translation to WASM, hand-written Wii adapters, Canvas2D, and Web Audio, not a Dolphin runtime. Current game IDs are `golf` (Hole in One), `tap` (Tap Trial), and `rap` (Love Rap).
+This project ports original Rhythm Heaven Fever minigames into standalone client-side browser games. It uses static PowerPC translation to WASM, hand-written Wii adapters, Canvas2D, and Web Audio, not a Dolphin runtime. The game IDs are the manifests under `games/` (`golf` Hole in One, `tap` Tap Trial, `rap` Love Rap, `agbghost` Sneaky Spirits, `robot` Screwbot Factory, `seesaw` See-Saw, `date` Double Date, `rocket` Launch Party, `concons` Donk-Donk, `receive` Bossa Nova, `bun` Working Dough, `seal` Built to Scale, `badminton` Air Rally, `muscle` Figure Fighter, `taptroupe` Tap Troupe, `shrimp` Shrimp Shuffle, `panel` Cheer Readers, `karateman` Karate Man, `fork` Fork Lifter, `tambourine` Tambourine, `rotation` Board Meeting, `watch` Monkey Watch, and the remixes `remix1`, `remix2`, `remix3`, `remix6` and `remix7`).
 
 Preserve original timing windows, float operation order, scoring, and Perfect rules. Do not force results, widen windows, or enable rollback. Unsupported instructions and platform calls must be investigated rather than silently ignored. Do not describe static translation or fallback original objects as completed decompilation, or claim 1:1 fidelity from autoplay alone. Treat older notes about missing features as historical; inspect current code before relying on them.
 
@@ -35,7 +35,7 @@ git config core.hooksPath hooks
 ./serve.sh --open
 ```
 
-`build.sh` extracts, translates, builds WASM, converts assets, stages web sources, generates timelines, and tests all manifested games. `--skip-tests` is available for iteration, but run relevant checks before reporting success. Existing built outputs can be served without rebuilding. Use the server's printed URL.
+`build.sh` extracts, translates, builds WASM, converts assets, stages web sources, generates timelines, and tests all manifested games. It builds games side by side (`tools/build-game.sh`, one per CPU core; `RHF_JOBS` overrides) with each game's log in `build/logs/`. It keeps the DOL disassembly (`build/disasm/`) and decoded DSP samples (`build/cache/dsp/`) keyed by their exact inputs, and `tools/build-core.sh` skips emcc when every file of the last compile, its flags and the emcc version are unchanged. These caches never change output; bump `DSP_VERSION` in `tools/nintendo_audio.py` if `decode_dsp` output ever changes. `--skip-tests` is available for iteration, but run relevant checks before reporting success. Existing built outputs can be served without rebuilding. Use the server's printed URL.
 
 For web-only iteration, `tools/stage-web.sh <game>` copies engine source, the game page, and manifest to `dist/`; `tools/stage-index.sh` refreshes the picker. Changes to code, assets, or charts require the corresponding build pipeline steps.
 
@@ -55,7 +55,7 @@ node tests/test-runtime.mjs rap --auto
 python3 scripts/check-clean.py
 ```
 
-These tests need generated `dist/` data. Centered autoplay expects 64 golf, 102 tap, and 31 rap cues with no failures; no-input runs check through counts. Shared runtime changes warrant testing all games. For browser changes, exercise Play, input, pause/resume, restart, and any affected transitions. Space and X must both map to A; click and standard gamepad A are supported. Chrome is the current validation target.
+Run the same pair (`test-runtime.mjs <id>` and `--auto`) for every other manifested game, plus `node tests/test-sequence.mjs` after audio or sequence changes. These tests need generated `dist/` data. Centered autoplay expects every cue hit with no failures (the expected cue count per game is in `tests/test-runtime.mjs`); no-input runs check through counts. Shared runtime changes warrant testing all games. For browser changes, exercise Play, input, pause/resume, restart, and any affected transitions. Space and X must both map to A; click and standard gamepad A are supported. Chrome is the current validation target.
 
 Use `web/engine/qa/audio-check.mjs` for relevant offline audio checks, and inspect actual sound when changing playback. Avoid audible automated tests during the user's gameplay; pause/close test contexts afterward and leave pages ready to Play. Report missing prerequisites or checks you could not run. Software frame costs and browser-reported audio latency do not establish physical click-to-photon or acoustic latency.
 
@@ -67,8 +67,66 @@ The clean-material checker allows only `runtime-src/<id>/original-functions.inc`
 
 Keep `hooks/pre-commit`, `.gitignore`, and `scripts/check-clean.py` effective. Before committing, inspect the diff and run `python3 scripts/check-clean.py --staged` after staging the intended files. The tracked-file check also runs in GitHub Actions on pushes and pull requests; passing it without local disc references does not perform the optional comparison against extracted disc bytes.
 
+## Owner's standing rules
+
+These come from the repository owner and apply to every contributor and agent.
+
+- Nothing copyrighted goes into git: no ISO, executable, extracted assets, textures, audio, charts or Nintendo code beyond the translated-code snapshots allowed above. Every feature must work only from the ISO a user supplies.
+- Ask the owner before deleting any file, every time. Approval for one deletion does not cover the next.
+- Pushing branches and opening pull requests is fine without asking. Never merge a pull request; merging is the owner's alone.
+- Hosted site freeze: new games stay `web.enabled: false` (no `runtime-src/` snapshot) until the owner says otherwise. Screwbot Factory stays off the hosted site.
+- Downloads: well-known GitHub pages are fine; anything else from the internet needs the owner's permission first.
+- Controls: A is Space, Left Shift, X, left click or gamepad A; B is Right Shift, right click or gamepad B.
+- Audio correctness is the top priority, then stability and latency. Every sound must play exactly as the original.
+- Do not write model names or versions into the repository. The README's AI-use disclosure stays.
+
+## Working with the owner
+
+- Lead every status or plan with what is needed from the owner, or say nothing is needed.
+- Warn before work likely to use more than about 5% of the owner's usage limits, with short, confident time estimates per step.
+- Say when a setup step (an install or download) would be much faster done by hand.
+- Keep full play-through tests to a minimum; prefer the headless runtime tests and short screenshot runs.
+- When a change breaks things, fully fix the game or remix being worked on before retesting other games.
+
+## Porting a minigame
+
+1. Find the scene in the decomp (`src/Game/SceneManager.hpp`) and write `games/<id>/game.json` (units, banks, cellanim, scene variant) and `adapters/<id>/game.h` (scene constructor, init, update, flow command, wrong input, flow create).
+2. Build with `tools/recompile.py`, `tools/build-core.sh`, `tools/chart-index.py`, the extract tools, `tools/stage-web.sh` and `tools/chart-timeline.mjs`. Each panic names an unsupported instruction or a missing platform call: trace it to the original code and implement it faithfully. Never add a silent `break;` stub without a comment saying why the original's effect is not needed.
+3. Check the cue count is real. Checkers that take no press, are withdrawn before their beat, or score nothing are not cues (see `docs/engine.md`). Add the expected count to `tests/test-runtime.mjs`.
+4. Audio checklist: every sound the game plays exists in `sfx.json`; every input case (clean hit, slightly early or late, full miss, stray press, no input) plays only known sounds; live hit and miss sounds land on their chart tick; extractors and tracers raise on any unmodelled sequence command; listen for gaps inside spoken words.
+5. Input checklist: hit and miss handlers get the real input type; check each cue's input type (A, B, A+B, releases); test keys and mouse in Chromium.
+6. Screenshots in Chromium through every input case. Look for black frames, missing layouts and text, and placeholder graphics.
+7. After any shared change, diff every other game's `original-timeline.json` and autoplay sound log against a baseline build, and run their runtime tests.
+
+## Porting a remix
+
+1. Port each source minigame standalone first. A minigame belongs to the remix whose graphics it has on the disc (`cellanim/<game>/remixNN`).
+2. Write the remix manifest (music, `wii.scenes` with each game's remix cellanim, the epilogue) and an `adapters/<id>/game.h` that includes `scenes.h`. Add the set to `web/engine/menu.mjs`.
+3. Check the entry chart's prelude sounds (`SE_REMIX_MODE_SET_REMIXn` sets sequence variable 22, which changes some games' sounds in remixes) and every scene's layouts (game layouts, the speech balloon, a game's own message layout).
+4. Test the remix first and fix it fully before retesting the standalone games: headless runtime tests, one keyboard autoplay in Chromium with screenshots across every scene, the results screen, and per-section sound comparison against each standalone game.
+5. Known remix pitfalls: TickFlow rest-slot defaults (32/16/16/8), scene changes ending the old scene's banks and animations, chart message panes and the layouts that register them, layout animations a scene relies on (Hole in One's screen frame), grading flows not running in game frames, and actors attached to a scene's base canvas.
+6. Bulk ports (a remix and its minigames in one go): port and test each minigame, then the remix, then rebuild every game once and diff each `original-timeline.json` and autoplay sound log against a copy saved before the change. Recheck what earlier bulk ports got wrong:
+   - Cue counts: a checker withdrawn before its beat, or one that scores nothing (a partner's), is not a cue; compare autoplay hits with the scoring events, not the checker count. A no-input run can pass fewer cues than exist when a miss ends a sequence (Built to Scale's dropped rods).
+   - Silent chart commands: list every ExFlow op a chart reaches (the CExFlow jump table at `0x802ed48c`) and handle or document each one; an op that falls through `exflow_command` is a silent stub. Remix 3 needed the screen mask (0x112-0x116), the in-play fader (0x10A) and the lyric layout's title card (0x13B).
+   - Scene version (`sceneVersion` in the chart index) gates behaviour: check it before "fixing" a difference between a solo game and its remix scene.
+   - Black or missing scenes: actor caps in the renderer, per-scene layouts, and anything the original shows only before the music starts.
+   - Sounds: the remix mode sound (`SE_REMIX_MODE_SET_REMIXn`) and each scene's sounds against its solo game.
+   - Sound slides and held, wavering notes (sirens, calls): `node tests/test-sequence.mjs` must match and `tools/extract-sfx.py` must not raise; listen to them. A note's later volume, pan and bend changes are its `changes`.
+   - Pitch sweeps and portamento (0xe3, 0xc9, 0xce, 0xcf): a note's `sweep` returns over its `sweepMs` (from the porta time), or over its ticks when there is none. A sweep running far too fast sounds like peaking (Shrimp Shuffle's step sound).
+   - Layout panes with a different vertex colour at each corner, and TEV stages after one with no colour channel: check screenshots for flat strips or missing panes (Shrimp Shuffle's shore, wet sand and starfish).
+   - Per-frame tint changes (an actor's fore/back colour, `0xa0`-`0xa5`, changing every frame, like Air Rally's clouds): count them headless and never read pixels back per frame (`colored()` in `renderer.mjs` blends into reused canvases).
+   - A+B cues followed by a release (Karate Man's charged kick): the test harness holds A+B until the release cue arms; a no-input run can pass extra checkers that take no input (`checkers` in `tests/test-runtime.mjs`).
+   - After merging main, refresh the enabled games' snapshots with `python3 tools/prepare-pages.py --snapshot`; new games stay web-disabled.
+
+## Roadmap
+
+- Next: the remaining remixes, each with its source minigames, following the steps above.
+- Planned versus mode (designed for, not built): each player plays in their own session under a username; misses are counted and compared at the end to pick a winner. A match is four songs: a remix's source minigames then that remix, or three random minigames then a random remix. Networking must never touch local timing or audio.
+- Later and low priority: room for mods and custom charts, a live versus view, and minigames from other Rhythm Heaven entries (GBA, DS, 3DS) as new console backends after Fever is done.
 
 ## CI/CD and publishing new games to Pages
+
+The owner's standing rules above take precedence over this section: the hosted-site freeze decides which games are enabled, and only the owner merges pull requests.
 
 A completed, playable minigame is expected to ship in the Pages app, not only in
 local `dist/`. Preserve existing published games while adding new ones. Keep a

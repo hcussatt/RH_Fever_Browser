@@ -5,7 +5,7 @@ Original instructions remain the behavioral reference while readable recovery
 continues. This is static recompilation, not a claim of completed decompilation.
 Unsupported instructions fail the build; unsupported external calls trap.
 """
-import re,struct,json,subprocess,os,tempfile,pathlib
+import re,struct,json,subprocess,os,tempfile,pathlib,hashlib
 from paths import BUILD,DECOMP,DOL,assets,game,manifest,require
 GAME=game()
 blob=require(DOL).read_bytes()
@@ -20,7 +20,11 @@ SHARED={'GameUtil/TickFlow.cpp','nw4r/snd/snd_EnvGenerator.cpp','GameUtil/TimeRa
 # Single pure functions outside those units that the chart interpreter needs.
 SHARED_FUNCTIONS={'calc_initial_wave_tempo__13CSoundManagerFP8WaveInfo',
   'fn_80009950__8CExSceneFll','fn_80009A40__8CExSceneFb', # the "you" marker's position and visibility
-  'CalcVolumeRatio__Q44nw4r3snd6detail4UtilFf'} # decibels to amplitude, for sound envelopes
+  'CalcVolumeRatio__Q44nw4r3snd6detail4UtilFf', # decibels to amplitude, for sound envelopes
+  'Atan2FIdx__Q24nw4r4mathFff', # nw4r's table arctangent (Bossa Nova's ball arcs)
+  '_34__13CInputCheckerFv', # CInputChecker's empty default virtual (Working Dough's checkers keep it)
+  '__cvt_fp2unsigned', # the compiler's double to u32 conversion (Air Rally)
+  '__destroy_arr'} # the C++ runtime's array destructor loop (Karate Man)
 # Each game's manifest names the original units whose functions are translated; a remix
 # translates the units of every game it changes to.
 PROFILE=manifest(GAME)['wii']
@@ -40,17 +44,31 @@ for line in (DECOMP/'config/SOME01/symbols.txt').read_text().splitlines():
     if size and (any(lo<=a<hi for lo,hi,_ in ranges) or name in SHARED_FUNCTIONS):funcs.append((a,int(size[1],0),name))
 # Disassemble the DOL's text sections directly. Gekko mode is required:
 # default binutils reads paired-single instructions as unrelated VSX ones.
+# Every game reads the same disassembly, so it is kept in build/ keyed by the
+# DOL, the objdump version and its arguments, and only this game's functions are parsed.
 objdump=os.environ.get('RHF_OBJDUMP','powerpc-eabi-objdump')
-text=''
-with tempfile.TemporaryDirectory() as tmp:
-    for i in range(7):
-        off,start,size=u32(i*4),u32(0x48+i*4),u32(0x90+i*4)
-        if not size:continue
-        part=os.path.join(tmp,f'text{i}.bin')
-        with open(part,'wb') as f:f.write(blob[off:off+size])
-        text+=subprocess.check_output([objdump,'-D','-b','binary','-m','powerpc:common','-EB','-M','gekko',f'--adjust-vma={start:#x}',part],text=True)
+args=['-D','-b','binary','-m','powerpc:common','-EB','-M','gekko']
+key=hashlib.sha1(blob+subprocess.check_output([objdump,'--version'])+repr(args).encode()).hexdigest()
+cache=BUILD/'disasm'/f'{key}.txt'
+if cache.exists():text=cache.read_text()
+else:
+    text=''
+    with tempfile.TemporaryDirectory() as tmp:
+        for i in range(7):
+            off,start,size=u32(i*4),u32(0x48+i*4),u32(0x90+i*4)
+            if not size:continue
+            part=os.path.join(tmp,f'text{i}.bin')
+            with open(part,'wb') as f:f.write(blob[off:off+size])
+            text+=subprocess.check_output([objdump,*args,f'--adjust-vma={start:#x}',part],text=True)
+    cache.parent.mkdir(parents=True,exist_ok=True)
+    partial=cache.with_suffix(f'.{os.getpid()}.tmp');partial.write_text(text);partial.replace(cache)
+wanted={pc for a,size,_ in funcs for pc in range(a,a+size,4)}
 decoded={}
 for line in text.splitlines():
+    head=line.split(':',1)[0].strip()
+    try:
+        if int(head,16) not in wanted:continue
+    except ValueError:continue
     m=re.match(r'\s*([0-9a-f]+):\s+(?:[0-9a-f]{2} ){3}[0-9a-f]{2}\s+(\S+)\s*(.*)',line)
     if not m:continue
     address=int(m[1],16);mnemonic=m[2].rstrip('+-');ops=m[3].split('<')[0].strip()
@@ -59,7 +77,6 @@ for line in text.splitlines():
         if re.fullmatch('[0-9a-f]{8}',target):fields[-1]='0x'+target
         ops=','.join(fields)
     decoded[address]=type('Instruction',(),dict(address=address,mnemonic=mnemonic,op_str=ops))
-
 def reg(s):
     if re.fullmatch('r[0-9]+',s):return 'r['+s[1:]+']'
     if re.fullmatch('f[0-9]+',s):return 'f['+s[1:]+'].d'
@@ -89,6 +106,16 @@ def generate(a,size,name):
         if m in ['lwz','lhz','lha','lbz','lfd','lfs']:
             v={'lwz':'rd32','lhz':'rd16','lha':'rds16','lbz':'rd8','lfd':'rdf64','lfs':'rdf32'}[m]
             c=f'{q[0]}={v}({ea(p[1])});'
+        elif m in ['lwzu','lhzu','lhau','lbzu','lfdu','lfsu']:
+            # Load with update: the base register takes the effective address.
+            v={'lwzu':'rd32','lhzu':'rd16','lhau':'rds16','lbzu':'rd8','lfdu':'rdf64','lfsu':'rdf32'}[m]
+            base_register=reg(re.search(r'r\d+',p[1])[0])
+            c=f'{{uint32_t e={ea(p[1])};{q[0]}={v}(e);{base_register}=e;}}'
+        elif m in ['sthu','stbu','stfdu','stfsu']:
+            v={'sthu':'wr16','stbu':'wr8','stfdu':'wr64','stfsu':'wrf32'}[m]
+            value=fpbits(p[0]) if m=='stfdu' else q[0]
+            base_register=reg(re.search(r'r\d+',p[1])[0])
+            c=f'{{uint32_t e={ea(p[1])};{v}(e,{value});{base_register}=e;}}'
         elif m in ['stw','sth','stb','stfd','stfs','stwu']:
             v={'stw':'wr32','sth':'wr16','stb':'wr8','stfd':'wr64','stfs':'wrf32','stwu':'wr32'}[m]
             value=fpbits(p[0]) if m=='stfd' else q[0]
@@ -108,7 +135,7 @@ def generate(a,size,name):
             c=f'{{uint32_t address={q[1]}+{q[2]};{q[0]}=rd32(address);{q[1]}=address;}}'
         elif m in ['li','lis','mr','fmr']:
             c=f'{q[0]}={q[1]}' + ('*65536u;' if m=='lis' else ';')
-        elif m in ['addi','subi','addis','add','subf','mulli','mullw','or','xor','xoris','and','andc','nor']:
+        elif m in ['addi','subi','addis','add','subf','mulli','mullw','or','ori','xor','xoris','oris','and','andi','andis','andc','nor','xori','nand','orc','eqv']:
             if m=='addis':v=f'{q[1]}+({q[2]}*65536u)'
             elif m in ['addi','add']:v=f'{q[1]}+({q[2]})'
             elif m=='subi':v=f'{q[1]}-({q[2]})'
@@ -117,20 +144,36 @@ def generate(a,size,name):
             elif m=='or':v=f'{q[1]}|{q[2]}'
             elif m=='xor':v=f'{q[1]}^{q[2]}'
             elif m=='xoris':v=f'{q[1]}^({q[2]}*65536u)'
+            elif m=='oris':v=f'{q[1]}|({q[2]}*65536u)'
+            elif m=='ori':v=f'{q[1]}|({q[2]}&65535u)'
             elif m=='and':v=f'{q[1]}&{q[2]}'
+            elif m=='andi':v=f'{q[1]}&({q[2]}&65535u)'
+            elif m=='andis':v=f'{q[1]}&({q[2]}*65536u)'
             elif m=='andc':v=f'{q[1]}&~{q[2]}'
             elif m=='nor':v=f'~({q[1]}|{q[2]})'
+            elif m=='xori':v=f'{q[1]}^({q[2]}&65535u)'
+            elif m=='nand':v=f'~({q[1]}&{q[2]})'
+            elif m=='orc':v=f'{q[1]}|~{q[2]}'
+            elif m=='eqv':v=f'~({q[1]}^{q[2]})'
             c=f'{q[0]}={v};'
         elif m in ['neg','cntlzw','extsh','extsb']:
             v={'neg':f'-{q[1]}','cntlzw':f'({q[1]}?__builtin_clz({q[1]}):32)','extsh':f'(int16_t){q[1]}','extsb':f'(int8_t){q[1]}'}[m]
             c=f'{q[0]}={v};'
-        elif m in ['srwi','slwi','srawi','clrlwi','rlwinm']:
+        elif m in ['slw','srw']:
+            # The shift is rB's low 6 bits; 32 or more gives 0.
+            op='<<' if m=='slw' else '>>'
+            c=f'{{uint32_t n={q[2]}&63;{q[0]}=n>31?0:{q[1]}{op}n;}}'
+        elif m=='sraw':
+            # Shifts of 32 or more fill with the sign; carry is set when a negative value loses 1 bits.
+            c=f'{{uint32_t n={q[2]}&63;int32_t x=(int32_t){q[1]};uint32_t lost=n>31?(uint32_t)x:(n?(uint32_t)x&((1u<<n)-1):0);carry=x<0&&lost!=0;{q[0]}=(uint32_t)(n>31?(x>>31):(x>>n));}}'
+        elif m in ['srwi','slwi','srawi','clrlwi','clrrwi','rlwinm']:
             if m=='srwi':v=f'{q[1]}>>{q[2]}'
             elif m=='slwi':v=f'{q[1]}<<{q[2]}'
             elif m=='srawi':
                 v=f'(int32_t){q[1]}>>{q[2]}'
                 c=f'carry=((int32_t){q[1]}<0 && ({q[1]} & ((1u<<{q[2]})-1)));'
             elif m=='clrlwi':v=f'{q[1]} & {hex((1<<(32-int(p[2],0)))-1)}u'
+            elif m=='clrrwi':v=f'{q[1]} & {hex((0xffffffff<<int(p[2],0))&0xffffffff)}u'
             else:
                 mb,me=int(p[3],0),int(p[4],0);mask=0;i=mb
                 while True:
@@ -190,6 +233,13 @@ def generate(a,size,name):
         elif m=='fnabs':c=f'{q[0]}=-fabs({q[1]});'
         elif m=='frsp':c=f'{q[0]}=(float){q[1]};'
         elif m=='fctiwz':c=f'{fpbits(p[0])}=0xfff8000000000000ull|(uint32_t)(int32_t){q[1]};'
+        elif m in ['psq_st','psq_l'] and p[-2]=='1' and p[-1] in ('2','3','4','5'):
+            # One quantized value through GQR2-5, which OSInitFastCast sets for fast casts
+            # (0x80038224): u8, u16, s8, s16 with scale 0. A store saturates and truncates
+            # toward zero; a load converts the integer to a float.
+            t={'2':('uint8_t',0,255,'rd8','wr8'),'3':('uint16_t',0,65535,'rd16','wr16'),'4':('int8_t',-128,127,'rd8','wr8'),'5':('int16_t',-32768,32767,'rd16','wr16')}[p[-1]]
+            if m=='psq_st':c=f'{t[4]}({ea(p[1])},(uint32_t)(int32_t)fast_cast({q[0]},{t[1]},{t[2]}));'
+            else:c=f'{q[0]}=(float)({t[0]}){t[3]}({ea(p[1])});'
         elif m in ['psq_st','psq_l']:
             # GQR0 prologue/epilogue paired-single saves are redundant here:
             # the adjacent stfd/lfd preserves PS0, and no gameplay PS1 ops occur.
@@ -250,7 +300,7 @@ if 'scenes' in PROFILE:
     for i,g in enumerate(SCENE_GAMES):
         scene=ids[manifest(g)['wii']['scene']];P=f'GAME_{i}_'
         header.append(f'#define GAME_SCENE_AFTER_UPDATE_{i} static void after_update_{i}(void){{{P}AFTER_UPDATE}}')
-        profiles.append(f'{{{scene},{chart.scene_version_address(scene):#x},{P}SCENE_CREATE,{P}SCENE_INIT,{P}SCENE_UPDATE,{P}FLOW_COMMAND,{P}WRONG_INPUT,{P}FLOW_CREATE,{P}END_CHECKER_ON_HIT,after_update_{i}}}')
+        profiles.append(f'{{{scene},{chart.scene_version_address(scene):#x},{P}SCENE_CREATE,{P}SCENE_INIT,{P}SCENE_UPDATE,{P}FLOW_COMMAND,{P}WRONG_INPUT,{P}FLOW_CREATE,after_update_{i}}}')
     header.append('#define GAME_SCENE_PROFILES '+' '.join(f'GAME_SCENE_AFTER_UPDATE_{i}' for i in range(len(SCENE_GAMES)))+
                   f' static const SceneProfile profiles[{len(SCENE_GAMES)}]={{'+','.join(profiles)+'};')
     (out/'scenes.h').write_text('\n'.join(header)+'\n')

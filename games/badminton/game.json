@@ -1,0 +1,31 @@
+{
+  "$schema": "../../schemas/game.schema.json",
+  "schemaVersion": 1,
+  "id": "badminton",
+  "title": "Air Rally",
+  "action": "Hit",
+  "platform": "wii",
+  "wii": {
+    "scene": "Badminton",
+    "sceneVariant": 0,
+    "cellanim": "EN/content2/cellanim/badminton/ver0/cellanim.szs",
+    "units": [
+      "Game/Badminton/SceneBadminton.cpp",
+      "Game/Badminton/MyChecker.cpp",
+      "Game/Badminton/MyFlow.cpp"
+    ],
+    "banks": [
+      "badminton",
+      "badminton_bg",
+      "badminton_bg_02"
+    ],
+    "projection": [
+      854,
+      480
+    ],
+    "endsWithMusic": true
+  },
+  "web": {
+    "enabled": false
+  }
+}

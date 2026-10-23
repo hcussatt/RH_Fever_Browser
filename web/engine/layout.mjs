@@ -2,7 +2,7 @@
 // text boxes tinted by their material's two colour registers, and BRLAN keyframe animations
 // driven like CLayoutAnimation (src/GameUtil/LayoutAnimation.cpp) and CLayout::_18.
 // The game's code drives it through layout events (11) from the platform backend: play or stop
-// an animation, set a text box's message, or offset a pane (see adapters/<game>/game.h).
+// an animation, set a text box's message or show it, or offset a pane (see adapters/<game>/game.h).
 import {assetResponse,assetImage} from './assets.mjs';
 import {windowPixels} from './layout-window.mjs';
 export async function createLayout(g,{spec=g.manifest.wii.layout,file='layout.json',fontFile='layout-font.png',data:given,events=g.layoutEvents}={}){
@@ -11,18 +11,21 @@ export async function createLayout(g,{spec=g.manifest.wii.layout,file='layout.js
  const data=given??await (await assetResponse(asset(file))).json();
  const load=n=>assetImage(asset(n));
  const images=Object.fromEntries(await Promise.all(Object.entries(data.images).map(async([k,v])=>[k,await load(v)])));
- const fontImage=await load(fontFile);
+ const fontImage=data.font?await load(fontFile):null;
  const byName=Object.fromEntries(data.panes.map((p,i)=>[p.name,i]));
  const children=data.panes.map(()=>[]);data.panes.forEach((p,i)=>{if(p.parent!=null)children[p.parent].push(i);});
  // Live pane values (animations write into them and they keep the last value, as in nw4r).
- const fresh=p=>({...p,translate:[...p.translate],scale:[...p.scale],size:[...p.size],fontSize:p.fontSize&&[...p.fontSize],text:''});
+ // spec.hidden: panes the game's setup hides (Bossa Nova's CMyLayout::_10 hides its subtitle).
+ const hidden=new Set(spec.hidden||[]);
+ const fresh=p=>({...p,translate:[...p.translate],scale:[...p.scale],size:[...p.size],fontSize:p.fontSize&&[...p.fontSize],text:'',visible:p.visible&&!hidden.has(p.name)});
  const panes=data.panes.map(fresh);
  // The panes as the layout file sets them up, and its animations bound but stopped, for a layout
  // the game builds again (a new scene).
- function reset(){data.panes.forEach((p,i)=>{panes[i]=fresh(p);});for(const a of animations)Object.assign(a,{frame:0,playing:false,skip:false,enabled:false,reverse:false});}
+ function reset(){data.panes.forEach((p,i)=>{panes[i]=fresh(p);});for(const a of animations)Object.assign(a,{frame:0,playing:false,skip:false,enabled:false,reverse:false,loop:undefined});atEnd();}
  const materialImage=data.materials.map(m=>m.texture==null?null:data.textures[m.texture]);
- // Live material values that RLTS and RLMC animations write into.
- const live=data.materials.map(m=>({srts:m.srts?.map(s=>[...s]),tevColors:m.tevColors?.map(c=>[...c]),kColors:m.kColors?.map(c=>[...c]),matColor:m.matColor&&[...m.matColor]}));
+ // Live material values that RLTS and RLMC animations write into. A material without its own TEV
+ // stages keeps its two colour registers as color0 and color1 (the lyric layout's title card fades them).
+ const live=data.materials.map(m=>({srts:m.srts?.map(s=>[...s]),tevColors:m.tevColors?.map(c=>[...c])??(m.stages?undefined:[[...m.color0],[...m.color1]]),kColors:m.kColors?.map(c=>[...c]),matColor:m.matColor&&[...m.matColor]}));
  const animations=spec.animations.map(([pane,name])=>{
   const anim=data.animations[name],root=byName[pane],inTree=new Set();
   const walk=i=>{inTree.add(data.panes[i].name);children[i].forEach(walk);};walk(root);
@@ -31,7 +34,8 @@ export async function createLayout(g,{spec=g.manifest.wii.layout,file='layout.js
   return {anim,targets,frame:0,playing:false,skip:false,enabled:false,reverse:false};
  });
  const setFrame=(a,frame)=>{a.enabled=true;a.frame=frame;};
- for(const i of spec.startAtEnd||[])setFrame(animations[i],animations[i].anim.frames);
+ const atEnd=()=>{for(const i of spec.startAtEnd||[])setFrame(animations[i],animations[i].anim.frames);};
+ atEnd();
  const base=Object.fromEntries((spec.panes||[]).map(n=>[n,[...data.panes[byName[n]].translate]]));
  let applied=0;
 
@@ -71,12 +75,15 @@ export async function createLayout(g,{spec=g.manifest.wii.layout,file='layout.js
  const f32=u=>new Float32Array(new Uint32Array([u]).buffer)[0];
  function message(id){return (data.messages[id]??'???').replace(/\{[0-9a-f]*\}/g,'');}
  function apply(e){
+  if(e.action===-1)return reset();
   const op=e.action>>8,i=e.action&255;
   if(op===1){const a=animations[i];a.reverse=false;setFrame(a,0);a.playing=true;a.skip=true;}
   // Play from the beginning, forward or reversed (value bit 1), or jump to the end (bit 0).
   else if(op===6){const a=animations[i];a.reverse=!!(e.value&2);setFrame(a,e.value&1?a.anim.frames:0);a.playing=true;a.skip=true;}
   else if(op===2)animations[i].playing=false;
+  else if(op===8)animations[i].loop=!!e.value; // CLayoutAnimation::setLoop
   else if(op===3)panes[byName[spec.texts[i]]].text=message(e.value);
+  else if(op===7)panes[byName[spec.texts[i]]].visible=!!e.value;
   else if(op===4||op===5){const n=spec.panes[i];panes[byName[n]].translate[op-4]=base[n][op-4]+f32(e.value);}
  }
  // One game frame of CLayout::_18: advance, animate the enabled animations in bind order, then
@@ -86,7 +93,7 @@ export async function createLayout(g,{spec=g.manifest.wii.layout,file='layout.js
    if(!a.playing)continue;
    if(a.skip){a.skip=false;continue;}
    let f=a.frame+1;
-   while(f>=a.anim.frames){if(a.anim.loop)f-=a.anim.frames;else{f=a.anim.frames-1;a.playing=false;}}
+   while(f>=a.anim.frames){if(a.loop??a.anim.loop)f-=a.anim.frames;else{f=a.anim.frames-1;a.playing=false;}}
    setFrame(a,f);
   }
   for(const a of animations)if(a.enabled)animate(a);
@@ -132,62 +139,133 @@ export async function createLayout(g,{spec=g.manifest.wii.layout,file='layout.js
   return texelCache.get(name);
  }
  const wrap=(i,n,mode)=>mode===1?((i%n)+n)%n:mode===2?(((i%(2*n))+2*n)%(2*n)<n?((i%(2*n))+2*n)%(2*n):2*n-1-((i%(2*n))+2*n)%(2*n)):Math.min(Math.max(i,0),n-1);
- function sample(map,u,v){
-  const t=map.t,x=u*t.w-.5,y=v*t.h-.5,x0=Math.floor(x),y0=Math.floor(y),fx=x-x0,fy=y-y0,out=[0,0,0,0];
-  for(const [dx,dy,w] of [[0,0,(1-fx)*(1-fy)],[1,0,fx*(1-fy)],[0,1,(1-fx)*fy],[1,1,fx*fy]]){
-   const k=(wrap(y0+dy,t.h,map.wrapT)*t.w+wrap(x0+dx,t.w,map.wrapS))*4;for(let c=0;c<4;c++)out[c]+=t.d[k+c]/255*w;
-  }
-  return out;
+ // Bilinear sample of a map at (u, v) into out[at..at+3], 0-1.
+ function sample(map,u,v,out,at){
+  const t=map.t,x=u*t.w-.5,y=v*t.h-.5,x0=Math.floor(x),y0=Math.floor(y),fx=x-x0,fy=y-y0;
+  const xa=wrap(x0,t.w,map.wrapS),xb=wrap(x0+1,t.w,map.wrapS),ya=wrap(y0,t.h,map.wrapT)*t.w,yb=wrap(y0+1,t.h,map.wrapT)*t.w;
+  const w00=(1-fx)*(1-fy)/255,w10=fx*(1-fy)/255,w01=(1-fx)*fy/255,w11=fx*fy/255,k00=(ya+xa)*4,k10=(ya+xb)*4,k01=(yb+xa)*4,k11=(yb+xb)*4,d=t.d;
+  for(let c=0;c<4;c++)out[at+c]=d[k00+c]*w00+d[k10+c]*w10+d[k01+c]*w01+d[k11+c]*w11;
  }
  // nw4r's texture SRT matrix: scale and rotate about the texture's centre, then translate.
  function srtMatrix(srt){const [tx,ty,r,sx,sy]=srt,a=r*Math.PI/180,c=Math.cos(a),s=Math.sin(a);return [sx*c,-sy*s,sx*s,sy*c,tx,ty];}
+ // An indirect matrix from its SRT (nw4r::lyt::Material::SetupGX): rows (S, T) over the indirect
+ // texel's (s, t, u), in texels of the stage's texture.
+ function indMatrix(srt){const [tx,ty,r,sx,sy]=srt,a=r*Math.PI/180,c=Math.cos(a),s=Math.sin(a);return [c*sx,-s*sy,tx,s*sx,c*sy,ty];}
  const KONST=[1,7/8,3/4,5/8,1/2,3/8,1/4,1/8];
+ // The values a stage reads, in one array: registers PREV, C0-C2 (0-15, rgba each), the texel
+ // (16-19), the rasterised colour (20-23), the konstant colour (24-26) and alpha (27), then 1,
+ // 1/2 and 0 (28-30). A colour input reads at offset+k (k = r, g, b) or at offset alone.
+ const V_TEX=16,V_RAS=20,V_KONST=24,V_ONE=28,V_HALF=29,V_ZERO=30;
+ const COLOR_IN=[[0,1],[3,0],[4,1],[7,0],[8,1],[11,0],[12,1],[15,0],[V_TEX,1],[V_TEX+3,0],[V_RAS,1],[V_RAS+3,0],[V_ONE,0],[V_HALF,0],[V_KONST,1],[V_ZERO,0]];
+ const ALPHA_IN=[3,7,11,15,V_TEX+3,V_RAS+3,V_KONST+3,V_ZERO];
+ // Each pane keeps its recent TEV results (an animated material has one per frame of its loop).
  const tevCache=new Map();
- function tevImage(p,mi){
+ // both (a layout drawn into a texture, Shrimp Shuffle's shore): the image and its alpha as grey in
+ // colour and alpha alike (the alpha pass, see renderer.mjs). The pane's alpha is applied when
+ // drawn, which matches nw4r's (in the vertex colours) when a stage's alpha scales with it.
+ function tevImage(p,mi,both=false){
   const src=data.materials[mi],m=live[mi];
   if(src.blend&&!(src.blend[0]===1&&src.blend[1]===4&&src.blend[2]===5))throw new Error(`${src.name}: unsupported layout blend mode ${src.blend}`);
   if(src.alphaCompare&&src.alphaCompare[0]!==0x77)throw new Error(`${src.name}: unsupported layout alpha test ${src.alphaCompare}`);
-  const key=p.name+JSON.stringify([m,p.vertexColors]);if(tevCache.has(key))return tevCache.get(key);
+  const key=JSON.stringify([m,p.vertexColors,both]);
+  let cache=tevCache.get(p.name);if(!cache)tevCache.set(p.name,cache=new Map());
+  if(cache.has(key))return cache.get(key);
   const maps=src.maps.map(x=>({...x,t:texels(data.textures[x.texture])})),W=Math.max(...maps.map(x=>x.t.w)),H=Math.max(...maps.map(x=>x.t.h));
   const gens=src.texCoordGens.map(([type,source,mtx])=>{
    if(type!==1||source!==4)throw new Error(`${src.name}: unsupported texture coordinate generator ${type}/${source}`);
    return mtx===60?[1,0,0,1,0,0]:srtMatrix(m.srts[(mtx-30)/3]);
   });
+  const indMtx=(src.indSrts||[]).map(indMatrix);
   const [t0,t1,t2]=p.texcoords||[[0,0],[1,0],[0,1]],vc=p.vertexColors||[[255,255,255,255],[255,255,255,255],[255,255,255,255],[255,255,255,255]];
+  const chan=src.chanCtrl?src.chanCtrl.map(x=>x===0):[false,false];
+  const V=new Float64Array(32),ras=new Float64Array(4),start=new Float64Array(16),ind=new Float64Array(4),OUT=new Float64Array(3);
+  for(let i=0;i<3;i++)for(let k=0;k<4;k++)start[4+i*4+k]=m.tevColors[i][k]/255;
+  // Each stage, set up once: its konstants, input offsets, operation and indirect lookup.
+  const stages=src.stages.map(st=>{
+   const kc=st.color.konst,ka=st.alpha.konst;
+   const konst=kc<8?[KONST[kc],KONST[kc],KONST[kc]]:kc>=12&&kc<16?m.kColors[kc-12].slice(0,3).map(x=>x/255):kc>=16?Array(3).fill(m.kColors[(kc-16)&3][(kc-16)>>2]/255):null;
+   const konstA=ka<8?KONST[ka]:ka>=16?m.kColors[(ka-16)&3][(ka-16)>>2]/255:null;
+   for(const cfg of [st.color,st.alpha])if(cfg.op>1)throw new Error(`${src.name}: unsupported TEV stage`);
+   if((st.color.in.includes(14)&&!konst)||(st.alpha.in.includes(6)&&konstA==null))throw new Error(`${src.name}: unsupported TEV stage`);
+   const c=st.color.in.map(i=>COLOR_IN[i]),a=st.alpha.in.map(i=>ALPHA_IN[i]);
+   return {map:st.map===255?null:maps[st.map],gen:gens[st.texCoordGen],ras:st.channel!==255,konst:konst||[0,0,0],konstA:konstA??0,
+    co:c.map(x=>x[0]),cs:c.map(x=>x[1]),ao:a,cSign:st.color.op?-1:1,aSign:st.alpha.op?-1:1,cBias:[0,.5,-.5][st.color.bias],aBias:[0,.5,-.5][st.alpha.bias],
+    cScale:[1,2,4,.5][st.color.scale],aScale:[1,2,4,.5][st.alpha.scale],cClamp:st.color.clamp,aClamp:st.alpha.clamp,cOut:st.color.out*4,aOut:st.alpha.out*4+3,
+    ind:st.ind?(I=>({divS:2**I.scaleS,divT:2**I.scaleT,gen:gens[I.texCoordGen],map:maps[I.map],mtx:indMtx[st.ind.matrix-1]}))(src.indStages[st.ind.stage]):null};
+  });
   const c=document.createElement('canvas');c.width=W;c.height=H;const image=new ImageData(W,H),o=image.data;
+  const ca=both?document.createElement('canvas'):null,alphaData=both?new ImageData(W,H):null,oa=alphaData?.data;
   for(let y=0;y<H;y++)for(let x=0;x<W;x++){
-   const s=(x+.5)/W,t=(y+.5)/H,u=t0[0]+s*(t1[0]-t0[0])+t*(t2[0]-t0[0]),v=t0[1]+s*(t1[1]-t0[1])+t*(t2[1]-t0[1]);
-   const reg=[[0,0,0,0],...m.tevColors.map(c=>c.map(x=>x/255))];
+   const s=(x+.5)/W,t=(y+.5)/H,u=t0[0]+s*(t1[0]-t0[0])+t*(t2[0]-t0[0]),v=t0[1]+s*(t1[1]-t0[1])+t*(t2[1]-t0[1]),du=u-.5,dv=v-.5;
+   V.set(start);V[V_ONE]=1;V[V_HALF]=.5;V[V_ZERO]=0;
    // The rasterised channel: vertex colours (or the material colour), bilinear across the pane.
-   const ras=[0,1,2,3].map(k=>((vc[0][k]*(1-s)+vc[1][k]*s)*(1-t)+(vc[2][k]*(1-s)+vc[3][k]*s)*t)/255);
-   const chan=src.chanCtrl?src.chanCtrl.map(x=>x===0):[false,false];
+   for(let k=0;k<4;k++)ras[k]=((vc[0][k]*(1-s)+vc[1][k]*s)*(1-t)+(vc[2][k]*(1-s)+vc[3][k]*s)*t)/255;
    if(chan[0])for(let k=0;k<3;k++)ras[k]=m.matColor[k]/255;if(chan[1])ras[3]=m.matColor[3]/255;
-   for(const st of src.stages){
-    let tex=[0,0,0,0];
-    if(st.map!==255){const g=gens[st.texCoordGen],du=u-.5,dv=v-.5;tex=sample(maps[st.map],g[0]*du+g[1]*dv+.5+g[4],g[2]*du+g[3]*dv+.5+g[5]);}
-    const r=st.channel===255?[0,0,0,0]:ras,kc=st.color.konst,ka=st.alpha.konst;
-    const konst=kc<8?[KONST[kc],KONST[kc],KONST[kc]]:kc>=12&&kc<16?m.kColors[kc-12].slice(0,3).map(x=>x/255):kc>=16?Array(3).fill(m.kColors[(kc-16)&3][(kc-16)>>2]/255):null;
-    const konstA=ka<8?KONST[ka]:ka>=16?m.kColors[(ka-16)&3][(ka-16)>>2]/255:null;
-    const colorIn=i=>[reg[0].slice(0,3),Array(3).fill(reg[0][3]),reg[1].slice(0,3),Array(3).fill(reg[1][3]),reg[2].slice(0,3),Array(3).fill(reg[2][3]),reg[3].slice(0,3),Array(3).fill(reg[3][3]),tex.slice(0,3),Array(3).fill(tex[3]),r.slice(0,3),Array(3).fill(r[3]),[1,1,1],[.5,.5,.5],konst,[0,0,0]][i];
-    const alphaIn=i=>[reg[0][3],reg[1][3],reg[2][3],reg[3][3],tex[3],r[3],konstA,0][i];
-    const combine=(cfg,a,b,cc,d)=>{if(cfg.op>1||a==null||b==null||cc==null||d==null)throw new Error(`${src.name}: unsupported TEV stage`);
-     let x=d+(cfg.op?-1:1)*((1-cc)*a+cc*b)+[0,.5,-.5][cfg.bias];x*=[1,2,4,.5][cfg.scale];return cfg.clamp?Math.min(Math.max(x,0),1):x;};
-    const ci=st.color.in.map(colorIn),col=[0,1,2].map(k=>combine(st.color,ci[0]?.[k],ci[1]?.[k],ci[2]?.[k],ci[3]?.[k]));
-    const ai=st.alpha.in.map(alphaIn),alp=combine(st.alpha,...ai);
-    reg[st.color.out]=[...col,reg[st.color.out][3]];reg[st.alpha.out][3]=alp;
+   for(let n=0;n<stages.length;n++){
+    const S=stages[n];
+    if(S.map){
+     const g=S.gen;let su=g[0]*du+g[1]*dv+.5+g[4],sv=g[2]*du+g[3]*dv+.5+g[5];
+     // GX indirect lookup (8-bit, biased by -128 in s, t and u): the indirect texture's alpha,
+     // blue and green move this stage's coordinates by the matrix times them, in texels.
+     if(S.ind){
+      const I=S.ind,ig=I.gen;
+      sample(I.map,(ig[0]*du+ig[1]*dv+.5+ig[4])/I.divS,(ig[2]*du+ig[3]*dv+.5+ig[5])/I.divT,ind,0);
+      const cs=Math.round(ind[3]*255)-128,ct=Math.round(ind[2]*255)-128,cu=Math.round(ind[1]*255)-128,M=I.mtx;
+      su+=(M[0]*cs+M[1]*ct+M[2]*cu)/S.map.t.w;sv+=(M[3]*cs+M[4]*ct+M[5]*cu)/S.map.t.h;
+     }
+     sample(S.map,su,sv,V,V_TEX);
+    }else V[V_TEX]=V[V_TEX+1]=V[V_TEX+2]=V[V_TEX+3]=0;
+    // A stage without a colour channel reads zero; the next stage with one reads it again.
+    for(let k=0;k<4;k++)V[V_RAS+k]=S.ras?ras[k]:0;
+    V[V_KONST]=S.konst[0];V[V_KONST+1]=S.konst[1];V[V_KONST+2]=S.konst[2];V[V_KONST+3]=S.konstA;
+    const co=S.co,cs=S.cs;
+    for(let k=0;k<3;k++){
+     const a=V[co[0]+cs[0]*k],b=V[co[1]+cs[1]*k],cc=V[co[2]+cs[2]*k],d=V[co[3]+cs[3]*k];
+     const q=(d+S.cSign*((1-cc)*a+cc*b)+S.cBias)*S.cScale;OUT[k]=S.cClamp?q<0?0:q>1?1:q:q;
+    }
+    const ao=S.ao,ac=V[ao[2]];
+    let al=(V[ao[3]]+S.aSign*((1-ac)*V[ao[0]]+ac*V[ao[1]])+S.aBias)*S.aScale;if(S.aClamp)al=al<0?0:al>1?1:al;
+    V[S.cOut]=OUT[0];V[S.cOut+1]=OUT[1];V[S.cOut+2]=OUT[2];V[S.aOut]=al;
    }
-   const k=(y*W+x)*4;for(let ch=0;ch<4;ch++)o[k+ch]=Math.round(Math.min(Math.max(reg[0][ch],0),1)*255);
+   const k=(y*W+x)*4;
+   for(let ch=0;ch<4;ch++)o[k+ch]=Math.round(Math.min(Math.max(V[ch],0),1)*255);
+   if(both)oa[k]=oa[k+1]=oa[k+2]=oa[k+3]=o[k+3];
   }
   c.getContext('2d').putImageData(image,0,0);
-  if(tevCache.size>256)tevCache.clear();tevCache.set(key,c);return c;
+  let out=c;
+  if(both){ca.width=W;ca.height=H;ca.getContext('2d').putImageData(alphaData,0,0);out={color:c,alpha:ca};}
+  if(cache.size>=(both?256:64))cache.delete(cache.keys().next().value);cache.set(key,out);return out;
  }
- function drawPicture(ctx,p,m,alpha){
+ // The alpha pass of a picture without TEV stages: its texel alpha times the pane's, as grey.
+ const alphaImages=new Map();
+ function alphaImage(img,paneAlpha){
+  const key=img.src??img;let byAlpha=alphaImages.get(key);if(!byAlpha)alphaImages.set(key,byAlpha=new Map());
+  if(byAlpha.has(paneAlpha))return byAlpha.get(paneAlpha);
+  const c=document.createElement('canvas');c.width=img.width;c.height=img.height;const x=c.getContext('2d',{willReadFrequently:true});x.drawImage(img,0,0);
+  const d=x.getImageData(0,0,c.width,c.height),q=d.data;
+  for(let i=0;i<q.length;i+=4)q[i]=q[i+1]=q[i+2]=q[i+3]=Math.round(q[i+3]*paneAlpha/255);
+  x.putImageData(d,0,0);byAlpha.set(paneAlpha,c);return c;
+ }
+ // GX fills the pixels whose centres a picture covers, with no partial edges: with pass.snap an
+ // axis-aligned picture's edges round to whole pixels (its tiles in a texture then meet cleanly).
+ function snapped(M,w,h){
+  if(M[1]||M[2])return M;
+  const x0=Math.round(M[4]),y0=Math.round(M[5]),x1=Math.round(M[4]+M[0]*w),y1=Math.round(M[5]+M[3]*h);
+  return [(x1-x0)/w,0,0,(y1-y0)/h,x0,y0];
+ }
+ function drawPicture(ctx,p,m,alpha,pass){
+  const alphaPass=!!pass?.additive;
   if(data.materials[p.material].stages){
-   const img=tevImage(p,p.material),r=rect(p);
-   ctx.setTransform(...mul(m,[r.w/img.width,0,0,-r.h/img.height,r.left,r.top]));ctx.globalAlpha=alpha;ctx.drawImage(img,0,0);return;
+   const r=rect(p),img=pass?tevImage(p,p.material,true)[alphaPass?'alpha':'color']:tevImage(p,p.material);
+   const M=mul(m,[r.w/img.width,0,0,-r.h/img.height,r.left,r.top]);
+   ctx.setTransform(...(pass?.snap?snapped(M,img.width,img.height):M));
+   // The alpha pass adds (alpha*pane alpha) squared: the grey image's a*a times the pane's squared.
+   if(alphaPass&&ctx.globalCompositeOperation!=='lighter'&&alpha<1)throw new Error(`${p.name}: blended alpha pass of a translucent pane`);
+   ctx.globalAlpha=alphaPass?alpha*alpha:alpha;ctx.drawImage(img,0,0);return;
   }
   const name=materialImage[p.material];if(!name)return;
-  const mat=data.materials[p.material],img=tint(images[name],mat,p.vertexColors?.[0]),r=rect(p),W=img.width,H=img.height;
+  const vc=p.vertexColors,gradient=vc?.some(v=>v.some((x,k)=>x!==vc[0][k]));
+  const [color0,color1]=live[p.material].tevColors;let img=tint(images[name],{color0,color1},gradient?undefined:vc?.[0]);const r=rect(p),W=img.width,H=img.height;
   // Map texture coordinates of the top-left, top-right and bottom-left corners onto the pane.
   const [t0,t1,t2]=p.texcoords||[[0,0],[1,0],[0,1]];
   const ux=(t1[0]-t0[0])*W,uy=(t1[1]-t0[1])*H,vx=(t2[0]-t0[0])*W,vy=(t2[1]-t0[1])*H,det=ux*vy-uy*vx;if(!det)return;
@@ -196,11 +274,40 @@ export async function createLayout(g,{spec=g.manifest.wii.layout,file='layout.js
   const inv=[vy/det,-uy/det,-vx/det,ux/det];
   const A=[ax[0]*inv[0]+ay[0]*inv[1],ax[1]*inv[0]+ay[1]*inv[1],ax[0]*inv[2]+ay[0]*inv[3],ax[1]*inv[2]+ay[1]*inv[3]];
   const ox=r.left-(A[0]*t0[0]*W+A[2]*t0[1]*H),oy=r.top-(A[1]*t0[0]*W+A[3]*t0[1]*H);
-  ctx.save();ctx.setTransform(...m);ctx.beginPath();ctx.rect(r.left,r.top-r.h,r.w,r.h);ctx.clip();
-  ctx.setTransform(...mul(m,[A[0],A[1],A[2],A[3],ox,oy]));ctx.globalAlpha=alpha;
-  if(p.texcoords?.some(t=>t.some(x=>x<0||x>1))){ctx.fillStyle=ctx.createPattern(img,'repeat');ctx.fillRect(Math.min(...p.texcoords.map(t=>t[0]))*W,Math.min(...p.texcoords.map(t=>t[1]))*H,Math.abs(ux)+Math.abs(vx),Math.abs(uy)+Math.abs(vy));}
-  else ctx.drawImage(img,0,0);
+  const lay=(x,img)=>{
+   if(p.texcoords?.some(t=>t.some(v=>v<0||v>1))){x.fillStyle=x.createPattern(img,'repeat');x.fillRect(Math.min(...p.texcoords.map(t=>t[0]))*W,Math.min(...p.texcoords.map(t=>t[1]))*H,Math.abs(ux)+Math.abs(vx),Math.abs(uy)+Math.abs(vy));}
+   else x.drawImage(img,0,0);
+  };
+  if(gradient){
+   let s=shadedImage(img,p,r,[A[0],A[1],A[2],A[3],ox,oy],lay);
+   if(alphaPass){s=alphaImage(s,Math.round(alpha*255));alpha=1;}
+   const M=mul(m,[r.w/s.width,0,0,-r.h/s.height,r.left,r.top]);
+   ctx.setTransform(...(pass?.snap?snapped(M,s.width,s.height):M));ctx.globalAlpha=alpha;ctx.drawImage(s,0,0);return;
+  }
+  if(alphaPass){img=alphaImage(img,Math.round(alpha*255));alpha=1;}
+  ctx.save();
+  // Snapped, the texture is laid on the rounded rectangle too, so no edge pixel is part covered.
+  if(pass?.snap){const M=snapped(mul(m,[r.w,0,0,r.h,r.left,r.top-r.h]),1,1);m=mul(M,[1/r.w,0,0,1/r.h,-r.left/r.w,(r.h-r.top)/r.h]);ctx.setTransform(1,0,0,1,0,0);ctx.beginPath();ctx.rect(M[4],M[5],M[0],M[3]);}
+  else{ctx.setTransform(...m);ctx.beginPath();ctx.rect(r.left,r.top-r.h,r.w,r.h);}
+  ctx.clip();
+  ctx.setTransform(...mul(m,[A[0],A[1],A[2],A[3],ox,oy]));ctx.globalAlpha=alpha;lay(ctx,img);
   ctx.restore();
+ }
+ // A picture whose corners have different vertex colours (Shrimp Shuffle's sea-to-sand strip,
+ // Working Dough's alarm light edges): GX interpolates them across the pane and multiplies each
+ // texel by the result, so the texture is laid onto a pane-sized surface, which is then shaded.
+ const shaded=new WeakMap();
+ function shadedImage(img,p,r,T,lay){
+  if(!shaded.has(img))shaded.set(img,new Map());
+  const cache=shaded.get(img),key=JSON.stringify([r.w,r.h,p.vertexColors,T]);if(cache.has(key))return cache.get(key);
+  const w=Math.max(1,Math.ceil(r.w)),h=Math.max(1,Math.ceil(r.h)),c=document.createElement('canvas');c.width=w;c.height=h;
+  const x=c.getContext('2d',{willReadFrequently:true});
+  x.setTransform(...mul([w/r.w,0,0,-h/r.h,-r.left*w/r.w,r.top*h/r.h],T));lay(x,img);
+  const d=x.getImageData(0,0,w,h),q=d.data,vc=p.vertexColors;
+  for(let j=0;j<h;j++){const t=(j+.5)/h;for(let i=0;i<w;i++){const s=(i+.5)/w,k=(j*w+i)*4;
+   for(let ch=0;ch<4;ch++)q[k+ch]=q[k+ch]*((vc[0][ch]*(1-s)+vc[1][ch]*s)*(1-t)+(vc[2][ch]*(1-s)+vc[3][ch]*s)*t)/255;}}
+  x.putImageData(d,0,0);
+  if(cache.size>=16)cache.delete(cache.keys().next().value);cache.set(key,c);return c;
  }
  const windows=new WeakMap();
  function drawWindow(ctx,p,m,alpha){
@@ -246,24 +353,28 @@ export async function createLayout(g,{spec=g.manifest.wii.layout,file='layout.js
  // Wide screen: panes marked for location adjustment are narrowed by 608/832, which undoes the
  // stretch of the 4:3 layout over the 16:9 screen (CLayoutManager, src/GameUtil/LayoutManager.cpp).
  const adjust=608/832;
- function drawPane(ctx,i,parent,parentAlpha,influenced){
+ // pass.additive: draw the alpha pass (see tevImage), where the panes it lists add their alpha
+ // squared (blend SRCALPHA, ONE) and the others blend it as usual. pass.snap: see snapped.
+ function drawPane(ctx,i,parent,parentAlpha,influenced,pass){
   const p=panes[i];if(!p.visible)return;
   const a=p.rotate*Math.PI/180,c=Math.cos(a),s=Math.sin(a),sx=p.scale[0]*(p.locationAdjust?adjust:1),sy=p.scale[1];
   // Layout space has y up: flip the rotation and translation onto the canvas.
   const m=mul(parent,[c*sx,-s*sx,s*sy,c*sy,p.translate[0],-p.translate[1]]);
   const alpha=influenced?p.alpha*parentAlpha/255:p.alpha;
   if(alpha>0){
-   if(p.kind==='picture')drawPicture(ctx,p,mul(m,[1,0,0,-1,0,0]),alpha/255);
+   if(pass&&(p.kind==='window'||p.kind==='text'))throw new Error(`Layout texture pass: unsupported ${p.kind} pane ${p.name}`);
+   if(pass?.additive)ctx.globalCompositeOperation=pass.additive.includes(p.name)?'lighter':'source-over';
+   if(p.kind==='picture')drawPicture(ctx,p,mul(m,[1,0,0,-1,0,0]),alpha/255,pass);
    else if(p.kind==='window')drawWindow(ctx,p,m,alpha/255);
    else if(p.kind==='text')drawText(ctx,p,m,alpha/255);
   }
-  for(const k of children[i])drawPane(ctx,k,m,alpha,p.influencedAlpha);
+  for(const k of children[i])drawPane(ctx,k,m,alpha,p.influencedAlpha,pass);
  }
- function draw(ctx,canvas){
+ function draw(ctx,canvas,pass){
   update();
   const [w,h]=data.size,root=[canvas.width/w,0,0,canvas.height/h,canvas.width/2,canvas.height/2];
-  drawPane(ctx,0,root,255,false);
-  ctx.globalAlpha=1;
+  drawPane(ctx,0,root,255,false,pass);
+  ctx.globalAlpha=1;ctx.globalCompositeOperation='source-over';
  }
  function textWidth(p,text=p.text){const font=data.font,sx=p.fontSize[0]/font.width;return Math.max(0,...text.split('\n').map(l=>[...l].reduce((n,c)=>n+(font.glyphs[c.codePointAt(0)]?.charWidth||0)*sx+p.charSpace,0)-(l.length?p.charSpace:0)));}
  function fitText(p,width,height){p.fontSize=[width,height];const w=textWidth(p),scale=w>p.size[0]?p.size[0]*.95/w:1;p.fontSize[0]*=scale;return scale;}

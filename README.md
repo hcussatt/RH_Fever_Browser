@@ -8,7 +8,11 @@ community decompilation and from your own copy of the game. Private two-player v
 > is primarily a work of AI.
 
 Playable today: **Hole in One**, **Tap Trial**, **Love Rap**, **Sneaky Spirits**,
-**Screwbot Factory**, **See-Saw**, **Double Date** and **Remix 1**. The game picker
+**Screwbot Factory**, **See-Saw**, **Double Date**, **Remix 1**, **Fork Lifter**,
+**Tambourine**, **Board Meeting**, **Monkey Watch**, **Remix 2**, **Working Dough**,
+**Built to Scale**, **Air Rally**, **Figure Fighter**, **Remix 3**, **Launch Party**,
+**Donk-Donk**, **Bossa Nova**, **Remix 6**, **Tap Troupe**, **Shrimp Shuffle**,
+**Cheer Readers**, **Karate Man** and **Remix 7**. The game picker
 lists them by remix set, as the original song select does.
 
 ## Runtime code here; assets stay local
@@ -73,6 +77,11 @@ Open the printed URL in Chrome and pick a game. A is Space, Left Shift, X, left
 click or gamepad A; B is Right Shift, right click or gamepad B (Screwbot Factory,
 and its part of Remix 1, wants A and B together). Escape pauses. Click once first so the browser allows
 sound.
+
+If a game stops with "Runtime error", the page keeps a crash log in the browser
+(the last 20 errors, with the game, frame and chart tick) that survives a reload.
+Use the "Save crash log" link under the error, or type `rhf.crashLog()` in the
+console (Cmd+Option+J) on any game page.
 
 The build and installer automatically use `.venv` when present, otherwise they
 look for Python 3.10+ on PATH. `RHF_PYTHON=/path/to/python3` overrides that choice;

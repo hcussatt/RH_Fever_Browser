@@ -4,7 +4,10 @@ set -eu
 cd "$(dirname "$0")/.."
 game="$1"
 mkdir -p "dist/$game" dist/engine
-cp -R web/engine/. dist/engine/
-rm dist/engine/index.html
+# build.sh copies the engine once before building games side by side (RHF_ENGINE_STAGED=1).
+if [ -z "${RHF_ENGINE_STAGED:-}" ]; then
+  cp -R web/engine/. dist/engine/
+  rm dist/engine/index.html
+fi
 cp web/engine/index.html "dist/$game/index.html"
 cp "games/$game/game.json" "dist/$game/game.json"
