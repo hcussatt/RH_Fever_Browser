@@ -24,7 +24,7 @@ translated C snapshots in `runtime-src/` let CI compile that runtime without an
 ISO. Graphics, charts, sound, original data sections, the original executable
 are not published. The public Wii common key is bundled as authorized; players
 select only their own ISO.
-an asset converter runs in a browser worker and stores prepared games locally.
+a browser worker reads all menu icons first, then prepares only games you play. Prepared data uses lossless compression and shares identical files locally.
 The ISO is read in slices, never uploaded or copied wholesale into browser storage.
 
 `scripts/check-clean.py` blocks commits that contain disc images, executables,
