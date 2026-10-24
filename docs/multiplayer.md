@@ -5,8 +5,7 @@ its link to your friend. Your friend opens the main-site link, generates an answ
 and sends it back. Paste the answer and connect. Keep both lobby tabs open.
 
 The host chooses the game from the lobby selector; the guest automatically loads
-the same game and cannot change the selection. Both choose **Ready** after their
-local game loads. The host may choose another game between rounds without a new
+the same game and cannot change the selection. Both choose **Ready** to load their local game. Missing game data is extracted asynchronously at that point, before synchronization begins. The host may choose another game between rounds without a new
 invite. Each selection clears both players' readiness. Missing or incompatible
 local assets block readiness; **Load your disc** opens the existing main-site
 importer, and **Reload local game** retries afterward.
