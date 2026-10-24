@@ -11,6 +11,7 @@ import re
 import shutil
 import zipfile
 from game_registry import web_games
+from paths import menu_icon
 
 ROOT = Path(__file__).resolve().parents[1]
 TOOLS = ['paths.py', 'wii_files.py', 'extract-disc.py', 'prepare-data.py',
@@ -53,6 +54,7 @@ def stage(snapshot=False, output='site'):
         manifest = next(m for m in registered if m['id'] == game)
         manifest.pop('$schema', None)
         profile = manifest['wii']
+        manifest['web']['icon'] = menu_icon(game)
         if 'scenes' in profile:
             # Numeric IDs are public metadata; discover all chart/data addresses
             # later from the user's ISO, without a browser decomp checkout.

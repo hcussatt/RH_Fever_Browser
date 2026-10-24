@@ -7,7 +7,7 @@ The ISO is opened read-only. Output goes to build/disc/, which is git-ignored.
 import hashlib
 import json
 import sys
-from paths import DISC, DOL, BRSAR, DOL_SHA1, GAMES, manifest
+from paths import DISC, DOL, BRSAR, DOL_SHA1, GAMES, manifest, menu_icon
 from wii_files import WiiFiles, u8_files, yaz0
 
 # Unpacked cellanim archive for each game, from its manifest. A remix unpacks the archive each
@@ -51,7 +51,9 @@ def layout_fonts(brlyt):
     return names
 
 
-def main(iso, *, sound_archive=True):
+def main(iso, *, sound_archive=True, games=None, icons_only=False):
+    selected = set(GAMES if games is None else games)
+    layout_games = selected | {scene["game"] for game in selected for scene in manifest(game)["wii"].get("scenes", [])}
     disc = WiiFiles(iso)
     if disc.raw(0, 6) != b'SOME01':
         raise SystemExit(f'Expected Rhythm Heaven Fever USA (SOME01), found {disc.raw(0, 6)!r}')
@@ -61,7 +63,8 @@ def main(iso, *, sound_archive=True):
         raise SystemExit('main.dol does not match the known USA executable; this build expects an unmodified SOME01 disc.')
     DOL.write_bytes(dol)
     report = {'dolSha1': DOL_SHA1, 'files': {}}
-    icons = {manifest(game).get('web', {}).get('icon') for game in GAMES} - {None}
+    icon_sources = [menu_icon(game) for game in (GAMES if icons_only else selected)]
+    icons = {icon for icon in icon_sources if isinstance(icon, str)}
     if icons:
         menu = u8_files(disc.get('EN/content2/layout/layout_gameSelect.szs'))
         (DISC/'menu').mkdir(exist_ok=True)
@@ -70,25 +73,38 @@ def main(iso, *, sound_archive=True):
             (DISC/'menu'/icon).write_bytes(data)
             report['files']['menu/'+icon] = hashlib.sha256(data).hexdigest()
 
+    for icon in icon_sources:
+        if isinstance(icon, dict):
+            folder = DISC/'menu-banks'/icon['bank']
+            folder.mkdir(parents=True, exist_ok=True)
+            for name, data in u8_files(disc.get(icon['archive'])).items():
+                (folder/name).write_bytes(data)
+    if icons_only:
+        return disc
+
     for name,data in u8_files(disc.get('EN/content2/cellanim/permanent/cellanim.szs')).items():
         out=DISC/'permanent'/name
         out.parent.mkdir(parents=True,exist_ok=True)
         out.write_bytes(data)
         report['files'][f'permanent/{name}']=hashlib.sha256(data).hexdigest()
     for game, path in CELLANIM.items():
+        if game.split("/", 1)[0] not in selected:
+            continue
         for name, data in u8_files(disc.get(path)).items():
             out = DISC/game/name
             out.parent.mkdir(parents=True, exist_ok=True)
             out.write_bytes(data)
             report['files'][f'{game}/{name}'] = hashlib.sha256(data).hexdigest()
     for game, epilogue in EPILOGUE.items():
+        if game not in selected:
+            continue
         for name,data in u8_files(disc.get(epilogue)).items():
             out=DISC/game/'epilogue'/name
             out.parent.mkdir(parents=True,exist_ok=True)
             out.write_bytes(data)
             report['files'][f'{game}/epilogue/{name}']=hashlib.sha256(data).hexdigest()
-    layouts = [(f'{game}/layout', layout) for game, layout in LAYOUT.items()]
-    layouts += [(f'message-layout/{key}', layout) for key, layout in MESSAGE_LAYOUTS.items()]
+    layouts = [(f'{game}/layout', layout) for game, layout in LAYOUT.items() if game in layout_games or game in ('results', 'epilogue')]
+    layouts += [(f'message-layout/{key}', layout) for key, layout in MESSAGE_LAYOUTS.items() if key == 'balloon' or key in layout_games]
     for folder, layout in layouts:
         files = u8_files(disc.get(layout['archive']))
         for name, data in files.items():
