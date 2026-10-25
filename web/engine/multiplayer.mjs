@@ -23,10 +23,10 @@ export function mountMultiplayer({games,version,openImport}){
   $('lobby-game').disabled=!p.host||!idle||!p.connected;
   $('lobby-role').textContent=p.host?'You are the host. Choose a game for both players.':'The host chooses the game. Your browser follows automatically.';
   if(p.selectedGame)$('lobby-game').value=p.selectedGame;
-  $('lobby-ready').disabled=p.state!=='lobby'||!p.selectedGame||!api||loading||p.localReady||p.preparing;
+  $('lobby-ready').disabled=p.state!=='lobby'||!p.selectedGame||loading||p.localReady||p.preparing;
   $('lobby-ready').textContent=p.preparing?'Preparing…':p.localReady?'Ready — waiting for friend':'Ready';
   $('lobby-rematch').hidden=!p.connected||!(p.state==='interrupted'||p.state==='finished'&&p.remoteResult);
-  let text=localError||(loading?'Loading the host’s selected game…':p.message||'');
+  let text=localError||(loading?(frame?.contentDocument?.querySelector('#status')?.textContent||'Preparing the selected game…'):p.message||'');
   if(p.state==='playing')text=performance.now()<p.began?'Starts in '+Math.ceil((p.began-performance.now())/1000)+'…':'Playing '+(games.find(g=>g.id===p.selectedGame)?.title||'')+(p.connected?'':' · Connection lost; local play continues');
   if(p.state==='finished')text=p.remoteResult?(p.unsynchronized?'Timing uncertain — unofficial comparison':compareResults(p.localResult,p.remoteResult)>0?'You win':compareResults(p.localResult,p.remoteResult)<0?'Friend wins':'Draw'):performance.now()-p.finishedAt>20000?'Comparison unavailable — friend’s result not received':'Finished — waiting for friend’s result…';
   $('lobby-status').textContent=text;
@@ -39,7 +39,7 @@ export function mountMultiplayer({games,version,openImport}){
   frame=document.createElement('iframe');frame.id='lobby-player';frame.title=games.find(g=>g.id===id)?.title||'Selected game';frame.allow='autoplay';frame.src=new URL(id+'/?lobby=1',siteRoot);$('lobby-game-container').replaceChildren(frame);update(peer);
   const current=frame;
   try{
-   const until=performance.now()+120000;
+   const until=performance.now()+600000;
    while(token===loadToken){
     const rhf=current.contentWindow?.rhf;
     if(rhf?.error)throw new Error(rhf.error.split('\n')[0]);
@@ -57,10 +57,14 @@ export function mountMultiplayer({games,version,openImport}){
   return hex(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(JSON.stringify({manifest:g.manifest,chart:g.chart,timeline,hashes}))));
  }
  const hex=b=>Array.from(new Uint8Array(b),x=>x.toString(16).padStart(2,'0')).join('');
+ function select(id){
+  ++loadToken;api?.stop();api=null;frame=null;loading=false;localError='';
+  const message=document.createElement('p');message.textContent='Press Ready to load '+(games.find(g=>g.id===id)?.title||id)+'.';$('lobby-game-container').replaceChildren(message);update(peer);
+ }
  function create(){
   if(peer)throw new Error('Leave this lobby before creating another connection.');
-  peer=new PeerMatch({identity:'lobby-v2:'+version,games:games.map(g=>g.id),name:$('lobby-name').value.trim()||'Player',onchange:update,onselect:id=>load(id),
-   prepare:async()=>{if(!api||loading)throw new Error('Wait for the selected game to load.');const active=api;await active.prepare();if(active!==api||loading)throw new Error('The selected game changed. Ready again after it loads.');return fingerprint();},
+  peer=new PeerMatch({identity:'lobby-v2:'+version,games:games.map(g=>g.id),name:$('lobby-name').value.trim()||'Player',onchange:update,onselect:select,
+   prepare:async()=>{if(!api)await load(peer.selectedGame);if(!api||loading)throw new Error(localError||'Wait for the selected game to load.');const active=api;await active.prepare();if(active!==api||loading)throw new Error('The selected game changed. Ready again after it loads.');return fingerprint();},
    start:at=>{if(!api)throw new Error('Selected game is unavailable.');api.start(at+performance.timeOrigin-frame.contentWindow.performance.timeOrigin);frame.contentWindow.focus();},stop:()=>api?.stop(),snapshot:()=>api?.snapshot()});
   window.rhfLobby={peer,get frame(){return frame;},get api(){return api;}};return peer;
  }

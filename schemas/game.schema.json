@@ -18,7 +18,7 @@
         "enabled": {"type": "boolean"},
         "order": {"type": "integer", "minimum": 0},
         "expectedCues": {"type": "integer", "minimum": 1},
-        "icon": {"description": "Original game-select texture, imported locally from layout_gameSelect.szs.", "type": "string", "pattern": "^game_[0-9]{2}_[1-5]\\.00\\.tpl$"}
+        "icon": {"description": "Original disc menu artwork.", "oneOf": [{"type": "string", "pattern": "^game_[0-9]{2}_[1-5]\\.00\\.tpl$"}, {"type": "object", "additionalProperties": false, "required": ["archive", "bank"], "properties": {"archive": {"const": "EN/content2/cellanim/bonusSelect/agb/cellanim.szs"}, "bank": {"type": "string", "pattern": "^agb[A-Za-z]+$"}}}]}
       },
       "if": {"properties": {"enabled": {"const": true}}},
       "then": {"required": ["expectedCues"]}

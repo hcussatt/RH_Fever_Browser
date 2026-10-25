@@ -76,8 +76,8 @@ test('Pages project path, local import errors, storage isolation, and offline sh
   assert.equal(await page.locator('#key').count(),0);await page.locator('#import').click();
   await page.waitForFunction(()=>document.querySelector('#progress').textContent.includes('4,699,979,776'));
   // Direct game links explain how to import instead of attempting absent asset URLs.
-  await page.goto(base+first+'/');await page.waitForFunction(()=>window.rhf?.error);
-  assert.match(await page.locator('#status').textContent(),/Import your ISO/);
+  await page.goto(base+first+'/');await page.locator('#disc-required').waitFor();
+  assert.match(await page.locator('#disc-required').textContent(),/Select your USA disc/);
   await page.goto(base);await page.waitForFunction(count=>document.querySelectorAll('.game').length===count,catalog.length);
   // A synthetic Cache API fixture exercises library readiness and removal without game data.
   await page.evaluate(async id=>{
@@ -88,7 +88,15 @@ test('Pages project path, local import errors, storage isolation, and offline sh
    const blob=await new Promise(resolve=>icon.toBlob(resolve));
    await(await caches.open(name)).put(new URL(id+'/assets/menu-icon.png',siteRoot),new Response(blob,{headers:{'content-type':'image/png'}}));
    const library=await readLibrary();library.games[id]={cache:name,version:build.assetVersion};await writeLibrary(library);
-   await caches.open('rhf-assets:/another-project/:keep');
+   await caches.open('rhf-assets:/another-project/:keep');await caches.open('rhf-blobs:/another-project/:v1');
+  },first);
+  await page.evaluate(async id=>{
+   const {readLibrary,assetResponse,compactAssets,siteRoot}=await import('./engine/assets.mjs');
+   const cache=await caches.open((await readLibrary()).games[id].cache),bytes=new Uint8Array(65536).fill(27);
+   const url=new URL(id+'/assets/test.bin',siteRoot);await cache.put(url,new Response(bytes));
+   const summary=await compactAssets();if(summary.savedBytes<60000)throw new Error('Expected storage savings');
+   const restored=new Uint8Array(await(await assetResponse(url)).arrayBuffer());
+   if(restored.length!==bytes.length||restored.some(n=>n!==27))throw new Error('Compressed asset changed bytes');
   },first);
   await page.reload();await page.locator('.play').waitFor();
   assert.equal(await page.locator('.play').count(),1);
@@ -97,6 +105,17 @@ test('Pages project path, local import errors, storage isolation, and offline sh
   await page.waitForFunction(()=>document.querySelector('#progress').textContent.includes('removed'));
   assert.equal(await page.locator('.play').count(),0);
   assert.ok(await page.evaluate(async()=>(await caches.keys()).includes('rhf-assets:/another-project/:keep')));
+  await page.evaluate(async ids=>{
+   const {readLibrary,writeLibrary,siteRoot}=await import('./engine/assets.mjs');
+   const library=await readLibrary(),name='rhf-icons:'+siteRoot.pathname+':test',cache=await caches.open(name);
+   const canvas=document.createElement('canvas');canvas.width=canvas.height=8;const blob=await new Promise(r=>canvas.toBlob(r));
+   for(const id of ids)await cache.put(new URL(id+'/assets/menu-icon.png',siteRoot),new Response(blob,{headers:{'content-type':'image/png'}}));
+   library.icons={cache:name};await writeLibrary(library);
+  },catalog.map(g=>g.id));
+  await page.reload();await page.waitForFunction(count=>document.querySelectorAll('.game-art img').length===count,catalog.length+1);
+  assert.match(await page.locator('#selected-status').textContent(),/when you play/);
+  assert.equal(await page.evaluate(async()=>{const {readLibrary}=await import('./engine/assets.mjs');return Object.keys((await readLibrary()).games).length;}),0);
+  assert.ok(await page.evaluate(async()=>(await caches.keys()).includes('rhf-blobs:/another-project/:v1')));
   // Real WebRTC signaling and lobby controls; the iframe is a disc-free engine fixture.
   const guestContext=await browser.newContext({serviceWorkers:'block'});
   const hostContext=await browser.newContext({serviceWorkers:'block'});
@@ -118,11 +137,11 @@ test('Pages project path, local import errors, storage isolation, and offline sh
    await guest.locator('#lobby-incoming').fill(await host.locator('#lobby-output').inputValue());await guest.locator('#lobby-join').click();
    await guest.waitForFunction(()=>document.querySelector('#lobby-output').value.length>0);
    await host.locator('#lobby-incoming').fill(await guest.locator('#lobby-output').inputValue());await host.locator('#lobby-accept').click();
-   for(const p of [host,guest])await p.waitForFunction(()=>window.rhfLobby?.peer.connected&&window.rhfLobby?.api);
+   for(const p of [host,guest])await p.waitForFunction(()=>window.rhfLobby?.peer.connected);
    assert.equal(await guest.locator('#lobby-game').isEnabled(),false);
    const next=catalog[1].id;await host.locator('#lobby-game').selectOption(next);
-   await guest.waitForFunction(id=>window.rhfLobby.peer.selectedGame===id&&window.rhfLobby.api?.game().manifest.id===id,next);
-   await host.waitForFunction(id=>window.rhfLobby.api?.game().manifest.id===id,next);
+   await guest.waitForFunction(id=>window.rhfLobby.peer.selectedGame===id,next);
+   assert.equal(await host.locator('iframe').count(),0);assert.equal(await guest.locator('iframe').count(),0);
    await guest.locator('#lobby-ready').click();await host.locator('#lobby-ready').click();
    for(const p of [host,guest])await p.waitForFunction(()=>window.rhfLobby.peer.state==='playing');
    const result={hits:10,misses:0,through:0,stray:0,perfectFailed:0};

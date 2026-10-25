@@ -18,3 +18,16 @@ export function groupGames(games){
  groups.push({title:OTHER,games:games.filter(g=>!placed.has(g.id))});
  return groups.filter(g=>g.games.length);
 }
+
+// The song-select columns put each remix above its source games.
+export function menuColumns(games){
+ return groupGames(games).map(group=>{
+  const remix=group.title.toLowerCase().replace(' ','');
+  return {...group,games:[...group.games.filter(g=>g.id===remix),...group.games.filter(g=>g.id!==remix)]};
+ });
+}
+// Prepare artwork across each visible row, from the leftmost set to the rightmost.
+export function iconLoadOrder(games){
+ const columns=menuColumns(games),rows=Math.max(0,...columns.map(g=>g.games.length));
+ return Array.from({length:rows},(_,row)=>columns.map(column=>column.games[row]).filter(Boolean)).flat();
+}

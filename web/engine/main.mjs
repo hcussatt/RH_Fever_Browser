@@ -35,7 +35,7 @@ function fail(e){
  }
 }
 try{
- await requireAssets(gameUrl.pathname.split('/').filter(Boolean).at(-1));
+ await requireAssets(gameUrl.pathname.split('/').filter(Boolean).at(-1),message=>{status.textContent=message;play.textContent='Preparing game…';});
  const context=new AudioContext({latencyHint:'interactive'});audio=context;
  const musicData=assetResponse(new URL('assets/music.wav',gameUrl)).then(r=>r.arrayBuffer()).then(b=>audio.decodeAudioData(b));
  g=await loadGame(gameUrl);

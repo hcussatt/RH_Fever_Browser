@@ -3,6 +3,7 @@ user's own disc image and must never be committed (see scripts/check-clean.py)."
 import json
 import os
 import pathlib
+import re
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 BUILD = pathlib.Path(os.environ.get('RHF_BUILD', ROOT/'build'))
@@ -55,3 +56,21 @@ def require(path):
     if not pathlib.Path(path).exists():
         raise SystemExit(f'Missing {path}. Run ./build.sh with your ISO first.')
     return path
+
+
+def menu_icon(name):
+    """Original song-select artwork metadata; no image bytes are published."""
+    item = manifest(name)
+    menu = ROOT/'web/engine/menu.mjs'
+    if menu.exists():
+        for number, members in re.findall(r"title:'Remix (\d+)',games:\[([^]]+)\]", menu.read_text()):
+            names = re.findall(r"'([^']+)'", members)
+            if name in names:
+                return f'game_{int(number):02d}_{names.index(name)+1}.00.tpl'
+    scene = item['wii'].get('scene', '')
+    if scene.startswith('Agb'):
+        return {'archive': 'EN/content2/cellanim/bonusSelect/agb/cellanim.szs', 'bank': scene[0].lower()+scene[1:]}
+    icon = item.get('web', {}).get('icon')
+    if not icon:
+        raise ValueError(f'{name}: original menu artwork must be registered')
+    return icon
