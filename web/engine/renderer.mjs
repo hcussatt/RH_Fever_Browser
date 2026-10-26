@@ -27,8 +27,8 @@ async function gameLayout(g){
  return {draw(ctx,canvas){if(!spec.screen)layout.draw(ctx,canvas);},screen:()=>spec.screen?{spec,layout}:null};
 }
 export async function createRenderer(g,canvas){
- // The game's textures, then the permanent bank's (bank 254, see runtime.mjs).
- const images=await Promise.all([...g.assets.textures,...(g.gradingData.permanent?.textures||[])].map(n=>assetImage(new URL('assets/'+n,g.base))));
+ // The game's textures, then the permanent bank's (bank 254) and Remix 8's photo frame's (253, see runtime.mjs).
+ const images=await Promise.all([...g.assets.textures,...(g.gradingData.permanent?.textures||[]),...(g.gradingData.remixMask?.textures||[])].map(n=>assetImage(new URL('assets/'+n,g.base))));
  const ctx=canvas.getContext('2d',{alpha:false});
  const layout=g.manifest.wii.scenes?await sceneLayouts(g):await gameLayout(g),messages=await createMessages(g);
  const {u8,u16,u32,f32,core,banks}=g;

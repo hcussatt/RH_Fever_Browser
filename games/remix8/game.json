@@ -1,0 +1,52 @@
+{
+  "$schema": "../../schemas/game.schema.json",
+  "schemaVersion": 1,
+  "id": "remix8",
+  "title": "Remix 8",
+  "action": "Play each game",
+  "platform": "wii",
+  "wii": {
+    "music": "WSD_I_LOVE_YOU",
+    "scenes": [
+      {
+        "game": "date",
+        "cellanim": "EN/content2/cellanim/date/remix08/cellanim.szs"
+      },
+      {
+        "game": "bun",
+        "cellanim": "EN/content2/cellanim/bun/remix08/cellanim.szs"
+      },
+      {
+        "game": "seal",
+        "cellanim": "EN/content2/cellanim/seal/remix08/cellanim.szs"
+      },
+      {
+        "game": "rocket",
+        "cellanim": "EN/content2/cellanim/rocket/remix08/cellanim.szs"
+      },
+      {
+        "game": "batting",
+        "cellanim": "EN/content2/cellanim/batting/remix08/cellanim.szs"
+      },
+      {
+        "game": "badminton",
+        "cellanim": "EN/content2/cellanim/badminton/remix08/cellanim.szs"
+      },
+      {
+        "game": "samurai",
+        "cellanim": "EN/content2/cellanim/samurai/remix08/cellanim.szs"
+      }
+    ],
+    "epilogue": "EN/content2/cellanim/remix/ver8/cellanim_epilogue.szs",
+    "projection": [
+      832,
+      456
+    ],
+    "endsWithMusic": true
+  },
+  "web": {
+    "enabled": false,
+    "expectedCues": 82,
+    "icon": "game_08_5.00.tpl"
+  }
+}

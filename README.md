@@ -14,7 +14,7 @@ Playable today: **Hole in One**, **Tap Trial**, **Love Rap**, **Sneaky Spirits**
 **Packing Pests**, **Micro-Row**, **Samurai Slice**, **Remix 4**, **Catch of the Day**,
 **Flipper-Flop**, **Exhibition Match**, **Flock Step**, **Remix 5**, **Launch Party**,
 **Donk-Donk**, **Bossa Nova**, **Remix 6**, **Tap Troupe**, **Shrimp Shuffle**,
-**Cheer Readers**, **Karate Man** and **Remix 7**. The game picker
+**Cheer Readers**, **Karate Man**, **Remix 7** and **Remix 8**. The game picker
 lists them by remix set, as the original song select does.
 
 ## Runtime code here; assets stay local
