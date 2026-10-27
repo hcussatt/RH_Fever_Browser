@@ -32,7 +32,7 @@ function selectGame(id,{focus=false,reveal=true,animate=true}={}){
  if(focus)card.focus({preventScroll:true});
  if(reveal){const set=card.closest('.game-set'),scroller=$('#games');scroller.scrollTo({left:set.offsetLeft-scroller.offsetLeft-(scroller.clientWidth-set.offsetWidth)/2,behavior:animate&&!reducedMotion()?'smooth':'instant'});}
  if(changed&&animate&&!reducedMotion()){
-  card.querySelector('.game-art').animate([{transform:'scale(.92) rotate(-4deg)'},{transform:'scale(1.1) rotate(2deg)'},{transform:'scale(1.04) rotate(0)'}],{duration:240,easing:'ease-out'});
+  card.querySelector('.game-art').animate([{transform:'scale(1.02) rotate(-4deg)'},{transform:'scale(1.24) rotate(2deg)'},{transform:'scale(1.15) rotate(0)'}],{duration:240,easing:'ease-out'});
   $('.game-preview').animate([{transform:'translateY(3px)',opacity:.75},{transform:'translateY(0)',opacity:1}],{duration:160});
  }
 }
@@ -47,7 +47,7 @@ async function render(){
   const set=document.createElement('section');set.className='game-set';set.setAttribute('aria-labelledby','set-'+column);set.style.setProperty('--set-hue',String(column*47));
   const heading=Object.assign(document.createElement('h4'),{className:'set-title',id:'set-'+column,textContent:group.title});set.append(heading);
   const grid=document.createElement('div');grid.className='set-games';set.append(grid);
-  for(const [row,{id,title}] of group.games.entries()){
+  for(const [row,{id,title,icon:hasIcon}] of group.games.entries()){
    const number=order.get(id),cardNumber=String(number).padStart(2,'0');
    const entry=library.games[id],ready=entry?.version===(build.assetVersion||build.version);
    const stored=build.local?(await fetch(new URL(id+'/assets/original-timeline.json',siteRoot),{method:'HEAD'})).ok:ready&&await (await caches.open(entry.cache)).match(new URL(id+'/assets/original-timeline.json',siteRoot));
@@ -57,14 +57,15 @@ async function render(){
    card.onclick=()=>selectGame(id);card.ondblclick=()=>$('#selected-action .play')?.click();
    const art=document.createElement('span');art.className='game-art';art.setAttribute('aria-hidden','true');
    let icon;
-   if(stored&&build.local)icon=new URL(id+'/assets/menu-icon.png',siteRoot);
+   // A game without an original icon (Tap Trial) never shows one, even a stale file from an older build.
+   if(hasIcon===false);
+   else if(stored&&build.local)icon=new URL(id+'/assets/menu-icon.png',siteRoot);
    else if(stored){
     const key=entry.cache,cache=await caches.open(key),response=await cache.match(new URL(id+'/assets/menu-icon.png',siteRoot));
     if(response){if(!iconURLs.has(key))iconURLs.set(key,URL.createObjectURL(await response.blob()));icon=iconURLs.get(key);}
    }
-   if(icon){const img=new Image();img.src=icon;img.alt='';img.onerror=()=>{art.textContent=cardNumber;};art.append(img);}else art.textContent=id.startsWith('remix')?'MIX '+id.slice(5):String(number).padStart(2,'0');
+   if(icon){const img=new Image();img.src=icon;img.alt='';img.onerror=()=>{art.classList.remove('has-icon');art.textContent=cardNumber;};art.classList.add('has-icon');art.append(img);}else art.textContent=id.startsWith('remix')?'MIX '+id.slice(5):String(number).padStart(2,'0');
    card.append(art);
-   card.append(Object.assign(document.createElement('span'),{className:'game-index',textContent:String(number).padStart(2,'0')}));
    card.append(Object.assign(document.createElement('h3'),{textContent:title}));
    card.append(Object.assign(document.createElement('p'),{textContent:stored?'Ready to play':entry?'Update required':'Load disc to play'}));
    grid.append(card);

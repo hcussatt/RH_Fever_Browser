@@ -79,7 +79,7 @@ def stage(snapshot=False, output='site'):
             info = zipfile.ZipInfo(f'games/{manifest["id"]}/game.json', date_time=(2020, 1, 1, 0, 0, 0))
             info.compress_type = zipfile.ZIP_DEFLATED
             archive.writestr(info, json.dumps(manifest))
-    (out/'games.json').write_text(json.dumps([{'id': m['id'], 'title': m['title'], 'expectedCues': m['web']['expectedCues']} for m in manifests])+'\n')
+    (out/'games.json').write_text(json.dumps([{'id': m['id'], 'title': m['title'], 'expectedCues': m['web']['expectedCues'], 'icon': bool(m['web'].get('icon'))} for m in manifests])+'\n')
     files = sorted(p for p in out.rglob('*') if p.is_file())
     checksums = {str(p.relative_to(out)): hashlib.sha256(p.read_bytes()).hexdigest() for p in files}
     version = hashlib.sha256(json.dumps(checksums, sort_keys=True).encode()).hexdigest()[:20]
