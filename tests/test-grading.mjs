@@ -3,7 +3,8 @@
 import assert from 'node:assert/strict';
 import {readFile,readdir} from 'node:fs/promises';
 import {loadGame} from '../dist/engine/runtime.mjs';
-const manifests=await Promise.all((await readdir(new URL('../games/',import.meta.url))).map(async id=>JSON.parse(await readFile(new URL(`../games/${id}/game.json`,import.meta.url)))));
+// Only game folders: macOS adds a .DS_Store file to the folder when Finder opens it.
+const manifests=await Promise.all((await readdir(new URL('../games/',import.meta.url),{withFileTypes:true})).filter(e=>e.isDirectory()).map(async ({name})=>JSON.parse(await readFile(new URL(`../games/${name}/game.json`,import.meta.url)))));
 const ids=process.argv.slice(2).length?process.argv.slice(2):manifests.filter(m=>m.web.enabled).map(m=>m.id);
 const load=id=>loadGame(new URL(`../dist/${id}/`,import.meta.url),readFile);
 const below=(threshold,count,percent)=>threshold&0x8000?percent<(threshold&0x7fff):count<threshold;
