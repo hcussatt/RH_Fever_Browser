@@ -64,6 +64,8 @@ def tpl(data):
                         rgba=tuple(((v>>s)&15)*17 for s in (8,4,0))+((a<<5)|(a<<2)|(a>>1),)
                 pixels[y,x]=rgba
         return Image.fromarray(pixels,'RGBA')
+    if fmt == 14:
+        return Image.fromarray(cmpr(data, start, w, h), 'RGBA')
     if fmt == 2:  # IA4: 8x4 tiles, alpha in the high nibble.
         px = np.frombuffer(data, np.uint8, w*h, start).reshape(h//4, w//8, 4, 8).transpose(0, 2, 1, 3).reshape(h, w)
         i, a = (px & 15)*17, (px >> 4)*17
@@ -76,6 +78,28 @@ def tpl(data):
     else:
         raise SystemExit(f'Unsupported layout texture format {fmt}')
     return Image.fromarray(np.dstack([i, i, i, a]).astype(np.uint8), 'RGBA')
+
+
+def cmpr(data, start, w, h):
+    """CMPR (Night Walk's sky): 8x8 tiles of four 4x4 DXT1 blocks, each two RGB565 colours (big
+    endian) and 2-bit indices, first pixel in the high bits. Colours 2 and 3 are (2a+b)/3 and
+    (a+b)*2/3 when a > b, else (a+b)/2 and transparent, as Dolphin decodes them."""
+    pw, ph = (w+7)//8*8, (h+7)//8*8
+    blocks = np.frombuffer(data, np.uint8, pw*ph//2, start).reshape(ph//8, pw//8, 2, 2, 8)
+    c = blocks[..., :4].astype(np.uint32)
+    c0, c1 = (c[..., 0] << 8) | c[..., 1], (c[..., 2] << 8) | c[..., 3]
+    rgb = lambda v: np.stack([((v >> 11) & 31)*255//31, ((v >> 5) & 63)*255//63, (v & 31)*255//31], -1).astype(np.int32)
+    a, b = rgb(c0), rgb(c1)
+    four = (c0 > c1)[..., None]
+    palette = np.stack([a, b, np.where(four, (2*a+b)//3, (a+b)//2), np.where(four, (a+2*b)//3, (a+b)//2)], -2)  # ..., 4, 3
+    alpha = np.stack([np.full(c0.shape, 255), np.full(c0.shape, 255), np.full(c0.shape, 255), np.where(c0 > c1, 255, 0)], -1)
+    bits = blocks[..., 4:8]
+    index = np.stack([(bits >> s) & 3 for s in (6, 4, 2, 0)], -1)  # ..., row, column
+    colour = np.take_along_axis(palette[..., None, :, :], index.reshape(index.shape[:-2]+(16, 1, 1)).repeat(3, -1), -2)[..., 0, :]
+    colour = colour.reshape(index.shape[:-2]+(4, 4, 3))
+    al = np.take_along_axis(alpha[..., None, :], index.reshape(index.shape[:-2]+(16, 1)), -1)[..., 0].reshape(index.shape[:-2]+(4, 4))
+    out = np.concatenate([colour, al[..., None]], -1)  # ty, tx, by, bx, y, x, 4
+    return out.transpose(0, 2, 4, 1, 3, 5, 6).reshape(ph, pw, 4)[:h, :w].astype(np.uint8)
 
 
 def i4(data, start, w, h):
@@ -321,7 +345,7 @@ def font(b, chars):
 
 # The name web/engine/message.mjs knows a game's message layout by: the lyric layout (CLyricLayout) is
 # the same in every game that registers its lines, and Hole in One's CMyLayout is 'golf' in either version.
-MESSAGE_LAYOUT_KEYS = {'lyrics.brlyt': 'lyric', 'baseball.brlyt': 'golf'}
+MESSAGE_LAYOUT_KEYS = {'lyrics.brlyt': 'lyric', 'baseball.brlyt': 'golf', 'nightWalk.brlyt': 'credit'}
 
 
 def message_layouts():
@@ -365,10 +389,10 @@ def message_layouts():
     (OUT/'message-layouts.json').write_text(json.dumps(out, separators=(',', ':'))+'\n')
 
 
-def game_layout(game, entry, prefix):
+def game_layout(game, entry, prefix, folder='layout'):
     """A game's own 2D layout (Love Rap's lyric captions, Bossa Nova's subtitles): <prefix>.json,
     its images and the glyphs of every message."""
-    root = require(DISC/game/'layout')
+    root = require(DISC/game/folder)
     out = layout((root/'blyt'/entry['file']).read_bytes())
     out['animations'] = {p.stem: animation(p.read_bytes()) for p in sorted((root/'anim').glob('*.brlan'))}
     names = set(out['textures'])|{n for a in out['animations'].values() for n in a['timg']}
@@ -411,6 +435,9 @@ def main():
     entry = PROFILE.get('layout')
     if entry:
         game_layout(GAME, entry, 'layout')
+    # The scene's lyric layout when the game's own is another (Night Walk's title card over its sky).
+    if 'lyricLayout' in PROFILE:
+        game_layout(GAME, PROFILE['lyricLayout'], 'lyric-layout', 'lyric-layout')
 
 
 if __name__ == '__main__':

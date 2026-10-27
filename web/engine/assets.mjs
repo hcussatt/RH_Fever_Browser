@@ -29,9 +29,15 @@ export async function assetResponse(url){
  return response;
 }
 export async function assetBytes(url){return new Uint8Array(await (await assetResponse(url)).arrayBuffer());}
+// Images decode a few at a time: Remix 10's 30 scenes start hundreds of decodes at once, and
+// Chrome then fails some of them ("The source image cannot be decoded").
+let decoding=0;const waiting=[];
 export async function assetImage(url){
- const objectURL=URL.createObjectURL(await (await assetResponse(url)).blob());
- try{const i=new Image();i.src=objectURL;await i.decode();return i;}finally{URL.revokeObjectURL(objectURL);}
+ const blob=await (await assetResponse(url)).blob();
+ if(decoding>=8)await new Promise(resolve=>waiting.push(resolve));
+ decoding++;const objectURL=URL.createObjectURL(blob);
+ try{const i=new Image();i.src=objectURL;await i.decode();return i;}
+ finally{URL.revokeObjectURL(objectURL);decoding--;waiting.shift()?.();}
 }
 export async function requireAssets(id){
  const r=await fetch(new URL('deployment.json',siteRoot));

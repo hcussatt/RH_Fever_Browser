@@ -159,11 +159,12 @@ def remix():
     global SOURCE
     out={'textures':[],'banks':{},'scenes':[]}
     for scene in PROFILE['scenes']:
-        SOURCE=require(source(GAME)/scene['game'])
-        first=len(out['textures']);out['textures']+=textures(scene['game']+'-')
-        names=sorted(p.stem for p in SOURCE.glob('*.brcad'))
-        for n in names:
-            b=bank(n);b['texture']+=first;out['banks'][scene['game']+'/'+n]=b
+        folder=require(source(GAME)/scene['game']);names=[]
+        # A scene that also loads another game's archive has it in a folder inside its own.
+        for SOURCE in [folder]+[require(folder/path.split('/')[-3]) for path in manifest(scene['game'])['wii'].get('extraCellanims',[])]:
+            first=len(out['textures']);out['textures']+=textures(scene['game']+'-'+('' if SOURCE==folder else SOURCE.name+'-'))
+            for n in sorted(p.stem for p in SOURCE.glob('*.brcad')):
+                b=bank(n);b['texture']+=first;out['banks'][scene['game']+'/'+n]=b;names.append(n)
         out['scenes'].append({'game':scene['game'],'banks':names})
     return out
 

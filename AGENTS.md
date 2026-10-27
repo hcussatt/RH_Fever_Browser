@@ -119,6 +119,9 @@ These come from the repository owner and apply to every contributor and agent.
    - A+B cues followed by a release (Karate Man's charged kick): the test harness holds A+B until the release cue arms; a no-input run can pass extra checkers that take no input (`checkers` in `tests/test-runtime.mjs`).
    - Looping flows and the results screen: run `node tests/test-grading.mjs` with every game's id (with no ids it checks only the web-enabled games) and confirm each results screen can be left. A game's own looping flow must end when the results start, as the original's scene exit does (Monkey Watch and Launch Party stayed stuck on the results).
    - After merging main, refresh the enabled games' snapshots with `python3 tools/prepare-pages.py --snapshot`; new games stay web-disabled.
+   - Scenes only a remix reaches (Remix 10's navigator, `navi`): `sceneOnly` in the manifest, never web-enabled; another game's archive the scene also loads goes in `extraCellanims` (the navigator's metronome).
+   - Layouts a game's own code drives (Night Walk's sky, `NightWalk::CMyLayout`): leave the unit untranslated and emulate it in `GAME_CALLS` as layout events; `layout.animations` and `layout.panes` take `%02d` names with `{count}` for numbered panes, and actions from `0x10000` up carry 16-bit indices. A game whose own layout is not the lyric layout lists that one as `lyricLayout` (its song title card).
+   - A level a miss can end early (Night Walk's fall) ends where the live run does; its timeline lasts as long as an all-hit run. A level with no results screen (Night Walk, `results: false`) returns to the library.
 
 ## Roadmap
 

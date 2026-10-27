@@ -7,7 +7,7 @@ import json
 import re
 import tempfile
 from pathlib import Path
-from paths import DISC, DOL, DECOMP, assets, game, require
+from paths import DISC, DOL, DECOMP, assets, game, manifest, require
 from nintendo_audio import wave_files, decode_wave, write_wav
 
 def module(name, file):
@@ -31,22 +31,27 @@ main=json.loads((out/'original-chart.json').read_text())
 cmds=list(chart.commands(main['start']))
 string=lambda a:chart.read(a,128).split(b'\0')[0].decode('ascii')
 criteria=next(args[0] for _,op,arg,args in cmds if op==0x118 and arg==1)
-caption=next(string(args[0]) for _,op,arg,args in cmds if op==0x108)
+# A game with no results (Night Walk ends on the staff credits) has no caption, epilogue or result music.
+RESULTS=manifest(game())['wii'].get('results',True)
+caption=next(string(args[0]) for _,op,arg,args in cmds if op==0x108) if RESULTS else None
 # CMessageManager::fn_80088088 uses these original IDs for the joining strings.
 text={0:''};text.update(comments)
-metadata={'messages':text,'caption':text[int(caption)],'criteria':criteria,'flow':0x801f97e0,'waves':{}}
-ep_messages={arg:text[int(string(args[0]))] for _,op,arg,args in cmds if op==0x107}
-metadata['epilogueMessages']=[ep_messages[i] for i in (0,1,2)]
-ep=layout.layout(require(DISC/'epilogue/layout/blyt/epilogue.brlyt').read_bytes())
-ep['animations']={};ep['images']={};ep['font']=data['font']
-for p in sorted((DISC/'epilogue/layout/timg').glob('*.tpl')):
-    name='epilogue-'+p.name+'.png';layout.tpl(p.read_bytes()).save(out/name);ep['images'][p.name]=name
-(out/'epilogue-layout.json').write_text(json.dumps(ep,separators=(',',':'))+'\n')
-extract=module('extract_assets','tools/extract-assets.py');extract.SOURCE=DISC/game()/'epilogue'
-with tempfile.TemporaryDirectory() as tmp:
-    extract.OUT=Path(tmp);textures=extract.textures();bank=extract.bank('epilogue')
-    for name in textures:(out/('epilogue-'+name)).write_bytes((Path(tmp)/name).read_bytes())
-(out/'epilogue.json').write_text(json.dumps({'textures':['epilogue-'+n for n in textures],'bank':bank},separators=(',',':'))+'\n')
+metadata={'messages':text,'caption':text[int(caption)] if RESULTS else None,'criteria':criteria,'flow':0x801f97e0,'waves':{}}
+if RESULTS:
+    ep_messages={arg:text[int(string(args[0]))] for _,op,arg,args in cmds if op==0x107}
+    metadata['epilogueMessages']=[ep_messages[i] for i in (0,1,2)]
+extract=module('extract_assets','tools/extract-assets.py')
+if RESULTS:
+    ep=layout.layout(require(DISC/'epilogue/layout/blyt/epilogue.brlyt').read_bytes())
+    ep['animations']={};ep['images']={};ep['font']=data['font']
+    for p in sorted((DISC/'epilogue/layout/timg').glob('*.tpl')):
+        name='epilogue-'+p.name+'.png';layout.tpl(p.read_bytes()).save(out/name);ep['images'][p.name]=name
+    (out/'epilogue-layout.json').write_text(json.dumps(ep,separators=(',',':'))+'\n')
+    extract.SOURCE=DISC/game()/'epilogue'
+    with tempfile.TemporaryDirectory() as tmp:
+        extract.OUT=Path(tmp);textures=extract.textures();bank=extract.bank('epilogue')
+        for name in textures:(out/('epilogue-'+name)).write_bytes((Path(tmp)/name).read_bytes())
+    (out/'epilogue.json').write_text(json.dumps({'textures':['epilogue-'+n for n in textures],'bank':bank},separators=(',',':'))+'\n')
 extract.SOURCE=DISC/'permanent'
 with tempfile.TemporaryDirectory() as tmp:
     extract.OUT=Path(tmp);textures=extract.textures();bank=extract.bank('permanent')
@@ -84,6 +89,6 @@ for sid,s in audio['sounds'].items():
     wave_index=layout.u32(wsd,note)
     pcm,info=decode_wave(waves[wave_index]);name=f'results-music-{sid}.wav';write_wav(out/name,pcm,info['rate'])
     metadata['waves'][sid]={'file':name,'volume':s['volume'],**info}
-if len(metadata['waves'])!=6:raise ValueError('Missing result/epilogue music')
+if RESULTS and len(metadata['waves'])!=6:raise ValueError('Missing result/epilogue music')
 (out/'results.json').write_text(json.dumps(metadata,separators=(',',':'))+'\n')
 print(f'{game()}: original grading layout ({len(data["panes"])} panes), comments, epilogue and 6 music tracks')

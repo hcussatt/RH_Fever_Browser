@@ -3,8 +3,8 @@
 // down, and an animation attached to an object of its base only moves while the base's
 // current cell has that object; otherwise it keeps its last matrix. An attached animation
 // drawn with its base (mBaseAnimDraw) is drawn right after that object, not by layer.
-// A game's 2D layout (layout.mjs) and the chart's message panes (message.mjs) are drawn over the
-// cell animations.
+// A game's 2D layout (layout.mjs) is drawn over the cell animations on layers 0 and up and under
+// those on negative layers; the chart's message panes (message.mjs) over everything.
 import {createLayout} from './layout.mjs';
 import {createMessages} from './message.mjs';
 import {assetImage,assetResponse} from './assets.mjs';
@@ -31,6 +31,8 @@ export async function createRenderer(g,canvas){
  const images=await Promise.all([...g.assets.textures,...(g.gradingData.permanent?.textures||[]),...(g.gradingData.remixMask?.textures||[])].map(n=>assetImage(new URL('assets/'+n,g.base))));
  const ctx=canvas.getContext('2d',{alpha:false});
  const layout=g.manifest.wii.scenes?await sceneLayouts(g):await gameLayout(g),messages=await createMessages(g);
+ // The scene's lyric layout when the game's own layout is another (Night Walk's song title card).
+ const lyric=g.manifest.wii.lyricLayout?await createLayout(g,{spec:g.manifest.wii.lyricLayout,file:'lyric-layout.json',fontFile:'lyric-layout-font.png',events:g.lyricEvents}):null;
  const {u8,u16,u32,f32,core,banks}=g;
  const mul=(a,b)=>[a[0]*b[0]+a[2]*b[1],a[1]*b[0]+a[3]*b[1],a[0]*b[2]+a[2]*b[3],a[1]*b[2]+a[3]*b[3],a[0]*b[4]+a[2]*b[5]+a[4],a[1]*b[4]+a[3]*b[5]+a[5]];
  const trs=(x,y,deg,sx,sy)=>{const a=deg*Math.PI/180,c=Math.cos(a),s=Math.sin(a);return [c*sx,s*sx,-s*sy,c*sy,x,y];};
@@ -166,8 +168,14 @@ export async function createRenderer(g,canvas){
   // The dynamic texture is redrawn each frame a screen bank shows (CDynTex::update).
   const screen=layout?.screen();
   if(screen&&actors.some(a=>banks[u8(a+12)]?.screen&&u8(a+0xa7)))renderScreen(screen);
-  for(const a of drawn)drawActor(a,origin);
-  layout?.draw(ctx,canvas);messages.draw(ctx,canvas);
+  // CExScene::_1C: the cell animations on layers 0 and up (CCellAnimManager::_20), then the
+  // layouts, then those on negative layers (_24): Night Walk's sky is a layout behind its actors;
+  // then the lyric layout.
+  for(const a of drawn)if((u32(a+0x98)|0)>=0)drawActor(a,origin);
+  layout?.draw(ctx,canvas);
+  for(const a of drawn)if((u32(a+0x98)|0)<0)drawActor(a,origin);
+  lyric?.draw(ctx,canvas);
+  messages.draw(ctx,canvas);
   // CFaderFlash's black cover over everything (fn_80007DD8), as the chart fades it.
   const cover=core._fader_cover();
   if(cover){ctx.setTransform(1,0,0,1,0,0);ctx.globalAlpha=cover/255;ctx.fillStyle='#000';ctx.fillRect(0,0,canvas.width,canvas.height);}

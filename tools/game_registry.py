@@ -39,16 +39,21 @@ def manifests(root=ROOT, *, validate=True):
     return sorted(result, key=lambda g: (g.get('web', {}).get('order', 100), g['id']))
 
 
+def scene_only(root=ROOT, *, validate=True):
+    """Scenes only a remix changes to: no chart of their own, never built or hosted alone."""
+    return [g for g in manifests(root, validate=validate) if g['wii'].get('sceneOnly')]
+
+
 def web_games(root=ROOT, *, validate=True, require_runtime=True):
     games = [g for g in manifests(root, validate=validate) if g.get('web', {}).get('enabled') is True]
     if validate:
         if not games:
             raise ValueError('Enable at least one web game')
-        enabled = {g['id'] for g in games}
+        enabled = {g['id'] for g in games}|{g['id'] for g in scene_only(root, validate=False)}
         for game in games:
             for scene in game['wii'].get('scenes', []):
                 if scene['game'] not in enabled:
-                    raise ValueError(f'{game["id"]}: remix scene {scene["game"]} must also be web-enabled')
+                    raise ValueError(f'{game["id"]}: remix scene {scene["game"]} must also be web-enabled or scene-only')
             required = [f'adapters/{game["id"]}/game.h']
             if require_runtime:
                 required.append(f'runtime-src/{game["id"]}/original-functions.inc')

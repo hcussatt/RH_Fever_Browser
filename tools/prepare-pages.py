@@ -10,7 +10,7 @@ from pathlib import Path
 import re
 import shutil
 import zipfile
-from game_registry import web_games
+from game_registry import scene_only, web_games
 
 ROOT = Path(__file__).resolve().parents[1]
 TOOLS = ['paths.py', 'wii_files.py', 'extract-disc.py', 'prepare-data.py',
@@ -56,7 +56,7 @@ def stage(snapshot=False, output='site'):
         if 'scenes' in profile:
             # Numeric IDs are public metadata; discover all chart/data addresses
             # later from the user's ISO, without a browser decomp checkout.
-            profiles = {m['id']: m['wii'] for m in registered}
+            profiles = {m['id']: m['wii'] for m in registered+scene_only(ROOT, validate=False)}
             profile['sceneIds'] = {profiles[s['game']]['scene']: scenes[profiles[s['game']]['scene']] for s in profile['scenes']}
             profile['musicSound'] = sound_ids[profile['music']]
         else:
@@ -74,7 +74,8 @@ def stage(snapshot=False, output='site'):
             info = zipfile.ZipInfo('tools/'+name, date_time=(2020, 1, 1, 0, 0, 0))
             info.compress_type = zipfile.ZIP_DEFLATED
             archive.writestr(info, (ROOT/'tools'/name).read_bytes())
-        for manifest in manifests:
+        # A remix's import reads its scene-only scenes' manifests too.
+        for manifest in manifests+scene_only(ROOT, validate=False):
             info = zipfile.ZipInfo(f'games/{manifest["id"]}/game.json', date_time=(2020, 1, 1, 0, 0, 0))
             info.compress_type = zipfile.ZIP_DEFLATED
             archive.writestr(info, json.dumps(manifest))

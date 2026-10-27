@@ -45,7 +45,7 @@ try{
  const inputs=new Set(g.timeline.cueInputs);
  const controls=!inputs.has(6)?'Space / X / click / controller A · '+action:!inputs.has(4)?`A + B together · ${action} (A: Space / Left Shift / click / controller A, B: Right Shift / right click / controller B)`:`${action} · A: Space / X / Left Shift / click / controller A · B: Right Shift / right click / controller B · some cues need A + B together`;for(const e of document.querySelectorAll('.controls'))e.textContent=controls+' · Start / Escape: pause';
  renderer=await createRenderer(g,canvas);renderer.draw();music=await musicData;sfx=await createAudio(audio,gameUrl,{envelope:g.envelope});
- results=await createResults(g,canvas);
+ results=g.manifest.wii.results===false?null:await createResults(g,canvas);
  window.rhf={g,renderer,audio,sfx,results,inputs:input.presses,metrics,heardTime,stats:g.stats,result:null,crashLog,get startTime(){return startTime;},get track(){return track;},get phase(){return phase;},get frame(){return frame;}};
  play.disabled=false;play.textContent='Play';
  const embedded=window.parent!==window&&new URLSearchParams(location.search).get('lobby')==='1';
@@ -55,7 +55,7 @@ try{
   await audio.resume();
   if(needsReset){
    sfx.stop();pending.length=0;voiced.length=0;input.presses.length=0;frame=0;phase='game';paused=false;window.rhf.result=null;
-   g=await loadGame(gameUrl);renderer=await createRenderer(g,canvas);results=await createResults(g,canvas);
+   g=await loadGame(gameUrl);renderer=await createRenderer(g,canvas);results=g.manifest.wii.results===false?null:await createResults(g,canvas);
    sfx.master.disconnect();sfx=await createAudio(audio,gameUrl,{envelope:g.envelope});
    Object.assign(window.rhf,{g,renderer,sfx,results,stats:g.stats});renderer.draw();
   }
@@ -159,8 +159,14 @@ play.onclick=async()=>{
 };
 document.querySelector('#restart').onclick=()=>{if(multiplayer?.active){multiplayer.interrupt('Restart interrupted the round.');return;}location.reload();};
 // The original chart owns the outro; a longer backing wave must not delay grading.
-const endSeconds=()=>g.secondsAtTick(g.timeline.endTick);
+const endSeconds=()=>g.secondsAtTick(g.ended?Math.min(g.endTick,g.timeline.endTick):g.timeline.endTick);
 function finish(){
+ // Night Walk has no results: it ends on the staff credits, which the port leaves out.
+ if(!results){
+  running=false;sfx.stop();audio.suspend();const result=g.result();window.rhf.result=result;
+  window.dispatchEvent(new CustomEvent('rhf-result',{detail:result}));multiplayer?.finish(result);
+  if(!multiplayer?.active)location.href=new URL('../',gameUrl).href;return;
+ }
  phase='results';resultsStart=atTick(g.timeline.endTick);
  const result=results.begin(sfx,resultsStart);window.rhf.result=result;status.textContent='';
  window.dispatchEvent(new CustomEvent('rhf-result',{detail:result}));

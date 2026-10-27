@@ -114,7 +114,7 @@ export async function loadGame(gameUrl,load=fetchBytes,{timeline:withTimeline=tr
  // (a hit or a miss starts one, for example) are not in them, so their sounds play live.
  // Layout events (11): the game's 2D layouts (Love Rap's lyric captions), drawn by layout.mjs.
  // Message events (15): the speech balloon and the message panes, drawn by message.mjs.
- const layoutEvents=[],messageEvents=[];let steps=0,scene=chart.firstScene||0;
+ const layoutEvents=[],lyricEvents=[],messageEvents=[];let steps=0,scene=chart.firstScene||0;
  const consumed=new Set();
  function prescheduled(sound,at){
   const list=timeline?.sounds||[];
@@ -162,6 +162,7 @@ export async function loadGame(gameUrl,load=fetchBytes,{timeline:withTimeline=tr
    else if(e[0]===8)commands.push({tick:frameTick+rest(e[2]),op:e[1]});
    else if(e[0]===7){ended=true;endTick=frameTick+rest(e[2]);}
    else if(e[0]===11)layoutEvents.push({frame:steps,scene,action:e[1],value:e[2]});
+   else if(e[0]===28)lyricEvents.push({frame:steps,action:e[1],value:e[2]}); // the lyric layout beside the game's (Night Walk)
    // A new scene (a remix's next game) builds its layout again (see renderer.mjs).
    else if(e[0]===24){scene=e[1];layoutEvents.push({frame:steps,scene,action:-1});}
    else if(e[0]===15)messageEvents.push({frame:steps,field:e[1]>>8,pane:e[1]&255,value:e[2]});
@@ -196,10 +197,18 @@ export async function loadGame(gameUrl,load=fetchBytes,{timeline:withTimeline=tr
   };
   // Checkers armed before the music started (Remix 5's first catch, armed in the chart's lead-in).
   for(const c of lead)arm(c);
-  for(const e of events)if(e[0]===9)arm(e[1]);
+  // A scene's end drops its checkers (CExScene::_20), so their cues still ahead are never reached
+  // (Bossa Nova's ball checker put off 256 beats, which Remix 10 outlasts).
+  for(const e of events){
+   if(e[0]===24){for(const [,i] of pending)if(cues[i]>tick)cueWithdrawn[i]=true;pending.clear();live.clear();}
+   else if(e[0]===9)arm(e[1]);
+  }
   for(let i=0,c;(c=core._checker_at(i)>>>0);i++)if(live.has(c)&&live.get(c)!==f32(c+0x58))arm(c);
   const armed=cueInputs.slice(armedBefore);
-  if(press===6)pairHeld=armed.includes(20)?'held':cues.some((t,i)=>t>tick+12&&!cueWithdrawn[i]&&cueInputs[i]!==20)?'release':'wait';
+  // Held for a release checker armed by the press or already waiting (Night Walk arms its release
+  // with the scene), unless another cue comes first.
+  const releaseAhead=()=>{let next=Infinity,release=Infinity;cues.forEach((t,i)=>{if(t>tick&&!cueWithdrawn[i]){if(cueInputs[i]===20)release=Math.min(release,t);else if(t>tick+12)next=Math.min(next,t);}});return release<next;};
+  if(press===6)pairHeld=armed.includes(20)||releaseAhead()?'held':cues.some((t,i)=>t>tick+12&&!cueWithdrawn[i]&&cueInputs[i]!==20)?'release':'wait';
   else if(pairHeld==='wait'&&armed.length)pairHeld=armed.includes(20)?'held':'release';
   // A remix's next scene (24) ends the game whose release it waited for: let go before the new
   // game's first cue, which the controller's cooldown after a release would otherwise swallow.
@@ -232,5 +241,5 @@ export async function loadGame(gameUrl,load=fetchBytes,{timeline:withTimeline=tr
   if(press){core._grading_input(1);core._grading_input(0);}core._grading_frame();gradingFrame++;
   return drain().map(e=>({kind:e[0],value:e[1],extra:e[2],frame:gradingFrame,seconds:gradingFrame/60+((e[0]===5||e[0]===20||e[0]===21)?rest(e[2])/(core._grading_tempo()*.8):0)}));
  }
- return {manifest,base,core,options,assets,chart,clock,secondsAtTick:clock.secondsAtTick,tickAtSeconds:clock.tickAtSeconds,banks,timeline,step,drain,sounds,chartSounds,gameSounds,tunes,speeds,musicVolumes,commands,cues,cueInputs,cueWithdrawn,layoutEvents,messageEvents,get steps(){return steps;},envelope,stats,result,gradingData,resultEvents,startGrading,stepGrading,u8,u16,u32,f32,w8,w16,w32,wf,alloc,offset,get tick(){return tick;},get ended(){return ended;},get endTick(){return endTick;}};
+ return {manifest,base,core,options,assets,chart,clock,secondsAtTick:clock.secondsAtTick,tickAtSeconds:clock.tickAtSeconds,banks,timeline,step,drain,sounds,chartSounds,gameSounds,tunes,speeds,musicVolumes,commands,cues,cueInputs,cueWithdrawn,layoutEvents,lyricEvents,messageEvents,get steps(){return steps;},envelope,stats,result,gradingData,resultEvents,startGrading,stepGrading,u8,u16,u32,f32,w8,w16,w32,wf,alloc,offset,get tick(){return tick;},get ended(){return ended;},get endTick(){return endTick;}};
 }

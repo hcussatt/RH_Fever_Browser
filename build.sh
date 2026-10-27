@@ -31,7 +31,8 @@ echo "== Reading files from your ISO"
 "$RHF_PYTHON" tools/extract-disc.py "$iso"
 
 # Every game with a manifest in games/<id>/game.json.
-games=$("$RHF_PYTHON" -c 'import sys; sys.path.insert(0, "tools"); from paths import GAMES; print(*GAMES)')
+# A scene only a remix changes to (wii.sceneOnly) is built as part of that remix.
+games=$("$RHF_PYTHON" -c 'import sys; sys.path.insert(0, "tools"); from paths import GAMES, manifest; print(*[g for g in GAMES if not manifest(g)["wii"].get("sceneOnly")])')
 # Games build side by side, one per CPU core unless RHF_JOBS says otherwise. Each game's
 # output goes to build/logs/<game>-<step>.log and is shown in full if that game fails.
 jobs=${RHF_JOBS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 2)}
