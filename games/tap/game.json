@@ -28,7 +28,9 @@
     "iconArt": {
       "bank": "agb_tap",
       "animation": "agb_tap_giraffe_normal",
-      "crop": [0.45, 0, 1, 0.62],
+      "crop": [0.35, 0, 1, 0.64],
+      "scale": 1.05,
+      "offset": [-4, 2],
       "background": {
         "texture": "texture-1.png",
         "pixel": [797, 87]

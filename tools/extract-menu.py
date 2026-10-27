@@ -15,6 +15,7 @@ from paths import DISC, assets, game, manifest, require
 
 # The original icon whose rounded black frame the drawn icons reuse (Hole in One's).
 FRAME_ICON = 'game_01_1.00.tpl'
+BEVEL = 4
 
 
 def layout():
@@ -83,17 +84,28 @@ def drawn_icon(out, art, frame_icon):
     # Distance from each pixel centre to the nearest pixel outside the outline (the margin counts).
     outside = np.argwhere(np.pad(frame[..., 3] == 0, 1, constant_values=True))-1
     ys, xs = np.mgrid[0:size, 0:size]
-    distance = np.sqrt(((ys[..., None]-outside[:, 0])**2+(xs[..., None]-outside[:, 1])**2).min(-1))
+    squared = (ys[..., None]-outside[:, 0])**2+(xs[..., None]-outside[:, 1])**2
+    distance = np.sqrt(squared.min(-1))
+    nearest = outside[squared.argmin(-1)]
     inside = np.clip(distance-border-.5, 0, 1)[..., None]
     sprite = cell_image(out, art)
     box = size-2*border-2*art.get('padding', 2)
     scale = min(box/sprite.width, box/sprite.height)*art.get('scale', 1)
     sprite = sprite.resize((max(1, round(sprite.width*scale)), max(1, round(sprite.height*scale))), Image.LANCZOS)
     picture = Image.new('RGBA', (size, size), background(out, art)+(255,))
-    x = (size-sprite.width)//2
-    y = size-border-sprite.height if art.get('align') == 'bottom' else (size-sprite.height)//2
+    dx, dy = art.get('offset', [0, 0])
+    x = (size-sprite.width)//2+dx
+    y = (size-border-sprite.height if art.get('align') == 'bottom' else (size-sprite.height)//2)+dy
     picture.alpha_composite(sprite, (x, y))
     icon = np.array(picture).astype(float)
+    # The bevel the original icons have inside the ring: a light band along the top and left
+    # edges and a dark band along the bottom and right, fading out over BEVEL pixels.
+    edge = np.clip(1-(distance-border-.5)/BEVEL, 0, 1)
+    facing = ((ys-nearest[..., 0])+(xs-nearest[..., 1]))/np.maximum(distance, 1)
+    light = (edge*np.clip(facing, 0, 1)*.45)[..., None]
+    dark = (edge*np.clip(-facing, 0, 1)*.3)[..., None]
+    icon[..., :3] = icon[..., :3]*(1-light)+255*light
+    icon[..., :3] *= 1-dark
     icon[..., :3] *= inside
     icon[..., 3] = frame[..., 3]
     return Image.fromarray(icon.round().astype(np.uint8))
