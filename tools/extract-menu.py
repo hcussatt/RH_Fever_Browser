@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Convert this game's original select-menu icon, from the user's ISO only.
+"""Convert this game's original select-menu icon and description, from the user's ISO only.
 
 A game the original song select has no icon for (the GBA games, Night Walk) gets one drawn from
 its own converted sprites (web.iconArt in game.json): one cell of a cell animation, cropped and
@@ -7,6 +7,7 @@ fitted over a colour the game itself uses, inside the frame of an original icon.
 import importlib.util
 import json
 import math
+import re
 from pathlib import Path
 
 import numpy as np
@@ -111,13 +112,27 @@ def drawn_icon(out, art, frame_icon):
     return Image.fromarray(icon.round().astype(np.uint8))
 
 
+def description(title, text):
+    """The song select's description of a game (riq_title_E.bmg): a title message's id plus 1000
+    holds its description. Game titles first (1000s), then the rhythm toys and extra games (3000s)."""
+    ids = sorted((i for i, t in text.items() if t == title and (1000 <= i < 2000 or 3000 <= i < 4000)),
+                 key=lambda i: (i >= 3000, i))
+    found = next((text[i+1000] for i in ids if i+1000 in text), None)
+    # Lines are broken for the original's box; the menu wraps the text itself. Tags are dropped.
+    return ' '.join(re.sub(r'\{[0-9a-f]*\}', '', found).split()) if found else None
+
+
 def main():
-    web = manifest(game()).get('web', {})
+    profile = manifest(game())
+    web = profile.get('web', {})
     out = assets(game())
+    module = layout()
+    text = module.messages(require(DISC/'message'/'riq_title_E.bmg').read_bytes())
+    (out/'menu.json').write_text(json.dumps({'description': description(profile['title'], text)}, ensure_ascii=False)+'\n')
     if web.get('icon'):
-        out_icon = layout().tpl(require(DISC/'menu'/web['icon']).read_bytes())
+        out_icon = module.tpl(require(DISC/'menu'/web['icon']).read_bytes())
     elif web.get('iconArt'):
-        out_icon = drawn_icon(out, web['iconArt'], layout().tpl(require(DISC/'menu'/FRAME_ICON).read_bytes()))
+        out_icon = drawn_icon(out, web['iconArt'], module.tpl(require(DISC/'menu'/FRAME_ICON).read_bytes()))
     else:
         return
     out_icon.save(out/'menu-icon.png')

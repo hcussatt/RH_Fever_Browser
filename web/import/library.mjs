@@ -18,13 +18,12 @@ function selectGame(id,{focus=false,reveal=true,animate=true}={}){
  const changed=selected!==id;selected=id;
  for(const other of $('#games').querySelectorAll('.game')){const active=other===card;other.setAttribute('aria-pressed',String(active));other.tabIndex=active?0:-1;}
  const group=menuGroups[Number(card.dataset.group)];
- $('#selected-number').textContent=card.dataset.number;
  $('#selected-title').textContent=card.dataset.title;
  $('#selected-art').dataset.game=id;$('#selected-art').replaceChildren(card.querySelector('.game-art').cloneNode(true));$('#selected-art').hidden=false;
- $('#selected-status').textContent=card.dataset.ready==='true'?'Ready when you are.':card.dataset.update==='true'?'Import your disc for this update.':'Load your disc to bring this game to life.';
+ $('#selected-status').textContent=card.dataset.ready==='true'?card.dataset.description||'Ready when you are.':card.dataset.update==='true'?'Import your disc for this update.':'Load your disc to bring this game to life.';
  $('#selected-action').replaceChildren();
  if(card.dataset.ready==='true'){
-  const a=Object.assign(document.createElement('a'),{className:'play',textContent:'LET’S PLAY',href:new URL(id+'/',siteRoot)});$('#selected-action').append(a);
+  const a=Object.assign(document.createElement('a'),{className:'play',textContent:'PLAY',href:new URL(id+'/',siteRoot)});$('#selected-action').append(a);
  }else{const button=Object.assign(document.createElement('button'),{className:'screen-button',textContent:'Load disc'});button.onclick=openImport;$('#selected-action').append(button);}
  $('#current-set').textContent=group.title;
  for(const dot of $('#set-dots').children)dot.setAttribute('aria-current',String(dot.dataset.group===card.dataset.group));
@@ -63,6 +62,12 @@ async function render(){
    else if(stored){
     const key=entry.cache,cache=await caches.open(key),response=await cache.match(new URL(id+'/assets/menu-icon.png',siteRoot));
     if(response){if(!iconURLs.has(key))iconURLs.set(key,URL.createObjectURL(await response.blob()));icon=iconURLs.get(key);}
+   }
+   // The original song select's description (tools/extract-menu.py), for a prepared game.
+   if(stored){
+    const url=new URL(id+'/assets/menu.json',siteRoot);
+    const response=build.local?await fetch(url):await (await caches.open(entry.cache)).match(url);
+    if(response?.ok)card.dataset.description=(await response.json().catch(()=>({}))).description||'';
    }
    if(icon){const img=new Image();img.src=icon;img.alt='';img.onerror=()=>{art.classList.remove('has-icon');art.textContent=cardNumber;};art.classList.add('has-icon');art.append(img);}else art.textContent=id.startsWith('remix')?'MIX '+id.slice(5):String(number).padStart(2,'0');
    card.append(art);
@@ -121,7 +126,7 @@ try{
  const deploymentResponse=await fetch(new URL('deployment.json',siteRoot));
  [build,games]=await Promise.all([deploymentResponse.status===404?Promise.resolve({version:'local',local:true}):deployment(),fetch(new URL('games.json',siteRoot)).then(r=>r.json())]);
  if(!games.length)throw new Error('No web games are available in this deployment.');
- selected=groupGames(games)[0].games[0].id;$('#game-count').textContent=String(listed().length).padStart(2,'0');
+ selected=groupGames(games)[0].games[0].id;
  $('#version').textContent=build.version;await render();
  mountMultiplayer({games:listed(),version:build.version,openImport});
  if(!build.local&&'serviceWorker' in navigator)navigator.serviceWorker.register(new URL('sw.js',siteRoot),{scope:siteRoot.pathname}).catch(console.warn);
