@@ -250,6 +250,7 @@ static void ex_scene_unload(void){
   for(uint32_t i=0;i<3;i++){r[3]=rd32(0x80320200+i*4);r[4]=base_canvas;r[5]=0;r[6]=0;call(0x801dcfa4);}
   checker_count=0;for(int i=0;i<256;i++)input_map[i]=i;
   wr32(rd32(0x80320170)+0x418,0); // the scene's wrong-input callback
+  wr8(rd32(0x80320170)+0x42f,1); // wrong presses restart the wrong-press timer again (fn_801E9604)
   wr32(RENDER_EFFECT,0); // fn_8009E1C4
   cool_frames[0]=cool_frames[1]=6; // A and B cool frames back to 6 (fn_801D5500)
   layout_count=0;emit(15,MESG_CLEAR<<8,0); // CLayoutManager::fn_801D6BB0
@@ -529,7 +530,10 @@ static void call(uint32_t address){
   case 0x801e9488:score_sum+=(r[4]?r[4]:wrong_count*5);score_count++;wrong_count=0;break;
   // CInputCheckManager::fn_801E94E8(type): a press of A or A+B (unk430) restarts the wrong-press
   // timer, as a press with no cue does in press() (Bossa Nova's checker calls it itself).
-  case 0x801e94e8:if(r[4]==4||r[4]==6)wrong_timer=48;break;
+  case 0x801e94e8:if(rd8(rd32(0x80320170)+0x42f)&&(r[4]==4||r[4]==6))wrong_timer=48;break;
+  // CInputCheckManager::fn_801E9604(on), unk42F: whether wrong presses start the wrong-press timer
+  // and checkers see it (only Power Calligraphy turns it off).
+  case 0x801e9604:wr8(rd32(0x80320170)+0x42f,r[4]&255);break;
   case 0x801e9d58:input_map[r[4]&255]=r[5];break;
   case 0x801e9c40:for(int i=0;i<256;i++)input_map[i]=i;break;
   case 0x80004714:memset(ram+idx(r[3]),r[4],r[5]);break;
@@ -769,6 +773,7 @@ EMSCRIPTEN_KEEPALIVE void initialize_scene(void){
   // gTickFlowManager's own table: _1C is registerFlow.
   uint32_t flow_vtable=alloc(256);memcpy(ram+idx(flow_vtable),ram+idx(vtable),256);wr32(flow_vtable+0x1c,0x8fff001c);wr32(rd32(0x80320174),flow_vtable);
   invoke1(0x801ead4c,rd32(0x8032016c));
+  wr8(rd32(0x80320170)+0x42f,1); // CInputCheckManager's constructor
   wrf32(rd32(0x80320174)+0x60,1.0f); // CTickFlowManager::mSpeed
   chart_handles=alloc(64*8);
   r[3]=2;call(profiles[profile_index].create);scene=r[3];wr32(rd32(0x80320180)+4,scene);
@@ -869,7 +874,7 @@ static void press(uint32_t type){
   for(int i=(int)checker_count-1;i>=0;i--){
     uint32_t c=checkers[i];if(rd8(c+0x71))continue;
     r[3]=c;r[4]=type;call(0x801e7e28);if(!(r[3]&0xff))continue; // checker waits for this input type
-    uint32_t quality=0x80400000;r[3]=c;r[4]=quality;r[5]=wrong_timer>0;f[1].d=0;
+    uint32_t quality=0x80400000;r[3]=c;r[4]=quality;r[5]=wrong_timer>0&&rd8(rd32(0x80320170)+0x42f);f[1].d=0;
     call(rd32(rd32(c)+0x20));uint32_t judgment=r[3];
     if(judgment<=1){
       consumed=1;r[3]=c;r[4]=type;call(rd32(rd32(c)+(judgment==0?0x24:0x28)));
@@ -885,7 +890,7 @@ static void press(uint32_t type){
     uint32_t wrong=rd32(rd32(0x80320170)+0x418);
     if(wrong){r[3]=type;call(wrong);}
     // CInputCheckManager::fn_801E94E8 and the stray count only follow A and A+B (unk430).
-    if(type==4||type==6){stray++;wrong_timer=48;wrong_count=wrong_count<6?wrong_count+1:6;}
+    if(type==4||type==6){stray++;if(rd8(rd32(0x80320170)+0x42f))wrong_timer=48;wrong_count=wrong_count<6?wrong_count+1:6;}
   }
 }
 // The buttons pressed (trig) and let go (release) this frame: bit 0 A, bit 1 B.

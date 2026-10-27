@@ -49,6 +49,10 @@ def textures(prefix=''):
         h,w,fmt,start = struct.unpack_from('>HHII',data,header)
         assert fmt in (5,6,9), f'Unsupported texture format {fmt}'
         name=f'{prefix}texture-{i}.png'
+        # Tiles cover the texture padded to whole tiles (Power Calligraphy has 465x801); the
+        # padding is decoded and cropped off.
+        H,W=h,w
+        h,w=-(-H//4)*4,-(-W//(8 if fmt==9 else 4))*(8 if fmt==9 else 4)
         if fmt == 9:
             # C8: 8x4 tiles of palette indices into the texture's palette (RGB565 or RGB5A3).
             palette_header = u32(data,u32(data,8)+i*8+4)
@@ -58,7 +62,7 @@ def textures(prefix=''):
             indices = indices.reshape(h//4,w//8,4,8).transpose(0,2,1,3).reshape(h,w)
             words = np.frombuffer(data,dtype='>u2',count=count,offset=palette_start).astype(np.uint16)
             colors = rgb565(words) if palette_format == 1 else rgb5a3(words)
-            Image.fromarray(colors[indices],'RGBA').save(OUT/name)
+            Image.fromarray(colors[indices][:H,:W],'RGBA').save(OUT/name)
             paths.append(name)
             continue
         if fmt == 6:
@@ -68,12 +72,12 @@ def textures(prefix=''):
             rgba[...,3],rgba[...,0] = tiles[:,:,0,:,0],tiles[:,:,0,:,1]
             rgba[...,1],rgba[...,2] = tiles[:,:,1,:,0],tiles[:,:,1,:,1]
             rgba = rgba.reshape(h//4,w//4,4,4,4).transpose(0,2,1,3,4).reshape(h,w,4)
-            Image.fromarray(rgba,'RGBA').save(OUT/name)
+            Image.fromarray(rgba[:H,:W],'RGBA').save(OUT/name)
             paths.append(name)
             continue
         words = np.frombuffer(data,dtype='>u2',count=w*h,offset=start).astype(np.uint16)
         words = words.reshape(h//4,w//4,4,4).transpose(0,2,1,3).reshape(h,w)
-        Image.fromarray(rgb5a3(words),'RGBA').save(OUT/name)
+        Image.fromarray(rgb5a3(words)[:H,:W],'RGBA').save(OUT/name)
         paths.append(name)
     return paths
 

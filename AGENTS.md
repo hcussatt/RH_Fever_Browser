@@ -127,6 +127,7 @@ These come from the repository owner and apply to every contributor and agent.
 
 - Next: the remaining remixes, each with its source minigames, following the steps above.
 - Planned: a settings menu with separate volume controls for the music and the sound effects (Henry, 2026-10-27).
+- Done: Power Calligraphy (`agbkanji`) and The Clappy Trio (`agbclap`) under Other games (Henry, 2026-10-27).
 - Done: the Rhythm Test (`calibrate`) sets the audio delay for wireless headphones, with a reset to default in both menus (Henry, 2026-10-27; see docs/engine.md, Timing model).
 - Planned versus mode (designed for, not built): each player plays in their own session under a username; misses are counted and compared at the end to pick a winner. A match is four songs: a remix's source minigames then that remix, or three random minigames then a random remix. Networking must never touch local timing or audio.
 - Later and low priority: room for mods and custom charts, a live versus view, and minigames from other Rhythm Heaven entries (GBA, DS, 3DS) as new console backends after Fever is done.

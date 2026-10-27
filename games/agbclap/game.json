@@ -1,0 +1,29 @@
+{
+  "$schema": "../../schemas/game.schema.json",
+  "schemaVersion": 1,
+  "id": "agbclap",
+  "title": "The Clappy Trio",
+  "action": "Clap",
+  "platform": "wii",
+  "wii": {
+    "scene": "AgbClap",
+    "cellanim": "EN/content2/cellanim/agbClap/ver0/cellanim.szs",
+    "units": [
+      "Game/AgbClap/SceneAgbClap.cpp",
+      "Game/AgbClap/MyChecker.cpp",
+      "Game/AgbClap/MyFlow.cpp"
+    ],
+    "banks": [
+      "handclap"
+    ],
+    "projection": [
+      832,
+      456
+    ],
+    "endsWithMusic": true
+  },
+  "web": {
+    "enabled": false,
+    "order": 100
+  }
+}
