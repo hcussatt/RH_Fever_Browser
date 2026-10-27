@@ -17,10 +17,7 @@
     "banks": [
       "nightwalk"
     ],
-    "projection": [
-      832,
-      456
-    ],
+    "projection": [832, 456],
     "endsWithMusic": true,
     "results": false,
     "layout": {
@@ -113,6 +110,14 @@
   },
   "web": {
     "enabled": true,
-    "expectedCues": 183
+    "expectedCues": 183,
+    "iconArt": {
+      "bank": "nightwalk",
+      "cell": 58,
+      "background": {
+        "texture": "layout-bgUchu_00.tpl.png",
+        "pixel": [0, 0]
+      }
+    }
   }
 }

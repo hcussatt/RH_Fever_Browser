@@ -24,15 +24,19 @@
       "sun",
       "ten"
     ],
-    "projection": [
-      832,
-      456
-    ],
+    "projection": [832, 456],
     "endsWithMusic": true
   },
   "web": {
     "enabled": true,
     "order": 90,
-    "expectedCues": 29
+    "expectedCues": 29,
+    "iconArt": {
+      "bank": "kanji_ex_i",
+      "animation": "kanji_ex_i_man_pray_L",
+      "background": {
+        "color": [255, 255, 255]
+      }
+    }
   }
 }
