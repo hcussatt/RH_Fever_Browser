@@ -157,8 +157,8 @@ export async function createRenderer(g,canvas){
   current=new Set(actors);
   for(const a of matrices.keys())if(!current.has(a))matrices.delete(a);
   for(const a of actors)if(!u32(a+0xb0))makeMatrix(a,identity);
-  // Screen units from the manifest. Tap Trial uses the original wide projection,
-  // x +/-416, y +/-228 (CellAnimManager::setupProj); Hole in One's 854x480 is not yet qualified.
+  // Screen units from the manifest: every game uses the original wide projection, x +/-416, y +/-228
+  // (CellAnimManager::setupProj). A wider one left the edges uncovered by full-screen masks.
   const [w,h]=g.manifest.wii.projection,origin=[canvas.width/w,0,0,canvas.height/h,canvas.width/2,canvas.height/2];
   // CExScene::_1C hides the "you" marker while the screen shows an instruction example (lbl_80320228).
   const hiddenYou=u8(0x80320228)?u32(0x80320200):0;
