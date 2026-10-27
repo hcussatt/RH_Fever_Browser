@@ -3,7 +3,7 @@
 import {createLayout} from './layout.mjs';
 import {assetResponse,assetImage} from './assets.mjs';
 export async function createResults(g,canvas){
- let steps=0,events=[],cursor=0,screen=0,ready=false,done=false,fade=0,fadeFrom=0,fadeTarget=0,fadeFrame=0,fadeDuration=0,result;
+ let steps=0,events=[],cursor=0,screen=0,ready=false,held=false,done=false,fade=0,fadeFrom=0,fadeTarget=0,fadeFrame=0,fadeDuration=0,result;
  let frame=0,resolved=0,sfx,origin,wave;
  let promptMode='hidden',promptFrame=0;
  const session={base:g.base,manifest:g.manifest,layoutEvents:[],get steps(){return steps;}};
@@ -62,8 +62,10 @@ export async function createResults(g,canvas){
   if(!ready||done)return;
   g.core._grading_input(down?1:0);
   for(const e of g.drain())if(e[0]===1)sfx.play(e[1]);
-  if(down){promptMode='pressed';promptFrame=frame;}
-  else {ready=false;resolve();}
+  // A release counts only after a press the prompt took: letting go of a button held from before it
+  // appeared left the original flow waiting for a press while this screen stopped taking input.
+  if(down){held=true;promptMode='pressed';promptFrame=frame;}
+  else if(held){held=false;ready=false;resolve();}
  }
  function apply(e,at){
   if(e.kind===22){fadeFrom=fade;fadeTarget=e.value?0:1;fadeDuration=e.extra;fadeFrame=at;}
@@ -76,7 +78,7 @@ export async function createResults(g,canvas){
   if(e.value===1)for(let i=0;i<3;i++)p('T_Comment_0'+i).visible=true;
   if(e.value===2){p(['N_HI_00','N_OK_00','N_NG_00'][result.grade]).visible=true;p('N_But_00').visible=result.but;}
   if(e.value===4)p('T_Follow_00').visible=p('N_Follow_00').visible=true;
-  if(e.value===5)ready=true;
+  if(e.value===5){ready=true;held=false;}
  }
  function drawBank(bank,textures,key,x=0,y=0){
   // CExScene's default 832x456 orthographic cell-animation canvas.
