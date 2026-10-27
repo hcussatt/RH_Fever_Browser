@@ -27,7 +27,8 @@
       "bank": "handclap",
       "animation": "handclap_man_wait",
       "background": {
-        "color": [255, 255, 255]
+        "texture": "texture-0.png",
+        "pixel": [131, 197]
       }
     }
   }
