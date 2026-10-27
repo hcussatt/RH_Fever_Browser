@@ -103,7 +103,6 @@ function selectGame(id,{focus=false,reveal=true,animate=true}={}){
   const a=Object.assign(document.createElement('a'),{className:'play',textContent:'PLAY',href:new URL(id+'/',siteRoot)});$('#selected-action').append(a);
  }else{const button=Object.assign(document.createElement('button'),{className:'screen-button',textContent:'Load disc'});button.onclick=openImport;$('#selected-action').append(button);}
  $('#current-set').textContent=group.title;
- for(const dot of $('#set-dots').children)dot.setAttribute('aria-current',String(dot.dataset.group===card.dataset.group));
  $('#previous-set').disabled=Number(card.dataset.group)===0;$('#next-set').disabled=Number(card.dataset.group)===menuGroups.length-1;
  if(focus)card.focus({preventScroll:true});
  if(reveal){const set=card.closest('.game-set'),scroller=$('#games');scroller.scrollTo({left:set.offsetLeft-scroller.offsetLeft-(scroller.clientWidth-set.offsetWidth)/2,behavior:animate&&!reducedMotion()?'smooth':'instant'});}
@@ -154,10 +153,7 @@ async function render(){
   fragment.append(set);
  }
  if(version!==renderVersion)return;
- $('#games').replaceChildren(fragment);$('#set-dots').replaceChildren();
- for(const [i,group] of menuGroups.entries()){
-  const dot=document.createElement('button');dot.type='button';dot.dataset.group=String(i);dot.setAttribute('aria-label','Go to '+group.title);dot.onclick=()=>moveSelection(i-Number($('#games .game[aria-pressed=true]').dataset.group),0);$('#set-dots').append(dot);
- }
+ $('#games').replaceChildren(fragment);
  showLogo();
  selectGame(selected,{focus:focused,animate:false});
  const estimate=await navigator.storage?.estimate?.();
