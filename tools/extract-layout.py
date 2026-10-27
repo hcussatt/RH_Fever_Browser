@@ -319,7 +319,9 @@ def font(b, chars):
         g = index.get(c, alt)
         sheet, cell = divmod(g, per_sheet)
         y, x = divmod(cell, rows)
-        cells.append((sheet, x*(cw+1), y*(ch+1)))
+        # Cells sit cellWidth+1 apart with the glyph from one pixel in (nw4r ResFontBase: cellX =
+        # (cellWidth+1)*column + 1); taking the cell from 0 cut each glyph's last column.
+        cells.append((sheet, x*(cw+1)+1, y*(ch+1)+1))
         left, glyph_width, char_width = widths.get(g, struct.unpack_from('>bBb', b, finf+12))
         glyphs[c] = {'cell': len(cells)-1, 'left': left, 'glyphWidth': glyph_width, 'charWidth': char_width}
     columns = 16
