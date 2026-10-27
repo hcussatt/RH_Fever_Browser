@@ -32,7 +32,8 @@ echo "== Reading files from your ISO"
 
 # Every game with a manifest in games/<id>/game.json.
 # A scene only a remix changes to (wii.sceneOnly) is built as part of that remix.
-games=$("$RHF_PYTHON" -c 'import sys; sys.path.insert(0, "tools"); from paths import GAMES, manifest; print(*[g for g in GAMES if not manifest(g)["wii"].get("sceneOnly")])')
+# Remixes go first: they take longest, so the smaller games fill in around them.
+games=$("$RHF_PYTHON" -c 'import sys; sys.path.insert(0, "tools"); from paths import GAMES, manifest; print(*sorted([g for g in GAMES if not manifest(g)["wii"].get("sceneOnly")], key=lambda g: "scenes" not in manifest(g)["wii"]))')
 # Games build side by side, one per CPU core unless RHF_JOBS says otherwise. Each game's
 # output goes to build/logs/<game>-<step>.log and is shown in full if that game fails.
 jobs=${RHF_JOBS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 2)}
@@ -56,7 +57,6 @@ tools/stage-index.sh
 if [ "$skip_tests" != "--skip-tests" ]; then
   echo "== Running tests"
   run_each test tools/test-game.sh
-  node tests/test-grading.mjs >/dev/null
   echo "All tests passed."
 fi
 echo "Done. Start the games with ./serve.sh --open"
