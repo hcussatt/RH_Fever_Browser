@@ -68,9 +68,11 @@ function openInBrowser(url) {
   const command =
     process.platform === "win32"
       ? { file: "cmd", args: ["/c", "start", "", url] }
-      : process.platform === "darwin"
-        ? { file: "open", args: [url] }
-        : { file: "xdg-open", args: [url] };
+      : process.env.WSL_DISTRO_NAME
+        ? { file: "cmd.exe", args: ["/c", "start", "", url] }
+        : process.platform === "darwin"
+          ? { file: "open", args: [url] }
+          : { file: "xdg-open", args: [url] };
 
   try {
     const child = spawn(command.file, command.args, { stdio: "ignore", detached: true });

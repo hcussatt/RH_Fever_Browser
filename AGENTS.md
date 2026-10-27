@@ -18,6 +18,7 @@ Preserve original timing windows, float operation order, scoring, and Perfect ru
 - `games/<id>/game.json`: game manifests, original units, banks, sounds, timing, and projection.
 - `adapters/wii/platform.c`: shared Wii services; `adapters/<id>/game.h`: game-specific addresses and hooks.
 - `web/engine/`: shared page, clock, input, runtime, rendering, layouts, and audio. `web/index.html`: game picker.
+- `install/`: one-step prerequisite installers for macOS, Windows (WSL) and Ubuntu/Debian.
 - `tools/`: disc extraction, static translation, asset/audio conversion, chart discovery, staging, toolchain setup, and static server. Python tools select games with `RHF_GAME`.
 - `third_party/rhf-decomp/`: pinned upstream submodule. Keep intentional local matching work in `patches/`; do not casually advance the submodule.
 - `tests/`: timing classifiers and complete-level runtime checks.
@@ -25,7 +26,7 @@ Preserve original timing windows, float operation order, scoring, and Perfect ru
 
 ## Build and run
 
-Requires Python 3.10+ with `requirements.txt`, Node.js 18+, Git, Emscripten 5.0.7, and PowerPC binutils. `tools/setup-toolchain.sh` installs toolchain components into `.toolchain/`. The user supplies a USA SOME01 raw ISO and a Wii common key through the mechanisms documented in `README.md`. Only the explicitly authorized public common-key module may contain the key.
+Requires Python 3.10+ with `requirements.txt`, Node.js 18+, Git, Emscripten 5.0.7, and PowerPC binutils. `tools/setup-toolchain.sh` installs toolchain components into `.toolchain/`. `install/` holds the one-step prerequisite installers (`macos.command`, `windows.ps1` via WSL Ubuntu, `linux.sh`), which all end in `install/finish.sh`; keep them in step with any new build prerequisite, download only from official sources, and never download game material. Node.js comes from Emscripten's bundle when none is installed (`tools/env.sh`). The user supplies a USA SOME01 raw ISO and a Wii common key through the mechanisms documented in `README.md`. Only the explicitly authorized public common-key module may contain the key.
 
 Run from the repository root:
 
