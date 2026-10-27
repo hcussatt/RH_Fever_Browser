@@ -15,8 +15,11 @@ export const SETS=[
  {title:'Remix 10',games:['muscle2','flea2','sort2','karateman2','remix10']},
 ];
 export const OTHER='Other games';
+// Games reached only from elsewhere: the Rhythm Test from the library's Audio delay dialog.
+export const UNLISTED=new Set(['calibrate']);
 // Groups a game list ({id,...}) into [{title,games}], keeping only the sets that have a game.
 export function groupGames(games){
+ games=games.filter(g=>!UNLISTED.has(g.id));
  const byId=new Map(games.map(g=>[g.id,g])),placed=new Set(SETS.flatMap(s=>s.games));
  const groups=SETS.map(s=>({title:s.title,games:s.games.filter(id=>byId.has(id)).map(id=>byId.get(id))}));
  groups.push({title:OTHER,games:games.filter(g=>!placed.has(g.id))});

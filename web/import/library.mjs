@@ -1,10 +1,12 @@
 import {siteRoot,readLibrary,writeLibrary,deployment} from '../engine/assets.mjs';
 import {mountMultiplayer} from '../engine/multiplayer.mjs';
 import {WII_COMMON_KEY} from './common-key.mjs';
-import {groupGames} from '../engine/menu.mjs';
+import {groupGames,UNLISTED} from '../engine/menu.mjs';
 import {getDelayMs,setDelayMs,resetDelay,LIMIT_MS} from '../engine/delay.mjs';
 const $=s=>document.querySelector(s);
 let worker,build,games,selected;
+// The games game select shows (the importer still prepares every game, the unlisted Rhythm Test too).
+const listed=()=>games.filter(g=>!UNLISTED.has(g.id));
 const iconURLs=new Map();
 const status=(message,error=false)=>{$('#progress').textContent=message;$('#progress').classList.toggle('error',error);};
 function busy(value){$('#import').disabled=value;$('#iso').disabled=value;$('#remove').disabled=value;$('#cancel').hidden=!value;$('#busy').hidden=!value;}
@@ -74,7 +76,7 @@ async function render(){
  for(const [i,group] of menuGroups.entries()){
   const dot=document.createElement('button');dot.type='button';dot.dataset.group=String(i);dot.setAttribute('aria-label','Go to '+group.title);dot.onclick=()=>moveSelection(i-Number($('#games .game[aria-pressed=true]').dataset.group),0);$('#set-dots').append(dot);
  }
- $('#collection-count').textContent=String(readyCount).padStart(2,'0')+' / '+String(games.length).padStart(2,'0');
+ $('#collection-count').textContent=String(readyCount).padStart(2,'0')+' / '+String(listed().length).padStart(2,'0');
  selectGame(selected,{focus:focused,animate:false});
  const estimate=await navigator.storage?.estimate?.();
  $('#storage').textContent=estimate?`${Math.round((estimate.usage||0)/1048576)} MB stored by this origin. Clearing site data removes your games.`:'Clearing site data removes your imported games.';
@@ -118,9 +120,9 @@ try{
  const deploymentResponse=await fetch(new URL('deployment.json',siteRoot));
  [build,games]=await Promise.all([deploymentResponse.status===404?Promise.resolve({version:'local',local:true}):deployment(),fetch(new URL('games.json',siteRoot)).then(r=>r.json())]);
  if(!games.length)throw new Error('No web games are available in this deployment.');
- selected=groupGames(games)[0].games[0].id;$('#game-count').textContent=String(games.length).padStart(2,'0');
+ selected=groupGames(games)[0].games[0].id;$('#game-count').textContent=String(listed().length).padStart(2,'0');
  $('#version').textContent=build.version;await render();
- mountMultiplayer({games,version:build.version,openImport});
+ mountMultiplayer({games:listed(),version:build.version,openImport});
  if(!build.local&&'serviceWorker' in navigator)navigator.serviceWorker.register(new URL('sw.js',siteRoot),{scope:siteRoot.pathname}).catch(console.warn);
 }catch(e){status(e.message,true);$('#import').disabled=true;}
 $('#import-form').onsubmit=async e=>{
