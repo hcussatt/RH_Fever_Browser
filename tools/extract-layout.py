@@ -35,39 +35,50 @@ def name_table(b, pos):
     return [cstr(b, pos+12+u32(b, pos+12+i*8)) for i in range(u16(b, pos+8))]
 
 
+def direct(data, fmt, start, w, h):
+    """I4, I8, RGB565, RGB5A3 and RGBA8 as RGBA pixels (intensity formats in all four channels).
+    Tiles cover the image padded to whole tiles; the padding is cropped off."""
+    tw, th = {0:(8,8),1:(8,4),4:(4,4),5:(4,4),6:(4,4)}[fmt]
+    pw, ph = (w+tw-1)//tw*tw, (h+th-1)//th*th
+    untile = lambda a: a.reshape(ph//th, pw//tw, th, tw, *a.shape[1:]).swapaxes(1, 2).reshape(ph, pw, *a.shape[1:])[:h, :w]
+    if fmt in (0, 1):
+        if fmt == 0:
+            nib = np.frombuffer(data, np.uint8, pw*ph//2, start)
+            v = np.empty(pw*ph, np.uint8)
+            v[0::2], v[1::2] = (nib >> 4)*17, (nib & 15)*17
+        else:
+            v = np.frombuffer(data, np.uint8, pw*ph, start)
+        v = untile(v)
+        return np.dstack([v, v, v, v])
+    if fmt == 6:
+        # 4x4 tiles of 64 bytes: alpha/red pairs, then green/blue pairs.
+        t = np.frombuffer(data, np.uint8, pw*ph*4, start).reshape(-1, 2, 16, 2)
+        a, r, g, b = t[:, 0, :, 0], t[:, 0, :, 1], t[:, 1, :, 0], t[:, 1, :, 1]
+        return untile(np.stack([r, g, b, a], -1).reshape(-1, 4))
+    v = untile(np.frombuffer(data, '>u2', pw*ph, start).astype(np.int32))
+    five = lambda x: (x << 3) | (x >> 2)
+    if fmt == 4:
+        out = [five(v >> 11), ((v >> 5) & 63) << 2 | ((v >> 5) & 63) >> 4, five(v & 31), np.full_like(v, 255)]
+    else:
+        opaque = (v & 0x8000) != 0
+        a = (v >> 12) & 7
+        out = [np.where(opaque, five((v >> s) & 31), ((v >> (s*4//5)) & 15)*17) for s in (10, 5, 0)]
+        out.append(np.where(opaque, 255, (a << 5) | (a << 2) | (a >> 1)))
+    return np.stack(out, -1).astype(np.uint8)
+
+
 def tpl(data):
     """Intensity and alpha of a one-image TPL as an RGBA image (I in the colour channels):
     the material's colours are applied in the browser, like the original's TEV setup."""
     header = u32(data, u32(data, 8))
     h, w, fmt, start = struct.unpack_from('>HHII', data, header)
     if fmt in (0,1,4,5,6):
-        tw, th, bs = {0:(8,8,32),1:(8,4,32),4:(4,4,32),5:(4,4,32),6:(4,4,64)}[fmt]
-        pixels = np.zeros((h,w,4),np.uint8)
-        expand = lambda v, bits: ((v<<3)|(v>>2)) if bits==5 else ((v<<2)|(v>>4))
-        for y in range(h):
-            for x in range(w):
-                tile = ((y//th)*((w+tw-1)//tw)+x//tw)*bs+start
-                j = (y%th)*tw+x%tw
-                if fmt == 0:
-                    v = ((data[tile+j//2] >> (0 if j%2 else 4))&15)*17
-                    rgba = (v,v,v,v)
-                elif fmt == 1:
-                    v=data[tile+j];rgba=(v,v,v,v)
-                elif fmt == 6:
-                    a,r = data[tile+j*2:tile+j*2+2];g,b=data[tile+32+j*2:tile+34+j*2];rgba=(r,g,b,a)
-                else:
-                    v=u16(data,tile+j*2)
-                    if fmt == 4:rgba=(expand(v>>11,5),expand((v>>5)&63,6),expand(v&31,5),255)
-                    elif v&0x8000:rgba=tuple(expand((v>>s)&31,5) for s in (10,5,0))+(255,)
-                    else:
-                        a=(v>>12)&7
-                        rgba=tuple(((v>>s)&15)*17 for s in (8,4,0))+((a<<5)|(a<<2)|(a>>1),)
-                pixels[y,x]=rgba
-        return Image.fromarray(pixels,'RGBA')
+        return Image.fromarray(direct(data, fmt, start, w, h), 'RGBA')
     if fmt == 14:
         return Image.fromarray(cmpr(data, start, w, h), 'RGBA')
     if fmt == 2:  # IA4: 8x4 tiles, alpha in the high nibble.
-        px = np.frombuffer(data, np.uint8, w*h, start).reshape(h//4, w//8, 4, 8).transpose(0, 2, 1, 3).reshape(h, w)
+        pw, ph = (w+7)//8*8, (h+3)//4*4  # tiles cover the image padded to whole tiles
+        px = np.frombuffer(data, np.uint8, pw*ph, start).reshape(ph//4, pw//8, 4, 8).transpose(0, 2, 1, 3).reshape(ph, pw)[:h, :w]
         i, a = (px & 15)*17, (px >> 4)*17
     elif fmt == 0:  # I4: 8x8 tiles, two pixels per byte.
         i = a = i4(data, start, w, h)

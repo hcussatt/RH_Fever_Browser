@@ -101,6 +101,21 @@ def main(iso, *, sound_archive=True):
             out.parent.mkdir(parents=True,exist_ok=True)
             out.write_bytes(data)
             report['files'][f'{game}/epilogue/{name}']=hashlib.sha256(data).hexdigest()
+    # The title screen each game opens with (layout_prologue_<cellanim folder>_<version>, a remix's
+    # remix_ver<N>), drawn behind the game select. A game without one (the Rhythm Test) has none.
+    for game in GAMES:
+        profile = manifest(game)['wii']
+        if profile.get('sceneOnly'):
+            continue
+        name = 'remix_ver'+game[len('remix'):] if 'scenes' in profile else '_'.join(profile['cellanim'].split('/')[-3:-1])
+        path = f'EN/content2/layout/layout_prologue_{name}.szs'
+        if path not in disc.files:
+            continue
+        for file, data in u8_files(disc.get(path)).items():
+            out = DISC/game/'prologue'/file
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_bytes(data)
+            report['files'][f'{game}/prologue/{file}'] = hashlib.sha256(data).hexdigest()
     layouts = [(f'{game}/layout', layout) for game, layout in LAYOUT.items()]
     layouts += [(f'{game}/lyric-layout', layout) for game, layout in LYRIC_LAYOUT.items()]
     layouts += [(f'message-layout/{key}', layout) for key, layout in MESSAGE_LAYOUTS.items()]

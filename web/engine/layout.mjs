@@ -65,12 +65,12 @@ export async function createLayout(g,{spec=g.manifest.wii.layout,file='layout.js
     if(t<2)p.translate[t]=v;else if(t===5)p.rotate=v;else if(t===6||t===7)p.scale[t-6]=v;else if(t===8||t===9)p.size[t-8]=v;
    }
    if(tags.RLVC?.[16])p.alpha=Math.min(Math.max(hermite(tags.RLVC[16],f)+.5,0),255)|0;
-   if(tags.RLVI?.[0])p.visible=!!step(tags.RLVI[0],f);
+   if(tags.RLVI?.[0])p.visible=!!step(tags.RLVI[0],f)&&!hidden.has(name);
    if(tags.RLTP?.[0]){const m=data.materials.findIndex(m=>m.name===name);if(m>=0)materialImage[m]=a.anim.timg[step(tags.RLTP[0],f)];}
    if(tags.RLTS||tags.RLMC){
     const m=live[data.materials.findIndex(m=>m.name===name)];
     // Texture SRT (index.target): translate S/T, rotate, scale S/T, in the resource's order.
-    for(const [key,keys] of Object.entries(tags.RLTS||{})){const [i,t]=key.includes('.')?key.split('.').map(Number):[0,+key];m.srts[i][t]=hermite(keys,f);}
+    for(const [key,keys] of Object.entries(tags.RLTS||{})){const [i,t]=key.includes('.')?key.split('.').map(Number):[0,+key];if(m.srts?.[i])m.srts[i][t]=hermite(keys,f);}
     // Material colour 0-3, colour registers 4-15, konstant colours 16-31.
     for(const [key,keys] of Object.entries(tags.RLMC||{})){
      const t=+key,v=Math.min(Math.max(Math.round(hermite(keys,f)),0),255);
@@ -323,8 +323,14 @@ export async function createLayout(g,{spec=g.manifest.wii.layout,file='layout.js
  const windows=new WeakMap();
  function drawWindow(ctx,p,m,alpha){
   if(p.frames.length!==1)throw new Error('Unsupported original window frame count');
-  const material=data.materials[p.frames[0].material],img=tint(images[data.textures[material.texture]],material),r=rect(p);
+  const material=data.materials[p.frames[0].material],r=rect(p);
   if(r.w<=0||r.h<=0)return;
+  // A frame without a texture (the title screens' plain backgrounds and bars) is its colour alone.
+  if(material.texture==null){
+   const c=data.materials[p.material].color1,v=p.vertexColors?.[0]||[255,255,255,255],f=c.map((ch,i)=>Math.round(ch*v[i]/255));
+   ctx.setTransform(...m);ctx.globalAlpha=alpha*f[3]/255;ctx.fillStyle=`rgb(${f[0]},${f[1]},${f[2]})`;ctx.fillRect(r.left,-r.top,r.w,r.h);return;
+  }
+  const img=tint(images[data.textures[material.texture]],material);
   // Keep the content material separate: a speech balloon is white inside,
   // whereas Hole in One's frame has a transparent centre.
   const c=data.materials[p.material].color1,v=p.vertexColors?.[0]||[255,255,255,255];

@@ -3,6 +3,8 @@ import {mountMultiplayer} from '../engine/multiplayer.mjs';
 import {WII_COMMON_KEY} from './common-key.mjs';
 import {groupGames,UNLISTED} from '../engine/menu.mjs';
 import {getDelayMs,setDelayMs,resetDelay,LIMIT_MS} from '../engine/delay.mjs';
+import {createLayout} from '../engine/layout.mjs';
+import {assetResponse} from '../engine/assets.mjs';
 const $=s=>document.querySelector(s);
 let worker,build,games,selected;
 // The games game select shows (the importer still prepares every game, the unlisted Rhythm Test too).
@@ -12,10 +14,63 @@ const status=(message,error=false)=>{$('#progress').textContent=message;$('#prog
 function busy(value){$('#import').disabled=value;$('#iso').disabled=value;$('#remove').disabled=value;$('#cancel').hidden=!value;$('#busy').hidden=!value;}
 let menuGroups=[],renderVersion=0;
 const reducedMotion=()=>matchMedia('(prefers-reduced-motion: reduce)').matches;
+// Behind the menu: the title screen the hovered or selected game opens with (its prologue layout at
+// the end of its animation, title text hidden; tools/extract-menu.py), and the game select box in
+// its colours. Each change cross-fades.
+const titles=new Map();let titleShown=null,titleRequest=0;
+function titleScreen(id){
+ if(!titles.has(id))titles.set(id,(async()=>{
+  const base=new URL(id+'/',siteRoot),data=await (await assetResponse(new URL('assets/prologue-layout.json',base))).json();
+  const names=Object.keys(data.animations),g={base,steps:1};
+  const layout=await createLayout(g,{spec:{animations:names.map(name=>['RootPane',name]),startAtEnd:names.map((_,i)=>i),hidden:data.hidden},data,events:[]});
+  const full=Object.assign(document.createElement('canvas'),{width:832,height:456}),ctx=full.getContext('2d');
+  ctx.fillStyle='#000';ctx.fillRect(0,0,832,456);layout.draw(ctx,full);
+  // Leave out the black bars many title screens have above and below the picture.
+  // A row is bar when nearly all of it is dark; thin lines at a bar's edge (a few rows) don't end it.
+  const px=ctx.getImageData(0,0,832,456).data,bar=y=>{let dark=0;for(let i=y*832*4;i<(y+1)*832*4;i+=4)if(Math.max(px[i],px[i+1],px[i+2])<=32)dark++;return dark>=832*.97;};
+  const edge=(from,step)=>{let end=from,gap=0;for(let y=from;Math.abs(y-from)<150&&gap<=3;y+=step){if(bar(y)){end=y+step;gap=0;}else gap++;}return end;};
+  const top=edge(0,1),bottom=edge(455,-1)+1;
+  const canvas=Object.assign(document.createElement('canvas'),{width:832,height:bottom-top});
+  canvas.getContext('2d').drawImage(full,0,top,832,bottom-top,0,0,832,bottom-top);
+  return {canvas,theme:theme(canvas.getContext('2d'))};
+ })().catch(()=>null));
+ return titles.get(id);
+}
+// The title screen's most common lively colour (a coarse histogram of a small copy), or its
+// average when it has none.
+function theme(ctx){
+ const small=Object.assign(document.createElement('canvas'),{width:52,height:28}),s=small.getContext('2d');
+ s.drawImage(ctx.canvas,0,0,52,28);const px=s.getImageData(0,0,52,28).data,counts=new Map(),sum=[0,0,0];
+ for(let i=0;i<px.length;i+=4){
+  const [r,g,b]=[px[i],px[i+1],px[i+2]];sum[0]+=r;sum[1]+=g;sum[2]+=b;
+  const max=Math.max(r,g,b),min=Math.min(r,g,b);if(max<60||max-min<40)continue;
+  const key=(r>>5)<<6|(g>>5)<<3|b>>5,c=counts.get(key)||{n:0,r:0,g:0,b:0};c.n++;c.r+=r;c.g+=g;c.b+=b;counts.set(key,c);
+ }
+ const best=[...counts.values()].sort((a,b)=>b.n-a.n)[0],n=px.length/4;
+ return best&&best.n>8?[best.r/best.n,best.g/best.n,best.b/best.n]:sum.map(v=>v/n);
+}
+function showTitle(id){
+ const request=++titleRequest,card=[...$('#games').querySelectorAll('.game')].find(c=>c.dataset.game===id);
+ if(card?.dataset.ready!=='true'){if(request===titleRequest)setTitle(null);return;}
+ titleScreen(id).then(t=>{if(request===titleRequest)setTitle(t);});
+}
+function setTitle(t){
+ if(t===titleShown)return;titleShown=t;
+ const back=$('#title-backdrop'),old=back.querySelector('canvas.shown');
+ if(t){const c=t.canvas.cloneNode();c.getContext('2d').drawImage(t.canvas,0,0);back.append(c);requestAnimationFrame(()=>requestAnimationFrame(()=>c.classList.add('shown')));}
+ if(old){old.classList.remove('shown');setTimeout(()=>old.remove(),700);}
+ const screen=$('.screen');
+ if(t){
+  const [r,g,b]=t.theme,mix=(k,to)=>[r,g,b].map(v=>Math.round(v+(to-v)*k));
+  screen.style.setProperty('--theme-light',`rgb(${mix(.78,255)})`);
+  screen.style.setProperty('--theme-mid',`rgb(${mix(.5,255)})`);
+  screen.style.setProperty('--theme-shadow',`rgb(${mix(.45,0)})`);
+ }else for(const v of ['--theme-light','--theme-mid','--theme-shadow'])screen.style.removeProperty(v);
+}
 function selectGame(id,{focus=false,reveal=true,animate=true}={}){
  const card=[...$('#games').querySelectorAll('.game')].find(card=>card.dataset.game===id);
  if(!card)return;
- const changed=selected!==id;selected=id;
+ const changed=selected!==id;selected=id;showTitle(id);
  for(const other of $('#games').querySelectorAll('.game')){const active=other===card;other.setAttribute('aria-pressed',String(active));other.tabIndex=active?0:-1;}
  const group=menuGroups[Number(card.dataset.group)];
  $('#selected-title').textContent=card.dataset.title;
@@ -53,7 +108,7 @@ async function render(){
    if(stored)readyCount++;
    const card=document.createElement('button');card.type='button';card.className='game';card.setAttribute('aria-pressed',String(id===selected));card.setAttribute('aria-label',title);card.tabIndex=id===selected?0:-1;
    Object.assign(card.dataset,{game:id,title,group:String(column),row:String(row),number:String(number).padStart(2,'0'),ready:String(!!stored),update:String(!!entry&&!stored),remix:String(id.startsWith('remix'))});
-   card.onclick=()=>selectGame(id);card.ondblclick=()=>$('#selected-action .play')?.click();
+   card.onclick=()=>selectGame(id);card.onmouseenter=()=>showTitle(id);card.ondblclick=()=>$('#selected-action .play')?.click();
    const art=document.createElement('span');art.className='game-art';art.setAttribute('aria-hidden','true');
    let icon;
    // A local build marks games without an original icon (Tap Trial), so a stale file from an older build stays hidden.
@@ -155,6 +210,7 @@ $('#import-form').onsubmit=async e=>{
   worker.postMessage({file,key,version:build.assetVersion||build.version,games});
  }catch(e){worker?.terminate();worker=null;busy(false);status(e.message,true);}
 };
+$('#games').addEventListener('mouseleave',()=>{if(selected)showTitle(selected);});
 $('#cancel').onclick=()=>{worker?.terminate();worker=null;busy(false);status('Import cancelled. Any games already prepared remain available.');render();};
 $('#remove').onclick=()=>$('#confirm-remove').showModal();
 $('#confirm-remove').onclose=async()=>{

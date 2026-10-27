@@ -122,12 +122,38 @@ def description(title, text):
     return ' '.join(re.sub(r'\{[0-9a-f]*\}', '', found).split()) if found else None
 
 
+# Title-screen panes left out behind the menu: the game's name (logo, rogo, title pictures and their
+# shadows) and the remix screens' letters.
+TITLE_TEXT = re.compile(r'logo|rogo|title', re.I)
+REMIX_LETTERS = re.compile(r'^RM_(ri|mi|tsu|ku|su|N)_\d+\.tpl$')
+
+
+def title_screen(out, folder):
+    """The game's title screen (its prologue layout) as a layout the menu draws at the end of its
+    animation, with the title text hidden."""
+    module = layout()
+    data = module.layout((folder/'blyt/prologue.brlyt').read_bytes())
+    data['animations'] = {p.stem: module.animation(p.read_bytes()) for p in sorted((folder/'anim').glob('*.brlan'))}
+    data['images'] = {}
+    for p in sorted((folder/'timg').glob('*.tpl')):
+        name = 'prologue-'+p.name+'.png'
+        module.tpl(p.read_bytes()).save(out/name)
+        data['images'][p.name] = name
+    texture = lambda pane: data['textures'][data['materials'][pane['material']]['texture']] \
+        if pane.get('material') is not None and data['materials'][pane['material']].get('texture') is not None else ''
+    data['hidden'] = [p['name'] for p in data['panes']
+                      if TITLE_TEXT.search(p['name']) or TITLE_TEXT.search(texture(p)) or REMIX_LETTERS.match(texture(p))]
+    (out/'prologue-layout.json').write_text(json.dumps(data, separators=(',', ':'))+'\n')
+
+
 def main():
     profile = manifest(game())
     web = profile.get('web', {})
     out = assets(game())
     module = layout()
     text = module.messages(require(DISC/'message'/'riq_title_E.bmg').read_bytes())
+    if (DISC/game()/'prologue').exists():
+        title_screen(out, DISC/game()/'prologue')
     (out/'menu.json').write_text(json.dumps({'description': description(profile['title'], text)}, ensure_ascii=False)+'\n')
     if web.get('icon'):
         out_icon = module.tpl(require(DISC/'menu'/web['icon']).read_bytes())
