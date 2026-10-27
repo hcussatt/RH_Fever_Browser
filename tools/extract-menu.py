@@ -161,10 +161,16 @@ def title_logo(out, folder):
                 return True
             i = panes[i].get('parent')
         return False
-    texture = lambda p: data['textures'][data['materials'][p['material']]['texture']] \
-        if p.get('material') is not None and data['materials'][p['material']].get('texture') is not None else None
+    def textures(pane):
+        # A material's main texture and every texture its TEV stages read (the logo's masks).
+        if pane.get('material') is None:
+            return set()
+        material = data['materials'][pane['material']]
+        found = {material.get('texture')} | {m['texture'] for m in material.get('maps', [])}
+        return {data['textures'][t] for t in found if t is not None}
     data['hidden'] = [p['name'] for i, p in enumerate(panes) if i and not in_logo(i) and p.get('material') is not None]
-    used = {texture(p) for i, p in enumerate(panes) if in_logo(i)} - {None}
+    used = set().union(*(textures(p) for i, p in enumerate(panes) if in_logo(i)))
+    used |= {name for a in data['animations'].values() for name in a.get('timg', [])}
     data['images'] = {}
     for name in sorted(used):
         module.tpl((folder/'timg'/name).read_bytes()).save(out/('title-'+name+'.png'))
