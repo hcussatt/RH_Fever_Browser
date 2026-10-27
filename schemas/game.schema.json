@@ -19,6 +19,7 @@
         "order": {"type": "integer", "minimum": 0},
         "expectedCues": {"type": "integer", "minimum": 1},
         "icon": {"description": "Original game-select texture, imported locally from layout_gameSelect.szs.", "type": "string", "pattern": "^game_[0-9]{2}_[1-5]\\.00\\.tpl$"},
+        "description": {"description": "Menu description for a game the original song select has none for.", "type": "string"},
         "iconArt": {
           "description": "For a game without an original game-select icon: one cell of its own converted cell animations over a colour the game uses, inside an original icon's frame (tools/extract-menu.py).",
           "type": "object", "additionalProperties": false, "required": ["bank", "background"],

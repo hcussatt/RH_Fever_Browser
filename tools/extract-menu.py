@@ -154,7 +154,7 @@ def main():
     text = module.messages(require(DISC/'message'/'riq_title_E.bmg').read_bytes())
     if (DISC/game()/'prologue').exists():
         title_screen(out, DISC/game()/'prologue')
-    (out/'menu.json').write_text(json.dumps({'description': description(profile['title'], text)}, ensure_ascii=False)+'\n')
+    (out/'menu.json').write_text(json.dumps({'description': description(profile['title'], text) or web.get('description')}, ensure_ascii=False)+'\n')
     if web.get('icon'):
         out_icon = module.tpl(require(DISC/'menu'/web['icon']).read_bytes())
     elif web.get('iconArt'):

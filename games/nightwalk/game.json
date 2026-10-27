@@ -111,6 +111,7 @@
   "web": {
     "enabled": true,
     "expectedCues": 183,
+    "description": "Not just the credits, but a game, too!",
     "iconArt": {
       "bank": "nightwalk",
       "cell": 58,
