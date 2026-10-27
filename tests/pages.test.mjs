@@ -64,9 +64,10 @@ test('Pages project path, local import errors, storage isolation, and offline sh
   await page.locator('.game[data-game=interview]').press('ArrowUp');
   assert.equal(await page.locator('.game[data-game=remix4]').getAttribute('aria-pressed'),'true');
   await page.locator('.game[data-game=remix4]').press('End');
-  await page.waitForFunction(()=>document.querySelector('.game[data-game=agbghost]').getAttribute('aria-pressed')==='true');
+  // End goes to the last game: Night Walk, last of the Other games.
+  await page.waitForFunction(()=>document.querySelector('.game[data-game=nightwalk]').getAttribute('aria-pressed')==='true');
   await page.emulateMedia({reducedMotion:'reduce'});
-  await page.locator('.game[data-game=agbghost]').press('Home');
+  await page.locator('.game[data-game=nightwalk]').press('Home');
   assert.equal(await page.locator('.game[data-game=remix1]').getAttribute('aria-pressed'),'true');
   await page.setViewportSize({width:390,height:844});
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);

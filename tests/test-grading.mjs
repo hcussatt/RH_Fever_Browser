@@ -37,6 +37,9 @@ for(const id of ids){
   }
  }
  console.log(`${id}: ${cases} grading boundary cases`);
+ // Night Walk has no results screen (wii.results false): the level ends on the credits, so the
+ // through grouping and result flow checks below do not apply.
+ if(manifests.find(m=>m.id===id).wii.results===false)continue;
  // A good category beside a weak one exercises the But/follow distinction,
  // which is not covered by single-category threshold sweeps.
  for(let weak=0;weak<criteria.length;weak++)for(let hits=0;hits<=100;hits+=10){
