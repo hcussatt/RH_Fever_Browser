@@ -99,7 +99,10 @@ export async function createRenderer(g,canvas){
  // over black, and its alpha pass as grey. Drawn with the cell's usual blend, the screen becomes
  // colour*alpha + screen*(1-alpha): multiply by 1-alpha, then add colour*alpha.
  const surface=()=>Object.assign(document.createElement('canvas'),{width:640,height:456});
- let screenTex=null;
+ // screenShown: the scene drawing now has a layout for its texture. In a remix the texture another
+ // scene drew stays behind (Remix 10's Micro-Row, whose own screen bank is not modelled, showed
+ // Shrimp Shuffle's shore).
+ let screenTex=null,screenShown=false;
  function renderScreen(l){
   screenTex||={color:surface(),alpha:surface(),inverse:surface(),product:surface()};
   const {color,alpha,inverse,product}=screenTex,fill=(c,style)=>{const x=c.getContext('2d');x.setTransform(1,0,0,1,0,0);x.globalAlpha=1;x.globalCompositeOperation='source-over';x.fillStyle=style;x.fillRect(0,0,640,456);return x;};
@@ -136,7 +139,7 @@ export async function createRenderer(g,canvas){
    if(alpha&&o.w&&o.h){
     ctx.imageSmoothingEnabled=!!u8(a+0xa8);
     const om=mul(mul(origin,m),trs(o.x+o.w*o.scaleX/2,o.y+o.h*o.scaleY/2,o.angle,o.scaleX*(o.flipX?-1:1),o.scaleY*(o.flipY?-1:1)));
-    if(bank.screen){if(!plain(a))throw new Error('Screen bank drawn with a tint');if(screenTex)drawScreen(om,alpha);}
+    if(bank.screen){if(!plain(a))throw new Error('Screen bank drawn with a tint');if(screenTex&&screenShown)drawScreen(om,alpha);}
     else{
      ctx.setTransform(...om);ctx.globalAlpha=alpha;
      if(plain(a)&&!effect)ctx.drawImage(images[bank.texture],o.sx,o.sy,o.w,o.h,-o.w/2,-o.h/2,o.w,o.h);
@@ -166,7 +169,7 @@ export async function createRenderer(g,canvas){
   const hiddenYou=u8(0x80320228)?u32(0x80320200):0;
   const drawn=actors.filter(a=>u8(a+12)!==255&&u8(a+0xa7)&&a!==hiddenYou&&!(u32(a+0xb0)&&u8(a+0xc2))).sort((a,b)=>(u32(b+0x98)|0)-(u32(a+0x98)|0));
   // The dynamic texture is redrawn each frame a screen bank shows (CDynTex::update).
-  const screen=layout?.screen();
+  const screen=layout?.screen();screenShown=!!screen;
   if(screen&&actors.some(a=>banks[u8(a+12)]?.screen&&u8(a+0xa7)))renderScreen(screen);
   // CExScene::_1C: the cell animations on layers 0 and up (CCellAnimManager::_20), then the
   // layouts, then those on negative layers (_24): Night Walk's sky is a layout behind its actors;
