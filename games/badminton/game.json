@@ -28,6 +28,6 @@
   "web": {
     "enabled": true,
     "expectedCues": 120,
-    "icon": "game_04_3.00.tpl"
+    "icon": "game_03_3.00.tpl"
   }
 }

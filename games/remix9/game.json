@@ -1,0 +1,60 @@
+{
+  "$schema": "../../schemas/game.schema.json",
+  "schemaVersion": 1,
+  "id": "remix9",
+  "title": "Remix 9",
+  "action": "Play each game",
+  "platform": "wii",
+  "wii": {
+    "music": "WSD_YAGATE",
+    "scenes": [
+      {
+        "game": "panel",
+        "cellanim": "EN/content2/cellanim/panel/remix09/cellanim.szs"
+      },
+      {
+        "game": "rap",
+        "cellanim": "EN/content2/cellanim/rap/remix09/cellanim.szs"
+      },
+      {
+        "game": "karateman",
+        "cellanim": "EN/content2/cellanim/karateman/remix09/cellanim.szs"
+      },
+      {
+        "game": "fork",
+        "cellanim": "EN/content2/cellanim/fork/remix09/cellanim.szs"
+      },
+      {
+        "game": "robot",
+        "cellanim": "EN/content2/cellanim/robot/remix09/cellanim.szs"
+      },
+      {
+        "game": "rotation",
+        "cellanim": "EN/content2/cellanim/rotation/remix09/cellanim.szs"
+      },
+      {
+        "game": "tambourine",
+        "cellanim": "EN/content2/cellanim/tambourine/remix09/cellanim.szs"
+      },
+      {
+        "game": "golf",
+        "cellanim": "EN/content2/cellanim/baseball/remix09/cellanim.szs"
+      },
+      {
+        "game": "interview",
+        "cellanim": "EN/content2/cellanim/interview/remix09/cellanim.szs"
+      }
+    ],
+    "epilogue": "EN/content2/cellanim/remix/ver9/cellanim_epilogue.szs",
+    "projection": [
+      832,
+      456
+    ],
+    "endsWithMusic": true
+  },
+  "web": {
+    "enabled": true,
+    "expectedCues": 77,
+    "icon": "game_09_5.00.tpl"
+  }
+}

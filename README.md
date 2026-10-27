@@ -15,7 +15,8 @@ Playable today: **Hole in One**, **Tap Trial**, **Love Rap**, **Sneaky Spirits**
 **Flipper-Flop**, **Exhibition Match**, **Flock Step**, **Remix 5**, **Launch Party**,
 **Donk-Donk**, **Bossa Nova**, **Remix 6**, **Tap Troupe**, **Shrimp Shuffle**,
 **Cheer Readers**, **Karate Man**, **Remix 7**, **Samurai Slice 2**, **Working Dough 2**,
-**Built to Scale 2**, **Double Date 2** and **Remix 8**. The game picker
+**Built to Scale 2**, **Double Date 2**, **Remix 8**, **Love Rap 2**, **Cheer Readers 2**,
+**Hole in One 2**, **Screwbot Factory 2** and **Remix 9**. The game picker
 lists them by remix set, as the original song select does.
 
 ## Runtime code here; assets stay local

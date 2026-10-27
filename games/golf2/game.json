@@ -1,0 +1,39 @@
+{
+  "$schema": "../../schemas/game.schema.json",
+  "schemaVersion": 1,
+  "id": "golf2",
+  "title": "Hole in One 2",
+  "action": "Swing",
+  "platform": "wii",
+  "wii": {
+    "scene": "Baseball",
+    "sceneVariant": 2,
+    "cellanim": "EN/content2/cellanim/baseball/ver1/cellanim.szs",
+    "messageLayout": {
+      "archive": "EN/content2/layout/layout_baseball.szs",
+      "file": "baseball.brlyt"
+    },
+    "units": [
+      "Game/Baseball/SceneBaseball.cpp",
+      "Game/Baseball/MyChecker.cpp",
+      "Game/Baseball/MyFlow.cpp",
+      "Game/Pseudo3D.cpp"
+    ],
+    "banks": [
+      "golfman",
+      "golf_bg",
+      "golf_monkey",
+      "golf_bg_effect"
+    ],
+    "projection": [
+      854,
+      480
+    ],
+    "endsWithMusic": false
+  },
+  "web": {
+    "enabled": true,
+    "expectedCues": 79,
+    "icon": "game_09_3.00.tpl"
+  }
+}

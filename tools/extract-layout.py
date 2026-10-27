@@ -319,6 +319,11 @@ def font(b, chars):
             'cellHeight': ch, 'columns': columns, 'glyphs': glyphs,'atlasStrideX':stride_x,'atlasStrideY':stride_y,'atlasPadding':pad}, Image.fromarray(np.dstack([i, i, i, a]), 'RGBA')
 
 
+# The name web/engine/message.mjs knows a game's message layout by: the lyric layout (CLyricLayout) is
+# the same in every game that registers its lines, and Hole in One's CMyLayout is 'golf' in either version.
+MESSAGE_LAYOUT_KEYS = {'lyrics.brlyt': 'lyric', 'baseball.brlyt': 'golf'}
+
+
 def message_layouts():
     """The layouts whose text boxes show the chart's messages (message panes, web/engine/message.mjs):
     the shared speech balloon and the game's own (each remix scene's), with every message and the
@@ -339,8 +344,7 @@ def message_layouts():
         for n in data['textures']:
             tpl((root/'timg'/n).read_bytes()).save(OUT/f'message-{name}-{n}.png')
             data['images'][n] = f'message-{name}-{n}.png'
-        # The lyric layout (CLyricLayout) is the same in every game that registers its lines.
-        out['layouts']['lyric' if file == 'lyrics.brlyt' else name] = data
+        out['layouts'][MESSAGE_LAYOUT_KEYS.get(file, name)] = data
     out['messages'] = messages(require(DISC/'message'/'riq_E.bmg').read_bytes())
     chars = {ord(c) for t in out['messages'].values() for c in t if c not in '\n'}
     # The balloon's text boxes use its first font, message-font.png. A layout whose text boxes use
@@ -349,7 +353,7 @@ def message_layouts():
     atlas.save(OUT/'message-font.png')
     for name in names[1:]:
         entry = manifest(name)['wii']['messageLayout']
-        key = 'lyric' if entry['file'] == 'lyrics.brlyt' else name
+        key = MESSAGE_LAYOUT_KEYS.get(entry['file'], name)
         data, index = out['layouts'][key], entry.get('font', 0)
         if data['fonts'][index] == out['layouts']['balloon']['fonts'][0]:
             continue
