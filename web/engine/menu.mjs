@@ -9,12 +9,17 @@ export const SETS=[
  {title:'Remix 5',games:['fishing','goma','batting','birds','remix5']},
  {title:'Remix 6',games:['rocket','concons','receive','rap','remix6']},
  {title:'Remix 7',games:['taptroupe','shrimp','panel','karateman','remix7']},
- // Remix 8's own games belong to earlier sets; its row holds their "2" versions, as on the disc's song select.
+ // Remix 8's, 9's and 10's own games belong to earlier sets; their rows hold "2" versions, as on the disc's song select.
  {title:'Remix 8',games:['samurai2','bun2','seal2','date2','remix8']},
+ {title:'Remix 9',games:['rap2','panel2','golf2','robot2','remix9']},
+ {title:'Remix 10',games:['muscle2','flea2','sort2','karateman2','remix10']},
 ];
 export const OTHER='Other games';
+// Games reached only from elsewhere: the Rhythm Test from the library's Audio delay dialog.
+export const UNLISTED=new Set(['calibrate']);
 // Groups a game list ({id,...}) into [{title,games}], keeping only the sets that have a game.
 export function groupGames(games){
+ games=games.filter(g=>!UNLISTED.has(g.id));
  const byId=new Map(games.map(g=>[g.id,g])),placed=new Set(SETS.flatMap(s=>s.games));
  const groups=SETS.map(s=>({title:s.title,games:s.games.filter(id=>byId.has(id)).map(id=>byId.get(id))}));
  groups.push({title:OTHER,games:games.filter(g=>!placed.has(g.id))});

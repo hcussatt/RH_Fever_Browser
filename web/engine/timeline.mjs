@@ -38,7 +38,9 @@ export async function traceTimeline(base,load){
  const same=(a,b)=>a.sound===b.sound&&Math.abs(a.tick-b.tick)<.5&&a.volume===b.volume&&a.pitch===b.pitch&&a.pan===b.pan&&a.offset===b.offset;
  const gameSounds=g.gameSounds.filter(s=>others.every(list=>list.some(t=>same(s,t))));
  const round=x=>Math.round(x*1e4)/1e4;
- return {source:'Silent run of the unmodified SOME01 chart',endTick:round(g.endTick),
+ // A level a miss can end early (Night Walk, where Play-Yan falls and the credits start) lasts as
+ // long as a run that hits everything; the live run's own end comes first when it ends sooner.
+ return {source:'Silent run of the unmodified SOME01 chart',endTick:round(Math.max(g.endTick,auto.endTick)),
   sounds:[...g.chartSounds,...gameSounds].sort((a,b)=>a.tick-b.tick).map(({tick,...s})=>({tick:round(tick),...s})),
   commands:g.commands.map(c=>({tick:round(c.tick),op:c.op})),cues:c.map(([t])=>round(t)),cueInputs:c.map(([,input])=>input)};
 }

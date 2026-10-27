@@ -21,14 +21,14 @@
       "tap_bg"
     ],
     "projection": [
-      854,
-      480
+      832,
+      456
     ],
     "endsWithMusic": true
   },
   "web": {
     "enabled": true,
     "expectedCues": 235,
-    "icon": "game_09_1.00.tpl"
+    "icon": "game_07_1.00.tpl"
   }
 }

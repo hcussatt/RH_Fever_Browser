@@ -12,7 +12,10 @@ out="dist/$game/$game-core.mjs"
 cache="${RHF_BUILD:-build}/core-cache"
 mkdir -p "$cache"
 # Keep -ffp-contract=off and -fno-fast-math: scoring and rounding depend on them.
-set -- adapters/wii/platform.c -I "adapters/$game" -I "${RHF_RUNTIME_SOURCE:-build}/$game" -O2 -flto -ffp-contract=off -fno-fast-math \
+# Load PRE (in LLVM's GVN) is off: its time grows far faster than the translated code does, which
+# made Remix 10 take over 6 minutes; without it, and without LTO (one source file gains nothing
+# from it), Remix 10 builds in about 80 s and plays no slower.
+set -- adapters/wii/platform.c -I "adapters/$game" -I "${RHF_RUNTIME_SOURCE:-build}/$game" -O2 -mllvm -enable-load-pre=false -ffp-contract=off -fno-fast-math \
   -sMODULARIZE=1 -sEXPORT_ES6=1 -sENVIRONMENT=web,node -sINITIAL_MEMORY=67108864 \
   -sALLOW_MEMORY_GROWTH=1 -sSTACK_SIZE=2097152 -sFILESYSTEM=0 \
   '-sEXPORTED_RUNTIME_METHODS=["HEAPU8","HEAPU32"]' -o "$out"

@@ -21,14 +21,14 @@
       "concons_bg_02"
     ],
     "projection": [
-      854,
-      480
+      832,
+      456
     ],
     "endsWithMusic": true
   },
   "web": {
     "enabled": true,
     "expectedCues": 193,
-    "icon": "game_06_3.00.tpl"
+    "icon": "game_06_2.00.tpl"
   }
 }

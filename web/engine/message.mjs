@@ -1,12 +1,12 @@
 // The chart's message panes: text boxes a chart shows, hides and fills (TickFlow 0x40 and 0x41,
 // ExFlow 0x124, CTickFlow's lbl_803D5D38), and the layouts that give them their text boxes: the
 // shared speech balloon (CBalloonLayout, message.brlyt), a game's own (Hole in One's
-// CMyLayout, baseball.brlyt) and the scene's lyric lines (CLyricLayout, lyrics.brlyt). The platform backend reports them as message events (15, see
+// CMyLayout, baseball.brlyt; Night Walk's credits, nightWalk.brlyt) and the scene's lyric lines (CLyricLayout, lyrics.brlyt). The platform backend reports them as message events (15, see
 // adapters/wii/platform.c); this draws them with layout.mjs.
 import {createLayout} from './layout.mjs';
 import {assetResponse} from './assets.mjs';
-const VISIBLE=0,TEXT=1,STRING=2,REGISTER=3,LAYOUT=4,CLEAR=5,TAIL=6,BOX_X=7,BOX_Y=8,BOX_W=9,BOX_H=10,TAIL_X=11,TAIL_Y=12,OVERLAY_Y=13,OVERLAY_H=14,FRAME=15,TAIL_FLIP=16,TEXT_Y=17;
-const LAYOUTS={1:'balloon',2:'golf',3:'lyric'};
+const VISIBLE=0,TEXT=1,STRING=2,REGISTER=3,LAYOUT=4,CLEAR=5,TAIL=6,BOX_X=7,BOX_Y=8,BOX_W=9,BOX_H=10,TAIL_X=11,TAIL_Y=12,OVERLAY_Y=13,OVERLAY_H=14,FRAME=15,TAIL_FLIP=16,TEXT_Y=17,CREDIT_DARK=18,TRIANGLE=19,BALLOON=20,TAIL2_X=21,TAIL2_Y=22,TAIL2_FLIP=23;
+const LAYOUTS={1:'balloon',2:'golf',3:'lyric',4:'credit'};
 // Wide screen: the balloon's x is narrowed like CBalloonLayout::getScaledX.
 const WIDE=608/832;
 export async function createMessages(g){
@@ -44,7 +44,8 @@ export async function createMessages(g){
   if(!target){panes.delete(index);return;}
   const box=target===0x10||target===0x11?['balloon','T_message_00',target===0x10?'W_message_00':null]:target===0x12?['balloon','T_message_01','P_message_01']:
    target>=0x20&&target<0x24?['golf',`T_message_0${target-0x20}`,`N_message_0${target-0x20}`]:
-   target===0x30||target===0x31?['lyric',target===0x30?'T_lyrics_Top_00':'T_lyrics_Down_00',null]:null;
+   target===0x30||target===0x31?['lyric',target===0x30?'T_lyrics_Top_00':'T_lyrics_Down_00',null]:
+   target>=0x40&&target<0x44?['credit',`T_credit_0${target-0x40}`,null]:null;
   if(box?.[0]==='lyric'&&!layouts.lyric)throw new Error('Lyric line registered without the lyric layout (wii.messageLayout)');
   if(!box)throw new Error(`Unknown message pane text box ${target}`);
   panes.set(index,{layout:box[0],text:box[1],container:box[2]});
@@ -59,7 +60,7 @@ export async function createMessages(g){
   if(field===FRAME){if(!alive.has('golf'))throw new Error('Screen frame animation without its layout');events.golf.push({frame,action:6<<8|value>>2,value:value&3});return;}
   const balloon=layouts.balloon,v=f32(value);
   // CBalloonLayout::fn_8003A1D0 and fn_8003A418 place the balloon and the overlay strip,
-  // fn_80039F30 its tail.
+  // fn_80039F30 its tail; the navigator's (fn_80039E2C to fn_8003A030) also shows it and its second tail.
   if(field===BOX_X)pane(balloon,'N_message_00').translate[0]=v*WIDE;
   else if(field===BOX_Y)pane(balloon,'N_message_00').translate[1]=-v;
   else if(field===BOX_W){pane(balloon,'W_message_00').size[0]=v;pane(balloon,'T_message_00').size[0]=v-60;}
@@ -67,10 +68,18 @@ export async function createMessages(g){
   else if(field===TAIL){const p=pane(balloon,'P_triangle_00');p.visible=!!(value&1);p.scale=[1,value&2?-1:1];}
   else if(field===TAIL_X)pane(balloon,'P_triangle_00').translate[0]=v;
   else if(field===TAIL_Y)pane(balloon,'P_triangle_00').translate[1]=-v;
+  else if(field===TRIANGLE)pane(balloon,value&2?'P_triangle_01':'P_triangle_00').visible=!!(value&1);
+  else if(field===BALLOON)for(const n of ['W_message_00','T_message_00'])pane(balloon,n).visible=!!value;
+  else if(field===TAIL2_X)pane(balloon,'P_triangle_01').translate[0]=v;
+  else if(field===TAIL2_Y)pane(balloon,'P_triangle_01').translate[1]=-v;
+  else if(field===TAIL2_FLIP)pane(balloon,'P_triangle_01').scale=[value?1:-1,1];
   else if(field===TAIL_FLIP)pane(balloon,'P_triangle_00').scale=[1,value?-1:1];
   else if(field===OVERLAY_Y)pane(balloon,'N_message_01').translate[1]=-v;
   else if(field===OVERLAY_H)pane(balloon,'P_message_01').size[1]=v;
   // CLyricLayout::fn_800907D0 and fn_80090854 move a registered line to y (and z 0).
+  // Night Walk's CMyLayout fn_800C50CC: the credit lines' colour registers 0 and 1 become (0,0,0,0)
+  // and (0,0,0,255), so their text turns from white to black.
+  else if(field===CREDIT_DARK){const l=layouts.credit;for(let i=0;i<4;i++)l.colors(pane(l,`T_credit_0${i}`).material,[[0,0,0,0],[0,0,0,255]]);}
   else if(field===TEXT_Y){const target=panes.get(index);if(target)pane(layouts[target.layout],target.text).translate[1]=v;}
   else{
    // A pane without a text box is left alone (the original would follow a stale pointer).

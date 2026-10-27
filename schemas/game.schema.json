@@ -48,6 +48,14 @@
           }
         },
         "epilogue": {"description": "The epilogue cell animation archive, when not beside the game's cellanim.", "$ref": "#/$defs/discPath"},
+        "sceneOnly": {"description": "A scene only a remix changes to (Remix 10's navigator): it has no chart of its own, so it is never built or hosted on its own.", "const": true},
+        "extraCellanims": {"description": "Other games' cellanim archives the scene also loads (the navigator's metronome); their banks join the scene's.", "type": "array", "items": {"$ref": "#/$defs/discPath"}},
+        "results": {"description": "false: the game has no results screen or epilogue (Night Walk, the credits game, ends on the staff credits).", "const": false},
+        "calibration": {
+          "description": "The rhythm test: the browser measures the presses against the beats its signal sound plays on (SE_CHECK_CLICK, not the visual timer's zero) and saves them as the audio delay.",
+          "type": "object", "additionalProperties": false, "required": ["signalSound"],
+          "properties": {"signalSound": {"type": "integer", "minimum": 0}}
+        },
         "perfectActive": {"type": "boolean"},
         "endsWithMusic": {"type": "boolean"},
         "messageLayout": {
@@ -59,30 +67,33 @@
             "font": {"description": "Index of the layout's font its message text boxes use (default 0).", "type": "integer", "minimum": 0}
           }
         },
-        "layout": {
-          "type": "object", "additionalProperties": false,
-          "required": ["archive", "file", "animations", "startAtEnd", "texts", "panes"],
-          "properties": {
-            "archive": {"$ref": "#/$defs/discPath"},
-            "file": {"type": "string", "pattern": "^[A-Za-z0-9_-]+\\.brlyt$"},
-            "animations": {"type": "array", "items": {"type": "array", "minItems": 2, "maxItems": 2, "items": {"$ref": "#/$defs/name"}}},
-            "startAtEnd": {"type": "array", "uniqueItems": true, "items": {"type": "integer", "minimum": 0}},
-            "texts": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/name"}},
-            "panes": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/name"}},
-            "hidden": {"description": "Panes the game's layout setup hides.", "type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/name"}},
-            "messages": {"description": "The messages its texts show: main (riq_E.bmg, the default) or bonus (riq_bonus_E.bmg, a vocal song's title card).", "enum": ["main", "bonus"]},
-            "screen": {
-              "description": "The layout is drawn only into the game's dynamic texture, shown by its screen bank (Shrimp Shuffle's shore); additive lists the panes whose alpha pass adds.",
-              "type": "object", "additionalProperties": false, "required": ["additive"],
-              "properties": {"additive": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/name"}}}
-            }
-          }
-        }
+        "layout": {"$ref": "#/$defs/layout"},
+        "lyricLayout": {"description": "The scene's lyric layout (CExScene +0x18) when the game's own layout is another (Night Walk's sky): the vocal song's title card.", "$ref": "#/$defs/layout"}
       }
     }
   },
   "$defs": {
+    "layout": {
+      "type": "object", "additionalProperties": false,
+      "required": ["archive", "file", "animations", "startAtEnd", "texts", "panes"],
+      "properties": {
+        "archive": {"$ref": "#/$defs/discPath"},
+        "file": {"type": "string", "pattern": "^[A-Za-z0-9_-]+\\.brlyt$"},
+        "animations": {"description": "[pane, animation] bindings in the order the game's setup makes them; a third item may make the binding not recursive or stand for count numbered panes (a pane name with %02d).", "type": "array", "items": {"type": "array", "minItems": 2, "maxItems": 3, "prefixItems": [{"$ref": "#/$defs/paneName"}, {"$ref": "#/$defs/name"}, {"type": "object", "additionalProperties": false, "properties": {"recursive": {"const": false}, "count": {"type": "integer", "minimum": 1}}}]}},
+        "startAtEnd": {"type": "array", "uniqueItems": true, "items": {"type": "integer", "minimum": 0}},
+        "texts": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/name"}},
+        "panes": {"type": "array", "uniqueItems": true, "items": {"anyOf": [{"$ref": "#/$defs/name"}, {"description": "count numbered panes (a pane name with %02d)", "type": "array", "prefixItems": [{"$ref": "#/$defs/paneName"}, {"type": "integer", "minimum": 1}], "minItems": 2, "maxItems": 2}]}},
+        "hidden": {"description": "Panes the game's layout setup hides.", "type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/name"}},
+        "messages": {"description": "The messages its texts show: main (riq_E.bmg, the default) or bonus (riq_bonus_E.bmg, a vocal song's title card).", "enum": ["main", "bonus"]},
+        "screen": {
+          "description": "The layout is drawn only into the game's dynamic texture, shown by its screen bank (Shrimp Shuffle's shore); additive lists the panes whose alpha pass adds.",
+          "type": "object", "additionalProperties": false, "required": ["additive"],
+          "properties": {"additive": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/name"}}}
+        }
+      }
+    },
     "name": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"},
+    "paneName": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*(?:%02d)?$"},
     "discPath": {"type": "string", "pattern": "^EN/(?:[A-Za-z0-9_-]+/)*[A-Za-z0-9_-]+\\.szs$"},
     "sourcePath": {"type": "string", "pattern": "^Game/(?:[A-Za-z0-9_-]+/)*[A-Za-z0-9_-]+\\.cpp$"}
   }

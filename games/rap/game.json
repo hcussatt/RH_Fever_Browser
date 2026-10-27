@@ -22,8 +22,8 @@
       "rap_airplane"
     ],
     "projection": [
-      854,
-      480
+      832,
+      456
     ],
     "endsWithMusic": false,
     "layout": {
@@ -83,6 +83,6 @@
     "enabled": true,
     "order": 60,
     "expectedCues": 31,
-    "icon": "game_04_4.00.tpl"
+    "icon": "game_06_4.00.tpl"
   }
 }

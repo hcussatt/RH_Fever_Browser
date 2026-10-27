@@ -7,6 +7,7 @@ import {createResults} from './results.mjs';
 import {A,createInputQueue,bindControls} from './input.mjs';
 import {createTrack} from './clock.mjs';
 import {assetResponse,requireAssets} from './assets.mjs';
+import {getDelayMs,setDelayMs,measureDelay} from './delay.mjs';
 const gameUrl=new URL('./',location.href);
 const canvas=document.querySelector('canvas'),overlay=document.querySelector('#overlay'),play=document.querySelector('#play'),status=document.querySelector('#status');
 let g,renderer,audio,music,startTime,running=false,frame=0,sfx,paused=false,results,resultsStart,phase='game',track,backing,multiplayer,needsReset=false;const input=createInputQueue(),metrics=[];
@@ -45,7 +46,7 @@ try{
  const inputs=new Set(g.timeline.cueInputs);
  const controls=!inputs.has(6)?'Space / X / click / controller A · '+action:!inputs.has(4)?`A + B together · ${action} (A: Space / Left Shift / click / controller A, B: Right Shift / right click / controller B)`:`${action} · A: Space / X / Left Shift / click / controller A · B: Right Shift / right click / controller B · some cues need A + B together`;for(const e of document.querySelectorAll('.controls'))e.textContent=controls+' · Start / Escape: pause';
  renderer=await createRenderer(g,canvas);renderer.draw();music=await musicData;sfx=await createAudio(audio,gameUrl,{envelope:g.envelope});
- results=await createResults(g,canvas);
+ results=g.manifest.wii.results===false?null:await createResults(g,canvas);
  window.rhf={g,renderer,audio,sfx,results,inputs:input.presses,metrics,heardTime,stats:g.stats,result:null,crashLog,get startTime(){return startTime;},get track(){return track;},get phase(){return phase;},get frame(){return frame;}};
  play.disabled=false;play.textContent='Play';
  const embedded=window.parent!==window&&new URLSearchParams(location.search).get('lobby')==='1';
@@ -55,7 +56,7 @@ try{
   await audio.resume();
   if(needsReset){
    sfx.stop();pending.length=0;voiced.length=0;input.presses.length=0;frame=0;phase='game';paused=false;window.rhf.result=null;
-   g=await loadGame(gameUrl);renderer=await createRenderer(g,canvas);results=await createResults(g,canvas);
+   g=await loadGame(gameUrl);renderer=await createRenderer(g,canvas);results=g.manifest.wii.results===false?null:await createResults(g,canvas);
    sfx.master.disconnect();sfx=await createAudio(audio,gameUrl,{envelope:g.envelope});
    Object.assign(window.rhf,{g,renderer,sfx,results,stats:g.stats});renderer.draw();
   }
@@ -105,11 +106,21 @@ function liveEvents(){
  for(const {target,op} of g.tunes){if(target.voice)applyTune(target,op);else if(pending.includes(target))(target.ops||=[]).push(op);}g.tunes.length=0;
  for(const v of g.musicVolumes)backing.volume(v.volume,v.frames,atTick(v.tick));g.musicVolumes.length=0;
 }
-// Time of the audio the player is hearing now, on the AudioContext clock.
+// Time of the audio the player is hearing now, on the AudioContext clock, less the delay the
+// rhythm test measured beyond what the browser reports (see delay.mjs).
+const delay=getDelayMs()/1000;
 function heardTime(){
  const t=audio.getOutputTimestamp?.();
- if(t&&t.performanceTime>0&&performance.now()-t.performanceTime<100)return Math.min(audio.currentTime,t.contextTime+(performance.now()-t.performanceTime)/1000);
- return audio.currentTime-(audio.outputLatency||0)-(audio.baseLatency||0);
+ if(t&&t.performanceTime>0&&performance.now()-t.performanceTime<100)return Math.min(audio.currentTime,t.contextTime+(performance.now()-t.performanceTime)/1000)-delay;
+ return audio.currentTime-(audio.outputLatency||0)-(audio.baseLatency||0)-delay;
+}
+// The rhythm test (wii.calibration): each beat its signal sound plays on (the part played by ear,
+// not the visual timer's) keeps the offset of the first A press within half a beat of it.
+const beatOffsets=new Map();
+function measurePress(heard){
+ const tick=g.tickAtSeconds(track.posAt(Math.max(0,heard-startTime))),{cues,sounds}=g.timeline,signal=g.manifest.wii.calibration.signalSound;let beat=null;
+ for(const cue of cues)if(Math.abs(cue-tick)<=24&&sounds.some(s=>s.sound===signal&&Math.abs(s.tick-cue)<2)&&(beat==null||Math.abs(cue-tick)<Math.abs(beat-tick)))beat=cue;
+ if(beat!=null&&!beatOffsets.has(beat))beatOffsets.set(beat,g.secondsAtTick(tick)-g.secondsAtTick(beat));
 }
 // An input belongs to the first frame after the audio heard when it happened, as the original
 // reads the controller once a frame. That frame runs as soon as its time is heard, not at the
@@ -118,6 +129,7 @@ function press(button,down,at=performance.now()){
  if(!running||heardTime()<startTime)return;
  if(phase==='results'){if(button===A)results.input(down);return;}
  const heard=heardTime()-Math.max(0,performance.now()-at)/1000;
+ if(g.manifest.wii.calibration&&button===A&&down)measurePress(heard);
  const due=Math.max(frame+1,Math.floor(Math.max(0,heard-startTime)*60)+1);
  input.push(due,button,down,at);runWhenHeard(due);
 }
@@ -159,8 +171,15 @@ play.onclick=async()=>{
 };
 document.querySelector('#restart').onclick=()=>{if(multiplayer?.active){multiplayer.interrupt('Restart interrupted the round.');return;}location.reload();};
 // The original chart owns the outro; a longer backing wave must not delay grading.
-const endSeconds=()=>g.secondsAtTick(g.timeline.endTick);
+const endSeconds=()=>g.secondsAtTick(g.ended?Math.min(g.endTick,g.timeline.endTick):g.timeline.endTick);
 function finish(){
+ // Night Walk has no results: it ends on the staff credits, which the port leaves out.
+ if(!results){
+  if(g.manifest.wii.calibration){const ms=measureDelay([...beatOffsets.values()],delay*1000);if(ms!=null)setDelayMs(ms);}
+  running=false;sfx.stop();audio.suspend();const result=g.result();window.rhf.result=result;
+  window.dispatchEvent(new CustomEvent('rhf-result',{detail:result}));multiplayer?.finish(result);
+  if(!multiplayer?.active)location.href=new URL('../',gameUrl).href;return;
+ }
  phase='results';resultsStart=atTick(g.timeline.endTick);
  const result=results.begin(sfx,resultsStart);window.rhf.result=result;status.textContent='';
  window.dispatchEvent(new CustomEvent('rhf-result',{detail:result}));

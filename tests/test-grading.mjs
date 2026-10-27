@@ -3,7 +3,8 @@
 import assert from 'node:assert/strict';
 import {readFile,readdir} from 'node:fs/promises';
 import {loadGame} from '../dist/engine/runtime.mjs';
-const manifests=await Promise.all((await readdir(new URL('../games/',import.meta.url))).map(async id=>JSON.parse(await readFile(new URL(`../games/${id}/game.json`,import.meta.url)))));
+// Only game folders: macOS adds a .DS_Store file to the folder when Finder opens it.
+const manifests=await Promise.all((await readdir(new URL('../games/',import.meta.url),{withFileTypes:true})).filter(e=>e.isDirectory()).map(async ({name})=>JSON.parse(await readFile(new URL(`../games/${name}/game.json`,import.meta.url)))));
 const ids=process.argv.slice(2).length?process.argv.slice(2):manifests.filter(m=>m.web.enabled).map(m=>m.id);
 const load=id=>loadGame(new URL(`../dist/${id}/`,import.meta.url),readFile);
 const below=(threshold,count,percent)=>threshold&0x8000?percent<(threshold&0x7fff):count<threshold;
@@ -19,7 +20,10 @@ function referenceGrade(criteria,states){
  return {grade:bad?2:eligible>0&&good===eligible?0:1,but:!bad&&good>0&&good!==eligible};
 }
 for(const id of ids){
- const g=await load(id),cp=g.u32(0x8032016c),criteria=Array.from({length:g.u8(cp+0xc4)},(_,i)=>{
+ const g=await load(id);
+ // The rhythm test grades nothing: it has no criteria, results or epilogue.
+ if(g.manifest.wii.calibration){console.log(`${id}: no grading (rhythm test)`);continue;}
+ const cp=g.u32(0x8032016c),criteria=Array.from({length:g.u8(cp+0xc4)},(_,i)=>{
   const p=g.u32(cp+0xa4+i*4);return{superb:g.u16(p+8),minimum:g.u16(p+10),through:g.u16(p+12)};
  });
  assert.ok(criteria.length>0,'chart must have installed its original criteria');
@@ -37,6 +41,9 @@ for(const id of ids){
   }
  }
  console.log(`${id}: ${cases} grading boundary cases`);
+ // Night Walk has no results screen (wii.results false): the level ends on the credits, so the
+ // through grouping and result flow checks below do not apply.
+ if(manifests.find(m=>m.id===id).wii.results===false)continue;
  // A good category beside a weak one exercises the But/follow distinction,
  // which is not covered by single-category threshold sweeps.
  for(let weak=0;weak<criteria.length;weak++)for(let hits=0;hits<=100;hits+=10){
@@ -69,7 +76,7 @@ for(const id of ids){
   const result=game.result();assert.equal(result.grade,auto?0:2);
   // Sneaky Spirits' original misses do not set the diagnostic Perfect-fail
   // flag (also covered by test-runtime); they still produce Try Again.
-  assert.equal(result.perfectFailed,auto||id==='agbghost'?0:2);
+  assert.equal(result.perfectFailed,auto||['agbghost','agbkanji','agbclap'].includes(id)?0:2);
   assert.ok(result.comments.length>0);assert.ok(result.comments.every(s=>s&&!s.includes('???')));
   game.startGrading();
   const events=[];

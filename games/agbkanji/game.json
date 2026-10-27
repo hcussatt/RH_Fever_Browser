@@ -1,0 +1,38 @@
+{
+  "$schema": "../../schemas/game.schema.json",
+  "schemaVersion": 1,
+  "id": "agbkanji",
+  "title": "Power Calligraphy",
+  "action": "Write",
+  "platform": "wii",
+  "wii": {
+    "scene": "AgbKanji",
+    "cellanim": "EN/content2/cellanim/agbKanji/ver0/cellanim.szs",
+    "units": [
+      "Game/AgbKanji/SceneAgbKanji.cpp",
+      "Game/AgbKanji/MyChecker.cpp",
+      "Game/AgbKanji/MyFlow.cpp"
+    ],
+    "banks": [
+      "chikara",
+      "fude",
+      "kanji_ex_i",
+      "kao",
+      "kokoro",
+      "onore",
+      "re",
+      "sun",
+      "ten"
+    ],
+    "projection": [
+      832,
+      456
+    ],
+    "endsWithMusic": true
+  },
+  "web": {
+    "enabled": true,
+    "order": 90,
+    "expectedCues": 29
+  }
+}

@@ -1,0 +1,40 @@
+{
+  "$schema": "../../schemas/game.schema.json",
+  "schemaVersion": 1,
+  "id": "panel2",
+  "title": "Cheer Readers 2",
+  "action": "Flip",
+  "platform": "wii",
+  "wii": {
+    "scene": "Panel",
+    "sceneVariant": 2,
+    "cellanim": "EN/content2/cellanim/panel/ver1/cellanim.szs",
+    "units": [
+      "Game/Panel/ScenePanel.cpp",
+      "Game/Panel/MyChecker.cpp",
+      "Game/Panel/MyFlow.cpp"
+    ],
+    "banks": [
+      "panel",
+      "panel_bg",
+      "panel_image_00",
+      "panel_image_01",
+      "panel_image_02"
+    ],
+    "projection": [
+      832,
+      456
+    ],
+    "endsWithMusic": true,
+    "messageLayout": {
+      "archive": "EN/content2/layout/layout_common.szs",
+      "file": "lyrics.brlyt",
+      "font": 1
+    }
+  },
+  "web": {
+    "enabled": true,
+    "expectedCues": 68,
+    "icon": "game_09_2.00.tpl"
+  }
+}

@@ -1,0 +1,38 @@
+{
+  "$schema": "../../schemas/game.schema.json",
+  "schemaVersion": 1,
+  "id": "calibrate",
+  "title": "Rhythm Test (Calibration)",
+  "action": "Play",
+  "platform": "wii",
+  "wii": {
+    "scene": "Navi",
+    "sceneVariant": 1,
+    "cellanim": "EN/content2/cellanim/navi/ver0/cellanim.szs",
+    "extraCellanims": [
+      "EN/content2/cellanim/metronome/ver0/cellanim.szs"
+    ],
+    "units": [
+      "Game/Navi/SceneNavi.cpp",
+      "Game/Navi/MyChecker.cpp",
+      "Game/Navi/MyFlow.cpp"
+    ],
+    "banks": [
+      "navigator",
+      "metronome"
+    ],
+    "projection": [
+      832,
+      456
+    ],
+    "endsWithMusic": true,
+    "results": false,
+    "calibration": {
+      "signalSound": 976
+    }
+  },
+  "web": {
+    "enabled": true,
+    "expectedCues": 48
+  }
+}

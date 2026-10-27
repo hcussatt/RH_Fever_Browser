@@ -1,0 +1,118 @@
+{
+  "$schema": "../../schemas/game.schema.json",
+  "schemaVersion": 1,
+  "id": "nightwalk",
+  "title": "Night Walk",
+  "action": "Jump",
+  "platform": "wii",
+  "wii": {
+    "scene": "NightWalk",
+    "sceneVariant": 1,
+    "cellanim": "EN/content2/cellanim/nightWalk/ver0/cellanim.szs",
+    "units": [
+      "Game/NightWalk/SceneNightWalk.cpp",
+      "Game/NightWalk/MyChecker.cpp",
+      "Game/NightWalk/MyFlow.cpp"
+    ],
+    "banks": [
+      "nightwalk"
+    ],
+    "projection": [
+      832,
+      456
+    ],
+    "endsWithMusic": true,
+    "results": false,
+    "layout": {
+      "archive": "EN/content2/layout/layout_nightWalk.szs",
+      "file": "nightWalkBg.brlyt",
+      "animations": [
+        [
+          "N_bgScroll_00",
+          "nightWalkBg_demo"
+        ],
+        [
+          "N_starAll_00",
+          "nightWalkBg_demo",
+          {
+            "recursive": false
+          }
+        ],
+        [
+          "P_flash_00",
+          "nightWalkBg_demo"
+        ],
+        [
+          "N_birdsAll_00",
+          "nightWalkBg_demo"
+        ],
+        [
+          "N_birdsAll_01",
+          "nightWalkBg_demo"
+        ],
+        [
+          "N_birdsAll_02",
+          "nightWalkBg_demo"
+        ],
+        [
+          "N_birdsAll_03",
+          "nightWalkBg_demo"
+        ],
+        [
+          "P_star_%02d",
+          "nightWalkBg_star_wait",
+          {
+            "count": 201
+          }
+        ],
+        [
+          "P_star_%02d",
+          "nightWalkBg_star_flash",
+          {
+            "count": 201
+          }
+        ]
+      ],
+      "startAtEnd": [],
+      "texts": [],
+      "panes": [
+        [
+          "P_star_%02d",
+          201
+        ],
+        "N_birdsAll_01",
+        "N_birdsAll_02",
+        "N_birdsAll_03"
+      ]
+    },
+    "lyricLayout": {
+      "archive": "EN/content2/layout/layout_common.szs",
+      "file": "lyrics.brlyt",
+      "animations": [
+        [
+          "N_titleAll_00",
+          "lyrics_title_show"
+        ]
+      ],
+      "startAtEnd": [],
+      "texts": [
+        "T_title_00",
+        "T_singer_00"
+      ],
+      "panes": [],
+      "hidden": [
+        "T_lyrics_Top_00",
+        "T_lyrics_Down_00"
+      ],
+      "messages": "bonus"
+    },
+    "messageLayout": {
+      "archive": "EN/content2/layout/layout_nightWalk.szs",
+      "file": "nightWalk.brlyt"
+    }
+  },
+  "web": {
+    "enabled": true,
+    "expectedCues": 183
+  }
+}

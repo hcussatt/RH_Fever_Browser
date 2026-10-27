@@ -20,14 +20,14 @@
       "badminton_bg_02"
     ],
     "projection": [
-      854,
-      480
+      832,
+      456
     ],
     "endsWithMusic": true
   },
   "web": {
     "enabled": true,
     "expectedCues": 120,
-    "icon": "game_04_3.00.tpl"
+    "icon": "game_03_3.00.tpl"
   }
 }

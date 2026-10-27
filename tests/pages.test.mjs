@@ -5,10 +5,13 @@ import {chromium} from 'playwright';
 import {createServer} from 'node:http';
 import {readFile} from 'node:fs/promises';
 import {resolve,extname} from 'node:path';
+import {UNLISTED} from '../web/engine/menu.mjs';
 
 test('Pages project path, local import errors, storage isolation, and offline shell',async()=>{
  const root=resolve('site'),prefix='/RH_Fever_Browser/';
- const catalog=JSON.parse(await readFile(resolve(root,'games.json'),'utf8')),first=catalog[0].id;
+ const catalog=JSON.parse(await readFile(resolve(root,'games.json'),'utf8'));
+ // The picker leaves out games reached elsewhere (the Rhythm Test, from the Audio delay menu).
+ const listed=catalog.filter(g=>!UNLISTED.has(g.id)),first=listed[0].id;
  const server=createServer(async(req,res)=>{
   try{
    const url=new URL(req.url,'http://localhost');
@@ -29,15 +32,15 @@ test('Pages project path, local import errors, storage isolation, and offline sh
   // A new catalog entry appears without changing picker code or a game list.
   await page.route('**/games.json',route=>route.fulfill({json:[{id:'newplugin',title:'New Plugin',expectedCues:7},...catalog]}));
   await page.goto(base);
-  await page.waitForFunction(count=>document.querySelectorAll('.game').length===count,catalog.length+1);
+  await page.waitForFunction(count=>document.querySelectorAll('.game').length===count,listed.length+1);
   // A game no remix set lists goes under Other games, the last set (engine/menu.mjs).
   assert.ok((await page.locator('.game h3').allTextContents()).includes('New Plugin'));
   assert.equal(await page.locator('.set-title').last().textContent(),'Other games');
-  assert.equal(await page.locator('#game-count').textContent(),String(catalog.length+1).padStart(2,'0'));
+  assert.equal(await page.locator('#game-count').textContent(),String(listed.length+1).padStart(2,'0'));
   await page.unroute('**/games.json');
-  await page.goto(base);await page.waitForFunction(count=>document.querySelectorAll('.game').length===count,catalog.length);
-  assert.equal(await page.locator('.game').count(),catalog.length);
-  assert.equal(await page.locator('#game-count').textContent(),String(catalog.length).padStart(2,'0'));
+  await page.goto(base);await page.waitForFunction(count=>document.querySelectorAll('.game').length===count,listed.length);
+  assert.equal(await page.locator('.game').count(),listed.length);
+  assert.equal(await page.locator('#game-count').textContent(),String(listed.length).padStart(2,'0'));
   assert.equal(await page.locator('.play').count(),0);
   await page.locator('.game[data-game=golf]').focus();
   await page.locator('.game[data-game=golf]').press('ArrowRight');
@@ -64,9 +67,10 @@ test('Pages project path, local import errors, storage isolation, and offline sh
   await page.locator('.game[data-game=interview]').press('ArrowUp');
   assert.equal(await page.locator('.game[data-game=remix4]').getAttribute('aria-pressed'),'true');
   await page.locator('.game[data-game=remix4]').press('End');
-  await page.waitForFunction(()=>document.querySelector('.game[data-game=agbghost]').getAttribute('aria-pressed')==='true');
+  // End goes to the last game: Night Walk, last of the Other games.
+  await page.waitForFunction(()=>document.querySelector('.game[data-game=nightwalk]').getAttribute('aria-pressed')==='true');
   await page.emulateMedia({reducedMotion:'reduce'});
-  await page.locator('.game[data-game=agbghost]').press('Home');
+  await page.locator('.game[data-game=nightwalk]').press('Home');
   assert.equal(await page.locator('.game[data-game=remix1]').getAttribute('aria-pressed'),'true');
   await page.setViewportSize({width:390,height:844});
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
@@ -78,7 +82,7 @@ test('Pages project path, local import errors, storage isolation, and offline sh
   // Direct game links explain how to import instead of attempting absent asset URLs.
   await page.goto(base+first+'/');await page.waitForFunction(()=>window.rhf?.error);
   assert.match(await page.locator('#status').textContent(),/Import your ISO/);
-  await page.goto(base);await page.waitForFunction(count=>document.querySelectorAll('.game').length===count,catalog.length);
+  await page.goto(base);await page.waitForFunction(count=>document.querySelectorAll('.game').length===count,listed.length);
   // A synthetic Cache API fixture exercises library readiness and removal without game data.
   await page.evaluate(async id=>{
    const {readLibrary,writeLibrary,siteRoot,deployment}=await import('./engine/assets.mjs');
@@ -120,7 +124,7 @@ test('Pages project path, local import errors, storage isolation, and offline sh
    await host.locator('#lobby-incoming').fill(await guest.locator('#lobby-output').inputValue());await host.locator('#lobby-accept').click();
    for(const p of [host,guest])await p.waitForFunction(()=>window.rhfLobby?.peer.connected&&window.rhfLobby?.api);
    assert.equal(await guest.locator('#lobby-game').isEnabled(),false);
-   const next=catalog[1].id;await host.locator('#lobby-game').selectOption(next);
+   const next=listed[1].id;await host.locator('#lobby-game').selectOption(next);
    await guest.waitForFunction(id=>window.rhfLobby.peer.selectedGame===id&&window.rhfLobby.api?.game().manifest.id===id,next);
    await host.waitForFunction(id=>window.rhfLobby.api?.game().manifest.id===id,next);
    await guest.locator('#lobby-ready').click();await host.locator('#lobby-ready').click();
@@ -144,7 +148,7 @@ test('Pages project path, local import errors, storage isolation, and offline sh
   // Wait for install to finish, then verify the static shell survives an offline reload.
   await page.evaluate(async()=>{await navigator.serviceWorker.ready;});
   await page.waitForFunction(()=>!!navigator.serviceWorker.controller);
-  await context.setOffline(true);await page.reload();await page.waitForFunction(count=>document.querySelectorAll('.game').length===count,catalog.length);
+  await context.setOffline(true);await page.reload();await page.waitForFunction(count=>document.querySelectorAll('.game').length===count,listed.length);
   assert.equal(await page.locator('#version').textContent(),JSON.parse(await readFile('site/deployment.json','utf8')).version);
   assert.deepEqual(errors,[]);
  }finally{await browser.close();await new Promise(r=>server.close(r));}

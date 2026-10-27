@@ -30,7 +30,7 @@ static uint32_t cool_frames[2],cool_timer[2],raw_hold;
 #define CONTROLLER 0x80420000 // the CController every channel returns (fn_801D5FF0)
 // WPAD A (0x800) and B (0x400) as bits 0 and 1.
 static uint32_t wpad_buttons(uint32_t mask){return (mask&0x800?1:0)|(mask&0x400?2:0);}
-static uint32_t checkers[128],checker_count,events[5120],event_count,frame_number;
+static uint32_t checkers[128],checker_count,events[10240],event_count,frame_number;
 static uint32_t scene,layout[8],layout_count,canvas[10],base_canvas;
 // Each canvas's CMyCanvasManager tweens: scale x and y, position x and y, angle.
 static uint32_t canvas_timing[10][5];
@@ -62,7 +62,7 @@ static uint32_t persistent[32],persistent_count;
 // Cell-animation banks: every bank of every scene is installed up front (install_bank); a scene's
 // registBank call puts one under the id it asks for, found by the file name it read.
 typedef struct {uint32_t scene,count,animations,cells;char name[48];} NamedBank;
-static NamedBank named_banks[64];
+static NamedBank named_banks[256]; // every bank of every scene a remix changes to (Remix 10 has 30 scenes)
 static uint32_t named_bank_count,file_names[512],file_count;
 void finish_frame(void);
 typedef struct {uint32_t count,animations,cells;} Bank;
@@ -98,6 +98,10 @@ static void call(uint32_t address);
 static int32_t fast_cast(double x,float lo,float hi){float v=(float)x;return (int32_t)(v>=lo?(v<=hi?v:hi):lo);}
 #include "original-functions.inc"
 static uint32_t alloc(uint32_t size){uint32_t a=heap;heap=(heap+size+31)&~31u;if(heap>=0x81600000)panic(a,2);return a;}
+// Events for the browser: kind, value, extra (usually the issuing flow's rest), frame, and a
+// sound handle address for sound events (0: the sound played last, as in CSoundManager::tune).
+static void emit_handle(uint32_t kind,uint32_t value,uint32_t extra,uint32_t handle){if(event_count>=2048)panic(event_count,3);uint32_t*e=events+event_count*5;e[0]=kind;e[1]=value;e[2]=extra;e[3]=frame_number;e[4]=handle;event_count++;}
+static void emit(uint32_t kind,uint32_t value,uint32_t extra){emit_handle(kind,value,extra,0);}
 // Each scene's original addresses, from adapters/<game>/game.h (a remix lists several; see
 // tools/recompile.py). id: the original ESceneID a remix's chart names; version: where the scene
 // keeps its version (CSceneManager::fn_8008A4DC). wrong_input names the callback the scene's init
@@ -112,21 +116,20 @@ static const SceneProfile profiles[1]={{0xffffffffu,0,GAME_SCENE_CREATE,GAME_SCE
 #endif
 static int find_profile(uint32_t id){for(int i=0;i<GAME_SCENE_COUNT;i++)if(profiles[i].id==id)return i;return -1;}
 static int is_flow_command(uint32_t address){for(int i=0;i<GAME_SCENE_COUNT;i++)if(profiles[i].flow_command==address)return 1;return 0;}
-// Events for the browser: kind, value, extra (usually the issuing flow's rest), frame, and a
-// sound handle address for sound events (0: the sound played last, as in CSoundManager::tune).
-static void emit_handle(uint32_t kind,uint32_t value,uint32_t extra,uint32_t handle){if(event_count>=1024)panic(event_count,3);uint32_t*e=events+event_count*5;e[0]=kind;e[1]=value;e[2]=extra;e[3]=frame_number;e[4]=handle;event_count++;}
-static void emit(uint32_t kind,uint32_t value,uint32_t extra){emit_handle(kind,value,extra,0);}
 // Message events (15) for web/engine/message.mjs: value = field<<8 | message pane (the chart's
 // access index), extra = the field's value. A layout that owns text boxes (CBalloonLayout,
 // Hole in One's CMyLayout) is announced when the scene adds it; MESG_CLEAR drops them all when
 // the scene ends. MESG_REGISTER gives a pane a text box (CTickFlow::fn_801DEF58): 0 none,
 // 0x10 the balloon (with its window), 0x11 the balloon's text alone, 0x12 the overlay strip,
-// 0x20+i Hole in One's message i, 0x30/0x31 the lyric layout's top/bottom line. MESG_FRAME plays one of the screen frame's animations in Hole
-// in One's layout: extra = animation<<2 | reverse<<1 | jump to its end. MESG_TEXT_Y moves a
-// pane's text box to y (extra = float bits).
+// 0x20+i Hole in One's message i, 0x30/0x31 the lyric layout's top/bottom line, 0x40+i Night
+// Walk's credit line i. MESG_FRAME plays one of the screen frame's animations in Hole in One's
+// layout: extra = animation<<2 | reverse<<1 | jump to its end. MESG_TEXT_Y moves a pane's text
+// box to y (extra = float bits). MESG_CREDIT_DARK turns Night Walk's credit lines black.
+// MESG_TRIANGLE shows or hides a balloon tail: extra = tail (0 or 1)<<1 | visible. MESG_BALLOON shows
+// or hides the balloon itself; MESG_TAIL2_X/Y/FLIP place its second tail (P_triangle_01).
 enum{MESG_VISIBLE,MESG_TEXT,MESG_STRING,MESG_REGISTER,MESG_LAYOUT,MESG_CLEAR,MESG_TAIL,
-  MESG_BOX_X,MESG_BOX_Y,MESG_BOX_W,MESG_BOX_H,MESG_TAIL_X,MESG_TAIL_Y,MESG_OVERLAY_Y,MESG_OVERLAY_H,MESG_FRAME,MESG_TAIL_FLIP,MESG_TEXT_Y};
-enum{MESG_LAYOUT_BALLOON=1,MESG_LAYOUT_GOLF=2,MESG_LAYOUT_LYRIC=3};
+  MESG_BOX_X,MESG_BOX_Y,MESG_BOX_W,MESG_BOX_H,MESG_TAIL_X,MESG_TAIL_Y,MESG_OVERLAY_Y,MESG_OVERLAY_H,MESG_FRAME,MESG_TAIL_FLIP,MESG_TEXT_Y,MESG_CREDIT_DARK,MESG_TRIANGLE,MESG_BALLOON,MESG_TAIL2_X,MESG_TAIL2_Y,MESG_TAIL2_FLIP};
+enum{MESG_LAYOUT_BALLOON=1,MESG_LAYOUT_GOLF=2,MESG_LAYOUT_LYRIC=3,MESG_LAYOUT_CREDIT=4};
 static uint32_t fbits(float x){union{float v;uint32_t u;}b={.v=x};return b.u;}
 // The rest of the flow running now; 0 outside the chart (a press, a scene update).
 static uint32_t flow_rest(void){return current_flow?rd32(current_flow+0x1c):0;}
@@ -247,6 +250,7 @@ static void ex_scene_unload(void){
   for(uint32_t i=0;i<3;i++){r[3]=rd32(0x80320200+i*4);r[4]=base_canvas;r[5]=0;r[6]=0;call(0x801dcfa4);}
   checker_count=0;for(int i=0;i<256;i++)input_map[i]=i;
   wr32(rd32(0x80320170)+0x418,0); // the scene's wrong-input callback
+  wr8(rd32(0x80320170)+0x42f,1); // wrong presses restart the wrong-press timer again (fn_801E9604)
   wr32(RENDER_EFFECT,0); // fn_8009E1C4
   cool_frames[0]=cool_frames[1]=6; // A and B cool frames back to 6 (fn_801D5500)
   layout_count=0;emit(15,MESG_CLEAR<<8,0); // CLayoutManager::fn_801D6BB0
@@ -273,6 +277,16 @@ static void run_flows(void){
 static void exflow_command(void){
   uint32_t self=r[3],op=r[4],arg0=r[5],args=r[6],cp=rd32(0x8032016c);
   if(op<0x100){
+#ifdef GAME_CALIBRATION
+    // The rhythm test's dialogue waits for A after each line (TF_BUTTON_PROMPT). Here each line
+    // moves on by itself after PROMPT_TICKS of the chart's 1-tick polls, so the test keeps one
+    // fixed timeline (its sounds are scheduled ahead, see web/engine/timeline.mjs).
+    if(!grading&&op==0x46&&arg0>=1){
+      enum{PROMPT_TICKS=150};static uint32_t waited;
+      if(arg0==1)waited=0;else if(arg0==2)wr32(self+0x24,++waited<PROMPT_TICKS);
+      r[3]=0;return;
+    }
+#endif
     if(grading&&op==0x46){if(arg0==1){grading_ready=1;grading_pressed=0;prompt_press=rd32(args+4);prompt_release=rd32(args+8);emit(20,5,rd32(self+0x1c));}else if(arg0==2)wr32(self+0x24,grading_pressed==2?0:1);r[3]=0;return;}
     // Message panes (CTickFlow's lbl_803D5D38 text boxes): shown or hidden with their container,
     // or given a string from the chart. Message events (15) for web/engine/message.mjs.
@@ -307,6 +321,13 @@ static void exflow_command(void){
     next_profile=find_profile(rd32(args));next_chart=rd32(args+4);
     scene_state=SCENE_SCHEDULE_DOWN;fader_state=FADER_WAIT1;fader_wait=5; // CScene::fn_801D8578, CFaderFlash::_10
   }
+  // Leaving for a scene the port does not have ends the game: Night Walk goes to the staff
+  // credits, straight away when Play-Yan falls.
+  else if(op==0x100&&arg0==0&&music_started&&!song_ended&&!grading&&find_profile(rd32(args))<0){song_ended=1;emit(7,0,rd32(self+0x1c));}
+#ifdef GAME_CALIBRATION
+  // The rhythm test ends by going back to the café (TF_SET_SCENE 1, the previous scene).
+  else if(op==0x100&&arg0==1&&music_started&&!song_ended&&!grading){song_ended=1;emit(7,0,rd32(self+0x1c));}
+#endif
   else if(op==0x101&&find_profile(rd32(args))>=0)wr32(profiles[find_profile(rd32(args))].version,rd32(args+4));
   else if(op==0x102&&find_profile(rd32(args))>=0){} // Scene assets, 0 load and 1 free (CSceneManager fn_8008A704, fn_8008A82C): the browser loaded every scene's up front.
   else if(op==0x104)wr32(self+0x24,scene_state==SCENE_ACTIVE);
@@ -318,7 +339,8 @@ static void exflow_command(void){
     else if(arg0==1)wrf32(ticks,rdf32(ticks)+(float)rd32(args));
     else if(arg0==2)wrf32(self+0x1c,rdf32(self+0x1c)-rdf32(ticks));
   }
-  else if(grading&&op==0x12f&&arg0==1)wr32(self+0x24,0);
+  // Whether sounds are still loading (fn_800836E0's query): never, the browser decoded them up front.
+  else if(op==0x12f&&arg0==1)wr32(self+0x24,0);
   else if(song_ended&&op==0x12e&&arg0==1)emit(18,0,rd32(self+0x1c)); // Original heap-1 sound reset.
   // Sound heap loads and frees (fn_8008364C, fn_80083668, fn_800836C0): the browser decoded every
   // group up front. fn_800836E0 only keeps its flag.
@@ -343,13 +365,24 @@ static void exflow_command(void){
   // The song title card of the scene's lyric layout (CExScene::mLyricLayout, +0x18; CLyricLayout in
   // LyricLayout.cpp): title and singer from the bonus messages (riq_bonus_E.bmg, fn_800908D8 and
   // fn_80090934), then lyrics_title_show (fn_80090990). The layout's spec lists T_title_00 and
-  // T_singer_00 as its texts 0 and 1 and lyrics_title_show as its animation 0 (Working Dough).
+  // T_singer_00 as its texts 0 and 1 and lyrics_title_show as its animation 0 (Working Dough). A game
+  // whose own layout is another (GAME_LYRIC_LAYOUT, Night Walk's sky) sends them as lyric layout events (28).
   else if(op==0x13b&&arg0<=2){
     uint32_t lyric=rd32(scene+0x18);
     if(!lyric||rd32(lyric)!=0x802ed678)panic(lyric,21);
-    if(arg0<2)emit(11,0x300|arg0,bmg_id(rd32(args)));else emit(11,0x100,0);
+#ifdef GAME_LYRIC_LAYOUT
+    uint32_t kind=28;
+#else
+    uint32_t kind=11;
+#endif
+    if(arg0<2)emit(kind,0x300|arg0,bmg_id(rd32(args)));else emit(kind,0x100,0);
   }
   else if(op==0x124)emit(15,(MESG_TEXT<<8)|(arg0&255),bmg_id(rd32(args))); // CMessageManager::fn_80088FEC(pane, fn_80087708(id))
+#ifdef GAME_CALIBRATION
+  // The A prompt beside each dialogue line (CExFlow 0x123): not drawn, as the lines move on by
+  // themselves (see the TF_BUTTON_PROMPT above); 2 asks whether its exit animation has finished.
+  else if(!grading&&op==0x123){if(arg0==2)wr32(self+0x24,1);}
+#endif
   else if(grading&&op==0x123){
     if(arg0==0)emit(16,0,rd32(args));
     // setAnimDisable starts at frame -1; the same frame's actor update
@@ -379,7 +412,13 @@ static void exflow_command(void){
   else if(op==0x121){switch(arg0){
     case 0:wr32(0x803201a4,0);break;
     case 1:wr8(0x803201a0,0);break;
+#ifdef GAME_CALIBRATION
+    // The rhythm test repeats a practice round until enough are clean. Here the delay it measures
+    // can be what made a round miss, so every round counts (as a clean play-through runs it).
+    case 2:wr32(0x803201a4,rd32(0x803201a4)+1);break;
+#else
     case 2:if(!rd8(0x803201a0))wr32(0x803201a4,rd32(0x803201a4)+1);break;
+#endif
     case 3:wr32(self+0x24,rd32(0x803201a4));break;
     case 4:call(0x80009abc);break;
     case 5:wr8(0x803201c0,1);break;
@@ -491,7 +530,10 @@ static void call(uint32_t address){
   case 0x801e9488:score_sum+=(r[4]?r[4]:wrong_count*5);score_count++;wrong_count=0;break;
   // CInputCheckManager::fn_801E94E8(type): a press of A or A+B (unk430) restarts the wrong-press
   // timer, as a press with no cue does in press() (Bossa Nova's checker calls it itself).
-  case 0x801e94e8:if(r[4]==4||r[4]==6)wrong_timer=48;break;
+  case 0x801e94e8:if(rd8(rd32(0x80320170)+0x42f)&&(r[4]==4||r[4]==6))wrong_timer=48;break;
+  // CInputCheckManager::fn_801E9604(on), unk42F: whether wrong presses start the wrong-press timer
+  // and checkers see it (only Power Calligraphy turns it off).
+  case 0x801e9604:wr8(rd32(0x80320170)+0x42f,r[4]&255);break;
   case 0x801e9d58:input_map[r[4]&255]=r[5];break;
   case 0x801e9c40:for(int i=0;i<256;i++)input_map[i]=i;break;
   case 0x80004714:memset(ram+idx(r[3]),r[4],r[5]);break;
@@ -558,12 +600,14 @@ static void call(uint32_t address){
   case 0x8007bfa8:wrf32(canvas[r[4]]+0x84,f[1].d);wrf32(canvas[r[4]]+0x88,f[2].d);stop_canvas_tweens(r[4],2,3);break;
   case 0x8007c000:{uint32_t index=r[4],type=r[5],power=r[6];float duration=f[1].d,x=f[2].d,y=f[3].d;set_canvas_timed(index,type,power,duration,x,y);break;}
   case 0x8007c244:{uint32_t i=r[4];union{float f;uint32_t u;}x={.f=rdf32(canvas[i]+0x8c)},y={.f=rdf32(canvas[i]+0x90)};r[3]=x.u;r[4]=y.u;break;}
+  case 0x8007c25c:{uint32_t i=r[4];r[3]=rd32(canvas[i]+0x84);r[4]=rd32(canvas[i]+0x88);break;} // a canvas's scale (Night Walk), as fn_8007C244 its position
   case 0x80008fc0:anim_tempo_update=r[4]&1;anim_tempo=(uint16_t)wave_tempo(r[5]&0xffff);break; // CExScene: animations follow the chart tempo
   case 0x8000a6b4:r[3]=rd8(0x80320228);break; // CExScene::fn_8000A6B4 reads its static flag
   case 0x8000a6bc:wr32(0x80320230,0);break; // CExScene::fn_8000A6BC
   case 0x8000a6c8:wr32(0x80320230,rd32(0x80320230)+1);break; // CExScene::fn_8000A6C8
   case 0x80008160:case 0x8000818c:case 0x8000835c:case 0x80008830:break;
   case 0x80008a20:ex_scene_unload();break;
+  case 0x80078f4c:case 0x80077cdc:case 0x80078f68:break; // the navigator's end marks it seen in the save data; the browser keeps no save data
   case 0x8008d290:{uint32_t self=r[3];call(0x801dd6f4);wr32(self,0x802ed598);r[3]=self;break;} // CExFlow ctor
   case 0x8008d2cc:call(0x8008d290);break; // CExFlow::create (in place, the block is the flow)
   case 0x8fff001c:register_flow(r[4]);break; // gTickFlowManager->registerFlow<T>() from a scene's init
@@ -606,6 +650,16 @@ static void call(uint32_t address){
     break;
   }
   case 0x80039e00:emit(15,(MESG_REGISTER<<8)|(r[4]&255),r[5]?0x10:0x11);break;
+  // The navigator's balloon (CBalloonLayout): fn_80039E2C shows or hides it, fn_80039E94(x, y) and
+  // fn_8003A030(width, height) place and size it, fn_80039FB0(flip, x, y) places its second tail
+  // (mirrored unless flip), and fn_8003A11C only hands its place to CExScene::fn_800096EC.
+  case 0x80039e2c:emit(15,MESG_BALLOON<<8,r[4]&1);break;
+  case 0x80039e94:emit(15,MESG_BOX_X<<8,fbits(f[1].d));emit(15,MESG_BOX_Y<<8,fbits(f[2].d));break;
+  case 0x8003a030:emit(15,MESG_BOX_W<<8,fbits(f[1].d));emit(15,MESG_BOX_H<<8,fbits(f[2].d));break;
+  case 0x80039fb0:emit(15,MESG_TAIL2_X<<8,fbits(f[1].d));emit(15,MESG_TAIL2_Y<<8,fbits(f[2].d));emit(15,MESG_TAIL2_FLIP<<8,r[4]!=0);break;
+  case 0x8003a11c:break;
+  // CBalloonLayout::fn_80039E5C/78(visible): show or hide its tail P_triangle_00 or P_triangle_01.
+  case 0x80039e5c:case 0x80039e78:emit(15,MESG_TRIANGLE<<8,(address==0x80039e78)<<1|(r[4]&1));break;
   // CBalloonLayout::fn_80039F30(x, y, flip): the straight tail's place, turned upside down or not.
   case 0x80039f30:
     if(rd32(rd32(r[3])+0x10)!=0x800399e4)panic(r[3],20);
@@ -644,6 +698,7 @@ static void call(uint32_t address){
   case 0x801d42e0:case 0x801d42fc:r[3]=1;break;
   case 0x801d5ff0:r[3]=CONTROLLER;break;
   case 0x801d6aec:break;
+  case 0x801d7198:break; // CLayoutManager gives its layouts their own heap (Night Walk); the browser draws layouts itself
   case 0x801d6b2c:{ // CLayoutManager adds a layout and sets it up (_10)
     if(layout_count>=8)panic(layout_count,9);layout[layout_count++]=r[4];
     uint32_t setup=rd32(rd32(r[4])+0x10);
@@ -655,6 +710,10 @@ static void call(uint32_t address){
     else if(setup==0x8007c474){emit(11,0x800,1);emit(11,0x100,0);}
     // Hole in One's CMyLayout gives its four messages to panes 0-3, hidden (fn_80072428).
     else if(setup==0x80072428){emit(15,MESG_LAYOUT<<8,MESG_LAYOUT_GOLF);for(uint32_t i=0;i<4;i++){emit(15,(MESG_REGISTER<<8)|i,0x20+i);emit(15,(MESG_VISIBLE<<8)|i,0);}}
+    // Night Walk's credits layout (fn_800C4EF8) gives message panes 2-5 its four credit lines.
+    else if(setup==0x800c4ef8){emit(15,MESG_LAYOUT<<8,MESG_LAYOUT_CREDIT);for(uint32_t i=0;i<4;i++)emit(15,(MESG_REGISTER<<8)|(2+i),0x40+i);}
+    // Night Walk's night sky (fn_800C52E4) is set up by adapters/nightwalk/game.h.
+    else if(setup==0x800c52e4)call(setup);
     break;
   }
   case 0x801d6c50:r[3]=layout[r[4]];break;
@@ -688,7 +747,7 @@ EMSCRIPTEN_KEEPALIVE void install_permanent(uint32_t count,uint32_t animations,u
 }
 // A bank of one scene's archive, registered by name when the scene asks for it (registBank).
 EMSCRIPTEN_KEEPALIVE uint32_t install_named_bank(uint32_t scene_index,uint32_t name,uint32_t count,uint32_t animations,uint32_t cells){
-  if(named_bank_count>=64)panic(name,18);NamedBank*b=&named_banks[named_bank_count];
+  if(named_bank_count>=256)panic(name,18);NamedBank*b=&named_banks[named_bank_count];
   b->scene=scene_index;b->count=count;b->animations=animations;b->cells=cells;
   uint32_t n=0;while(rd8(name+n)&&n<47){b->name[n]=rd8(name+n);n++;}b->name[n]=0;
   return named_bank_count++;
@@ -714,6 +773,7 @@ EMSCRIPTEN_KEEPALIVE void initialize_scene(void){
   // gTickFlowManager's own table: _1C is registerFlow.
   uint32_t flow_vtable=alloc(256);memcpy(ram+idx(flow_vtable),ram+idx(vtable),256);wr32(flow_vtable+0x1c,0x8fff001c);wr32(rd32(0x80320174),flow_vtable);
   invoke1(0x801ead4c,rd32(0x8032016c));
+  wr8(rd32(0x80320170)+0x42f,1); // CInputCheckManager's constructor
   wrf32(rd32(0x80320174)+0x60,1.0f); // CTickFlowManager::mSpeed
   chart_handles=alloc(64*8);
   r[3]=2;call(profiles[profile_index].create);scene=r[3];wr32(rd32(0x80320180)+4,scene);
@@ -814,7 +874,7 @@ static void press(uint32_t type){
   for(int i=(int)checker_count-1;i>=0;i--){
     uint32_t c=checkers[i];if(rd8(c+0x71))continue;
     r[3]=c;r[4]=type;call(0x801e7e28);if(!(r[3]&0xff))continue; // checker waits for this input type
-    uint32_t quality=0x80400000;r[3]=c;r[4]=quality;r[5]=wrong_timer>0;f[1].d=0;
+    uint32_t quality=0x80400000;r[3]=c;r[4]=quality;r[5]=wrong_timer>0&&rd8(rd32(0x80320170)+0x42f);f[1].d=0;
     call(rd32(rd32(c)+0x20));uint32_t judgment=r[3];
     if(judgment<=1){
       consumed=1;r[3]=c;r[4]=type;call(rd32(rd32(c)+(judgment==0?0x24:0x28)));
@@ -830,7 +890,7 @@ static void press(uint32_t type){
     uint32_t wrong=rd32(rd32(0x80320170)+0x418);
     if(wrong){r[3]=type;call(wrong);}
     // CInputCheckManager::fn_801E94E8 and the stray count only follow A and A+B (unk430).
-    if(type==4||type==6){stray++;wrong_timer=48;wrong_count=wrong_count<6?wrong_count+1:6;}
+    if(type==4||type==6){stray++;if(rd8(rd32(0x80320170)+0x42f))wrong_timer=48;wrong_count=wrong_count<6?wrong_count+1:6;}
   }
 }
 // The buttons pressed (trig) and let go (release) this frame: bit 0 A, bit 1 B.

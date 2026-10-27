@@ -1,0 +1,144 @@
+{
+  "$schema": "../../schemas/game.schema.json",
+  "schemaVersion": 1,
+  "id": "remix10",
+  "title": "Remix 10",
+  "action": "Play each game",
+  "platform": "wii",
+  "wii": {
+    "music": "WSD_REMIX10",
+    "scenes": [
+      {
+        "game": "sort",
+        "cellanim": "EN/content2/cellanim/sort/remix10/cellanim.szs"
+      },
+      {
+        "game": "shrimp",
+        "cellanim": "EN/content2/cellanim/shrimp/remix10/cellanim.szs"
+      },
+      {
+        "game": "rotation",
+        "cellanim": "EN/content2/cellanim/rotation/remix10/cellanim.szs"
+      },
+      {
+        "game": "flea",
+        "cellanim": "EN/content2/cellanim/flea/remix10/cellanim.szs"
+      },
+      {
+        "game": "date",
+        "cellanim": "EN/content2/cellanim/date/remix10/cellanim.szs"
+      },
+      {
+        "game": "concons",
+        "cellanim": "EN/content2/cellanim/concons/remix10/cellanim.szs"
+      },
+      {
+        "game": "fork",
+        "cellanim": "EN/content2/cellanim/fork/remix10/cellanim.szs"
+      },
+      {
+        "game": "badminton",
+        "cellanim": "EN/content2/cellanim/badminton/remix10/cellanim.szs"
+      },
+      {
+        "game": "panel",
+        "cellanim": "EN/content2/cellanim/panel/remix10/cellanim.szs"
+      },
+      {
+        "game": "muscle",
+        "cellanim": "EN/content2/cellanim/muscle/remix10/cellanim.szs"
+      },
+      {
+        "game": "samurai",
+        "cellanim": "EN/content2/cellanim/samurai/remix10/cellanim.szs"
+      },
+      {
+        "game": "birds",
+        "cellanim": "EN/content2/cellanim/birds/remix10/cellanim.szs"
+      },
+      {
+        "game": "seal",
+        "cellanim": "EN/content2/cellanim/seal/remix10/cellanim.szs"
+      },
+      {
+        "game": "robot",
+        "cellanim": "EN/content2/cellanim/robot/remix10/cellanim.szs"
+      },
+      {
+        "game": "receive",
+        "cellanim": "EN/content2/cellanim/receive/remix10/cellanim.szs"
+      },
+      {
+        "game": "golf",
+        "cellanim": "EN/content2/cellanim/baseball/remix10/cellanim.szs"
+      },
+      {
+        "game": "seesaw",
+        "cellanim": "EN/content2/cellanim/seesaw/remix10/cellanim.szs"
+      },
+      {
+        "game": "watch",
+        "cellanim": "EN/content2/cellanim/watch/remix10/cellanim.szs"
+      },
+      {
+        "game": "fishing",
+        "cellanim": "EN/content2/cellanim/fishing/remix10/cellanim.szs"
+      },
+      {
+        "game": "batting",
+        "cellanim": "EN/content2/cellanim/batting/remix10/cellanim.szs"
+      },
+      {
+        "game": "rocket",
+        "cellanim": "EN/content2/cellanim/rocket/remix10/cellanim.szs"
+      },
+      {
+        "game": "rap",
+        "cellanim": "EN/content2/cellanim/rap/remix10/cellanim.szs"
+      },
+      {
+        "game": "tambourine",
+        "cellanim": "EN/content2/cellanim/tambourine/remix10/cellanim.szs"
+      },
+      {
+        "game": "taptroupe",
+        "cellanim": "EN/content2/cellanim/tap/remix10/cellanim.szs"
+      },
+      {
+        "game": "goma",
+        "cellanim": "EN/content2/cellanim/goma/remix10/cellanim.szs"
+      },
+      {
+        "game": "karateman",
+        "cellanim": "EN/content2/cellanim/karateman/remix10/cellanim.szs"
+      },
+      {
+        "game": "navi",
+        "cellanim": "EN/content2/cellanim/navi/ver0/cellanim.szs"
+      },
+      {
+        "game": "interview",
+        "cellanim": "EN/content2/cellanim/interview/remix10/cellanim.szs"
+      },
+      {
+        "game": "bun",
+        "cellanim": "EN/content2/cellanim/bun/remix10/cellanim.szs"
+      },
+      {
+        "game": "nightwalk",
+        "cellanim": "EN/content2/cellanim/nightWalk/ver0/cellanim.szs"
+      }
+    ],
+    "epilogue": "EN/content2/cellanim/remix/ver10/cellanim_epilogue.szs",
+    "projection": [
+      832,
+      456
+    ],
+    "endsWithMusic": true
+  },
+  "web": {
+    "enabled": true,
+    "expectedCues": 267,
+    "icon": "game_10_5.00.tpl"
+  }
+}

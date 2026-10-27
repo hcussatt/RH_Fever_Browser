@@ -21,22 +21,29 @@ export async function createLayout(g,{spec=g.manifest.wii.layout,file='layout.js
  const panes=data.panes.map(fresh);
  // The panes as the layout file sets them up, and its animations bound but stopped, for a layout
  // the game builds again (a new scene).
- function reset(){data.panes.forEach((p,i)=>{panes[i]=fresh(p);});for(const a of animations)Object.assign(a,{frame:0,playing:false,skip:false,enabled:false,reverse:false,loop:undefined});atEnd();}
+ const textColors=new Map();
+ function reset(){data.panes.forEach((p,i)=>{panes[i]=fresh(p);});textColors.clear();for(const a of animations)Object.assign(a,{frame:0,playing:false,skip:false,enabled:false,reverse:false,loop:undefined});atEnd();}
  const materialImage=data.materials.map(m=>m.texture==null?null:data.textures[m.texture]);
  // Live material values that RLTS and RLMC animations write into. A material without its own TEV
  // stages keeps its two colour registers as color0 and color1 (the lyric layout's title card fades them).
  const live=data.materials.map(m=>({srts:m.srts?.map(s=>[...s]),tevColors:m.tevColors?.map(c=>[...c])??(m.stages?undefined:[[...m.color0],[...m.color1]]),kColors:m.kColors?.map(c=>[...c]),matColor:m.matColor&&[...m.matColor]}));
- const animations=spec.animations.map(([pane,name])=>{
+ // A spec entry with {count} stands for that many numbered panes (Night Walk's P_star_%02d).
+ const numbered=(f,i)=>f.replace('%02d',String(i).padStart(2,'0'));
+ const specAnimations=spec.animations.flatMap(([pane,name,o])=>o?.count?Array.from({length:o.count},(_,i)=>[numbered(pane,i),name,o]):[[pane,name,o]]);
+ const specPanes=(spec.panes||[]).flatMap(n=>Array.isArray(n)?Array.from({length:n[1]},(_,i)=>numbered(n[0],i)):[n]);
+ const owners=new Map();data.panes.forEach(p=>{if(p.material!=null){const m=data.materials[p.material].name;owners.set(m,[...owners.get(m)||[],p.name]);}});
+ const animations=specAnimations.map(([pane,name,o])=>{
   const anim=data.animations[name],root=byName[pane],inTree=new Set();
-  const walk=i=>{inTree.add(data.panes[i].name);children[i].forEach(walk);};walk(root);
-  // Bound recursively: the pane and its descendants (and their materials) that the animation names.
-  const targets=Object.entries(anim.panes).filter(([n])=>inTree.has(n)||data.panes.some(p=>inTree.has(p.name)&&p.material!=null&&data.materials[p.material].name===n));
+  const walk=i=>{inTree.add(data.panes[i].name);if(o?.recursive!==false)children[i].forEach(walk);};walk(root);
+  // Bound recursively (unless recursive is false): the pane and its descendants (and their
+  // materials) that the animation names.
+  const targets=Object.entries(anim.panes).filter(([n])=>inTree.has(n)||owners.get(n)?.some(x=>inTree.has(x)));
   return {anim,targets,frame:0,playing:false,skip:false,enabled:false,reverse:false};
  });
  const setFrame=(a,frame)=>{a.enabled=true;a.frame=frame;};
  const atEnd=()=>{for(const i of spec.startAtEnd||[])setFrame(animations[i],animations[i].anim.frames);};
  atEnd();
- const base=Object.fromEntries((spec.panes||[]).map(n=>[n,[...data.panes[byName[n]].translate]]));
+ const base=Object.fromEntries(specPanes.map(n=>[n,[...data.panes[byName[n]].translate]]));
  let applied=0;
 
  function hermite(keys,f){
@@ -76,7 +83,8 @@ export async function createLayout(g,{spec=g.manifest.wii.layout,file='layout.js
  function message(id){return (data.messages[id]??'???').replace(/\{[0-9a-f]*\}/g,'');}
  function apply(e){
   if(e.action===-1)return reset();
-  const op=e.action>>8,i=e.action&255;
+  // Actions from 0x10000 up carry a 16-bit index (op<<16|index): Night Walk's 409 animations.
+  const op=e.action>=0x10000?e.action>>16:e.action>>8,i=e.action>=0x10000?e.action&0xffff:e.action&255;
   if(op===1){const a=animations[i];a.reverse=false;setFrame(a,0);a.playing=true;a.skip=true;}
   // Play from the beginning, forward or reversed (value bit 1), or jump to the end (bit 0).
   else if(op===6){const a=animations[i];a.reverse=!!(e.value&2);setFrame(a,e.value&1?a.anim.frames:0);a.playing=true;a.skip=true;}
@@ -84,7 +92,10 @@ export async function createLayout(g,{spec=g.manifest.wii.layout,file='layout.js
   else if(op===8)animations[i].loop=!!e.value; // CLayoutAnimation::setLoop
   else if(op===3)panes[byName[spec.texts[i]]].text=message(e.value);
   else if(op===7)panes[byName[spec.texts[i]]].visible=!!e.value;
-  else if(op===4||op===5){const n=spec.panes[i];panes[byName[n]].translate[op-4]=base[n][op-4]+f32(e.value);}
+  else if(op===4||op===5){const n=specPanes[i];panes[byName[n]].translate[op-4]=base[n][op-4]+f32(e.value);}
+  else if(op===9)animations[i].enabled=false; // CLayoutAnimation::fn_801DA2FC(false)
+  else if(op===10||op===11)panes[byName[specPanes[i]]].translate[op-10]=f32(e.value); // a pane put at x or y
+  else if(op===12)panes[byName[specPanes[i]]].visible=!!e.value;
  }
  // One game frame of CLayout::_18: advance, animate the enabled animations in bind order, then
  // drop the stopped ones.
@@ -331,7 +342,7 @@ export async function createLayout(g,{spec=g.manifest.wii.layout,file='layout.js
  }
  function drawText(ctx,p,m,alpha){
   if(!p.text)return;
-  const font=data.font,img=tint(fontImage,data.materials[p.material],p.colors?.[0]);
+  const font=data.font,img=tint(fontImage,textColors.get(p.material)??data.materials[p.material],p.colors?.[0]);
   const sx=p.fontSize[0]/font.width,sy=p.fontSize[1]/font.height,lineHeight=font.lineFeed*sy+p.lineSpace;
   const glyph=c=>font.glyphs[c.codePointAt(0)];
   const lines=p.text.split('\n').map(l=>{const gs=[...l].map(glyph).filter(Boolean);return {gs,width:gs.reduce((s,g)=>s+g.charWidth*sx+p.charSpace,0)-(gs.length?p.charSpace:0)};});
@@ -378,5 +389,7 @@ export async function createLayout(g,{spec=g.manifest.wii.layout,file='layout.js
  }
  function textWidth(p,text=p.text){const font=data.font,sx=p.fontSize[0]/font.width;return Math.max(0,...text.split('\n').map(l=>[...l].reduce((n,c)=>n+(font.glyphs[c.codePointAt(0)]?.charWidth||0)*sx+p.charSpace,0)-(l.length?p.charSpace:0)));}
  function fitText(p,width,height){p.fontSize=[width,height];const w=textWidth(p),scale=w>p.size[0]?p.size[0]*.95/w:1;p.fontSize[0]*=scale;return scale;}
- return {draw,update,reset,panes,animations,byName,data,fitText};
+ // A text material's colour registers 0 and 1 as the game sets them (Night Walk's credit lines).
+ const colors=(m,[color0,color1])=>textColors.set(m,{color0,color1});
+ return {draw,update,reset,panes,animations,byName,data,fitText,colors};
 }

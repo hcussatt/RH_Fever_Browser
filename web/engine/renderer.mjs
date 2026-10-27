@@ -3,8 +3,8 @@
 // down, and an animation attached to an object of its base only moves while the base's
 // current cell has that object; otherwise it keeps its last matrix. An attached animation
 // drawn with its base (mBaseAnimDraw) is drawn right after that object, not by layer.
-// A game's 2D layout (layout.mjs) and the chart's message panes (message.mjs) are drawn over the
-// cell animations.
+// A game's 2D layout (layout.mjs) is drawn over the cell animations on layers 0 and up and under
+// those on negative layers; the chart's message panes (message.mjs) over everything.
 import {createLayout} from './layout.mjs';
 import {createMessages} from './message.mjs';
 import {assetImage,assetResponse} from './assets.mjs';
@@ -31,6 +31,8 @@ export async function createRenderer(g,canvas){
  const images=await Promise.all([...g.assets.textures,...(g.gradingData.permanent?.textures||[]),...(g.gradingData.remixMask?.textures||[])].map(n=>assetImage(new URL('assets/'+n,g.base))));
  const ctx=canvas.getContext('2d',{alpha:false});
  const layout=g.manifest.wii.scenes?await sceneLayouts(g):await gameLayout(g),messages=await createMessages(g);
+ // The scene's lyric layout when the game's own layout is another (Night Walk's song title card).
+ const lyric=g.manifest.wii.lyricLayout?await createLayout(g,{spec:g.manifest.wii.lyricLayout,file:'lyric-layout.json',fontFile:'lyric-layout-font.png',events:g.lyricEvents}):null;
  const {u8,u16,u32,f32,core,banks}=g;
  const mul=(a,b)=>[a[0]*b[0]+a[2]*b[1],a[1]*b[0]+a[3]*b[1],a[0]*b[2]+a[2]*b[3],a[1]*b[2]+a[3]*b[3],a[0]*b[4]+a[2]*b[5]+a[4],a[1]*b[4]+a[3]*b[5]+a[5]];
  const trs=(x,y,deg,sx,sy)=>{const a=deg*Math.PI/180,c=Math.cos(a),s=Math.sin(a);return [c*sx,s*sx,-s*sy,c*sy,x,y];};
@@ -97,7 +99,10 @@ export async function createRenderer(g,canvas){
  // over black, and its alpha pass as grey. Drawn with the cell's usual blend, the screen becomes
  // colour*alpha + screen*(1-alpha): multiply by 1-alpha, then add colour*alpha.
  const surface=()=>Object.assign(document.createElement('canvas'),{width:640,height:456});
- let screenTex=null;
+ // screenShown: the scene drawing now has a layout for its texture. In a remix the texture another
+ // scene drew stays behind (Remix 10's Micro-Row, whose own screen bank is not modelled, showed
+ // Shrimp Shuffle's shore).
+ let screenTex=null,screenShown=false;
  function renderScreen(l){
   screenTex||={color:surface(),alpha:surface(),inverse:surface(),product:surface()};
   const {color,alpha,inverse,product}=screenTex,fill=(c,style)=>{const x=c.getContext('2d');x.setTransform(1,0,0,1,0,0);x.globalAlpha=1;x.globalCompositeOperation='source-over';x.fillStyle=style;x.fillRect(0,0,640,456);return x;};
@@ -134,7 +139,7 @@ export async function createRenderer(g,canvas){
    if(alpha&&o.w&&o.h){
     ctx.imageSmoothingEnabled=!!u8(a+0xa8);
     const om=mul(mul(origin,m),trs(o.x+o.w*o.scaleX/2,o.y+o.h*o.scaleY/2,o.angle,o.scaleX*(o.flipX?-1:1),o.scaleY*(o.flipY?-1:1)));
-    if(bank.screen){if(!plain(a))throw new Error('Screen bank drawn with a tint');if(screenTex)drawScreen(om,alpha);}
+    if(bank.screen){if(!plain(a))throw new Error('Screen bank drawn with a tint');if(screenTex&&screenShown)drawScreen(om,alpha);}
     else{
      ctx.setTransform(...om);ctx.globalAlpha=alpha;
      if(plain(a)&&!effect)ctx.drawImage(images[bank.texture],o.sx,o.sy,o.w,o.h,-o.w/2,-o.h/2,o.w,o.h);
@@ -157,17 +162,23 @@ export async function createRenderer(g,canvas){
   current=new Set(actors);
   for(const a of matrices.keys())if(!current.has(a))matrices.delete(a);
   for(const a of actors)if(!u32(a+0xb0))makeMatrix(a,identity);
-  // Screen units from the manifest. Tap Trial uses the original wide projection,
-  // x +/-416, y +/-228 (CellAnimManager::setupProj); Hole in One's 854x480 is not yet qualified.
+  // Screen units from the manifest: every game uses the original wide projection, x +/-416, y +/-228
+  // (CellAnimManager::setupProj). A wider one left the edges uncovered by full-screen masks.
   const [w,h]=g.manifest.wii.projection,origin=[canvas.width/w,0,0,canvas.height/h,canvas.width/2,canvas.height/2];
   // CExScene::_1C hides the "you" marker while the screen shows an instruction example (lbl_80320228).
   const hiddenYou=u8(0x80320228)?u32(0x80320200):0;
   const drawn=actors.filter(a=>u8(a+12)!==255&&u8(a+0xa7)&&a!==hiddenYou&&!(u32(a+0xb0)&&u8(a+0xc2))).sort((a,b)=>(u32(b+0x98)|0)-(u32(a+0x98)|0));
   // The dynamic texture is redrawn each frame a screen bank shows (CDynTex::update).
-  const screen=layout?.screen();
+  const screen=layout?.screen();screenShown=!!screen;
   if(screen&&actors.some(a=>banks[u8(a+12)]?.screen&&u8(a+0xa7)))renderScreen(screen);
-  for(const a of drawn)drawActor(a,origin);
-  layout?.draw(ctx,canvas);messages.draw(ctx,canvas);
+  // CExScene::_1C: the cell animations on layers 0 and up (CCellAnimManager::_20), then the
+  // layouts, then those on negative layers (_24): Night Walk's sky is a layout behind its actors;
+  // then the lyric layout.
+  for(const a of drawn)if((u32(a+0x98)|0)>=0)drawActor(a,origin);
+  layout?.draw(ctx,canvas);
+  for(const a of drawn)if((u32(a+0x98)|0)<0)drawActor(a,origin);
+  lyric?.draw(ctx,canvas);
+  messages.draw(ctx,canvas);
   // CFaderFlash's black cover over everything (fn_80007DD8), as the chart fades it.
   const cover=core._fader_cover();
   if(cover){ctx.setTransform(1,0,0,1,0,0);ctx.globalAlpha=cover/255;ctx.fillStyle='#000';ctx.fillRect(0,0,canvas.width,canvas.height);}

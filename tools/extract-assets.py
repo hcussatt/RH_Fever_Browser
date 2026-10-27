@@ -49,6 +49,10 @@ def textures(prefix=''):
         h,w,fmt,start = struct.unpack_from('>HHII',data,header)
         assert fmt in (5,6,9), f'Unsupported texture format {fmt}'
         name=f'{prefix}texture-{i}.png'
+        # Tiles cover the texture padded to whole tiles (Power Calligraphy has 465x801); the
+        # padding is decoded and cropped off.
+        H,W=h,w
+        h,w=-(-H//4)*4,-(-W//(8 if fmt==9 else 4))*(8 if fmt==9 else 4)
         if fmt == 9:
             # C8: 8x4 tiles of palette indices into the texture's palette (RGB565 or RGB5A3).
             palette_header = u32(data,u32(data,8)+i*8+4)
@@ -58,7 +62,7 @@ def textures(prefix=''):
             indices = indices.reshape(h//4,w//8,4,8).transpose(0,2,1,3).reshape(h,w)
             words = np.frombuffer(data,dtype='>u2',count=count,offset=palette_start).astype(np.uint16)
             colors = rgb565(words) if palette_format == 1 else rgb5a3(words)
-            Image.fromarray(colors[indices],'RGBA').save(OUT/name)
+            Image.fromarray(colors[indices][:H,:W],'RGBA').save(OUT/name)
             paths.append(name)
             continue
         if fmt == 6:
@@ -68,12 +72,12 @@ def textures(prefix=''):
             rgba[...,3],rgba[...,0] = tiles[:,:,0,:,0],tiles[:,:,0,:,1]
             rgba[...,1],rgba[...,2] = tiles[:,:,1,:,0],tiles[:,:,1,:,1]
             rgba = rgba.reshape(h//4,w//4,4,4,4).transpose(0,2,1,3,4).reshape(h,w,4)
-            Image.fromarray(rgba,'RGBA').save(OUT/name)
+            Image.fromarray(rgba[:H,:W],'RGBA').save(OUT/name)
             paths.append(name)
             continue
         words = np.frombuffer(data,dtype='>u2',count=w*h,offset=start).astype(np.uint16)
         words = words.reshape(h//4,w//4,4,4).transpose(0,2,1,3).reshape(h,w)
-        Image.fromarray(rgb5a3(words),'RGBA').save(OUT/name)
+        Image.fromarray(rgb5a3(words)[:H,:W],'RGBA').save(OUT/name)
         paths.append(name)
     return paths
 
@@ -159,16 +163,31 @@ def remix():
     global SOURCE
     out={'textures':[],'banks':{},'scenes':[]}
     for scene in PROFILE['scenes']:
-        SOURCE=require(source(GAME)/scene['game'])
-        first=len(out['textures']);out['textures']+=textures(scene['game']+'-')
-        names=sorted(p.stem for p in SOURCE.glob('*.brcad'))
-        for n in names:
-            b=bank(n);b['texture']+=first;out['banks'][scene['game']+'/'+n]=b
+        folder=require(source(GAME)/scene['game']);names=[]
+        # A scene that also loads another game's archive has it in a folder inside its own.
+        for SOURCE in [folder]+[require(folder/path.split('/')[-3]) for path in manifest(scene['game'])['wii'].get('extraCellanims',[])]:
+            first=len(out['textures']);out['textures']+=textures(scene['game']+'-'+('' if SOURCE==folder else SOURCE.name+'-'))
+            for n in sorted(p.stem for p in SOURCE.glob('*.brcad')):
+                b=bank(n);b['texture']+=first;out['banks'][scene['game']+'/'+n]=b;names.append(n)
         out['scenes'].append({'game':scene['game'],'banks':names})
     return out
 
+def single():
+    """A game's own archive, and any other game's it also loads (the calibration's metronome) from a
+    folder inside its own; textures are numbered across them."""
+    global SOURCE
+    main=SOURCE;out={'textures':[],'banks':{}}
+    for SOURCE in [main]+[require(main/path.split('/')[-3]) for path in PROFILE.get('extraCellanims',[])]:
+        first=len(out['textures']);out['textures']+=textures('' if SOURCE==main else SOURCE.name+'-')
+        for n in PROFILE['banks']:
+            if (SOURCE/(n+'.brcad')).exists():
+                out['banks'][n]=bank(n);out['banks'][n]['texture']+=first
+    out['banks']={n:out['banks'][n] for n in PROFILE['banks']}
+    SOURCE=main
+    return out
+
 if __name__=='__main__':
-    out=remix() if 'scenes' in PROFILE else {'textures':textures(),'banks':{n:bank(n) for n in PROFILE['banks']}}
+    out=remix() if 'scenes' in PROFILE else single()
     out['audio']=audio_groups()
     out['provenance']={'game':'Rhythm Heaven Fever SOME01','dolSha1':DOL_SHA1}
     (OUT/'original-assets.json').write_text(json.dumps(out,separators=(',',':'))+'\n')
