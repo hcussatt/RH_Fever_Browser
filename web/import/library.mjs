@@ -65,7 +65,12 @@ function setTitle(t){
   screen.style.setProperty('--theme-light',`rgb(${mix(.78,255)})`);
   screen.style.setProperty('--theme-mid',`rgb(${mix(.5,255)})`);
   screen.style.setProperty('--theme-shadow',`rgb(${mix(.45,0)})`);
- }else for(const v of ['--theme-light','--theme-mid','--theme-shadow'])screen.style.removeProperty(v);
+  screen.style.setProperty('--theme-paper',`rgb(${mix(.93,255)})`);
+  screen.style.setProperty('--theme-soft',`rgb(${mix(.3,255)})`);
+  screen.style.setProperty('--theme-dot',`rgba(${mix(.1,255)},.27)`);
+  screen.style.setProperty('--theme-dark',`rgb(${mix(.25,0)})`);
+  screen.style.setProperty('--theme-text',`rgb(${mix(.6,0)})`);
+ }else for(const v of ['light','mid','shadow','paper','soft','dot','dark','text'])screen.style.removeProperty('--theme-'+v);
 }
 function selectGame(id,{focus=false,reveal=true,animate=true}={}){
  const card=[...$('#games').querySelectorAll('.game')].find(card=>card.dataset.game===id);
