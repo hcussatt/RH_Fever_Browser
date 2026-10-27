@@ -2,7 +2,7 @@
   "$schema": "../../schemas/game.schema.json",
   "schemaVersion": 1,
   "id": "calibrate",
-  "title": "Rhythm Test",
+  "title": "Rhythm Test (Calibration)",
   "action": "Play",
   "platform": "wii",
   "wii": {

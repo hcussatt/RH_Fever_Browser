@@ -2,7 +2,7 @@ import {siteRoot,readLibrary,writeLibrary,deployment} from '../engine/assets.mjs
 import {mountMultiplayer} from '../engine/multiplayer.mjs';
 import {WII_COMMON_KEY} from './common-key.mjs';
 import {groupGames} from '../engine/menu.mjs';
-import {getDelayMs,resetDelay} from '../engine/delay.mjs';
+import {getDelayMs,setDelayMs,resetDelay,LIMIT_MS} from '../engine/delay.mjs';
 const $=s=>document.querySelector(s);
 let worker,build,games,selected;
 const iconURLs=new Map();
@@ -106,7 +106,10 @@ $('#close-import').onclick=()=>$('#import-dialog').close();
 $('#help').onclick=()=>$('#help-dialog').showModal();
 $('#close-help').onclick=()=>$('#help-dialog').close();
 // The audio delay the Rhythm Test (the calibrate game) set, and its reset to the default 0.
-const showDelay=()=>{$('#delay-value').textContent=getDelayMs()+' ms';};
+const showDelay=()=>{$('#delay-value').textContent=getDelayMs()+' ms';$('#delay-input').value=getDelayMs();};
+// Or a delay typed in, kept within delay.mjs's limits.
+$('#delay-input').min=LIMIT_MS[0];$('#delay-input').max=LIMIT_MS[1];
+$('#delay-form').onsubmit=e=>{e.preventDefault();const v=Number($('#delay-input').value);if(Number.isFinite(v))setDelayMs(v);showDelay();};
 $('#open-delay').onclick=()=>{showDelay();$('#delay-dialog').showModal();};
 $('#close-delay').onclick=()=>$('#delay-dialog').close();
 $('#delay-reset').onclick=()=>{resetDelay();showDelay();};
