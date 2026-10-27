@@ -77,6 +77,12 @@ def main(iso, *, sound_archive=True):
             data = menu['timg/'+icon]
             (DISC/'menu'/icon).write_bytes(data)
             report['files']['menu/'+icon] = hashlib.sha256(data).hexdigest()
+    # The game's own title screen, whose logo heads the game select.
+    for name, data in u8_files(disc.get('EN/content2/layout/layout_title.szs')).items():
+        out = DISC/'title'/name
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_bytes(data)
+        report['files'][f'title/{name}'] = hashlib.sha256(data).hexdigest()
 
     for name,data in u8_files(disc.get('EN/content2/cellanim/permanent/cellanim.szs')).items():
         out=DISC/'permanent'/name

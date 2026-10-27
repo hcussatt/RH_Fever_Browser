@@ -59,18 +59,33 @@ function setTitle(t){
  const back=$('#title-backdrop'),old=back.querySelector('canvas.shown');
  if(t){const c=t.canvas.cloneNode();c.getContext('2d').drawImage(t.canvas,0,0);back.append(c);requestAnimationFrame(()=>requestAnimationFrame(()=>c.classList.add('shown')));}
  if(old){old.classList.remove('shown');setTimeout(()=>old.remove(),700);}
- const screen=$('.screen');
- if(t){
-  const [r,g,b]=t.theme,mix=(k,to)=>[r,g,b].map(v=>Math.round(v+(to-v)*k));
-  screen.style.setProperty('--theme-light',`rgb(${mix(.78,255)})`);
-  screen.style.setProperty('--theme-mid',`rgb(${mix(.5,255)})`);
-  screen.style.setProperty('--theme-shadow',`rgb(${mix(.45,0)})`);
-  screen.style.setProperty('--theme-paper',`rgb(${mix(.93,255)})`);
-  screen.style.setProperty('--theme-soft',`rgb(${mix(.3,255)})`);
-  screen.style.setProperty('--theme-dot',`rgba(${mix(.1,255)},.27)`);
-  screen.style.setProperty('--theme-dark',`rgb(${mix(.25,0)})`);
-  screen.style.setProperty('--theme-text',`rgb(${mix(.6,0)})`);
- }else for(const v of ['light','mid','shadow','paper','soft','dot','dark','text'])screen.style.removeProperty('--theme-'+v);
+ // The menu's colours follow the title screen: light panels with dark text over a light picture,
+ // dark panels with light text over a dark one.
+ const root=document.documentElement.style,names=['light','mid','shadow','paper','soft','dot','dark','text','ink'];
+ if(!t){for(const v of names)root.removeProperty('--theme-'+v);return;}
+ const [r,g,b]=t.theme,mix=(k,to)=>[r,g,b].map(v=>Math.round(v+(to-v)*k)),rgb=c=>`rgb(${c})`;
+ const colours=(.2126*r+.7152*g+.0722*b)/255<.4
+  ?{light:mix(.55,0),mid:mix(0,0),shadow:mix(.8,0),paper:mix(.3,0),soft:mix(.35,255),dot:`rgba(${mix(.4,255)},.25)`,dark:mix(.7,0),text:mix(.7,255),ink:mix(.92,255)}
+  :{light:mix(.72,255),mid:mix(.45,255),shadow:mix(.45,0),paper:mix(.85,255),soft:mix(.3,255),dot:`rgba(${mix(.1,255)},.27)`,dark:mix(.25,0),text:mix(.6,0),ink:[37,39,31]};
+ for(const v of names)root.setProperty('--theme-'+v,v==='dot'?colours[v]:rgb(colours[v]));
+}
+// The game's own logo from its title screen heads the menu once any game is imported.
+let logoShown=false;
+async function showLogo(){
+ const id=$('#games .game[data-ready=true]')?.dataset.game;
+ if(logoShown||!id)return;logoShown=true;
+ try{
+  const base=new URL(id+'/',siteRoot),data=await (await assetResponse(new URL('assets/title-layout.json',base))).json();
+  const names=Object.keys(data.animations);
+  const layout=await createLayout({base,steps:1},{spec:{animations:names.map(name=>['RootPane',name]),startAtEnd:names.map((_,i)=>i),hidden:data.hidden},data,events:[]});
+  const full=Object.assign(document.createElement('canvas'),{width:832,height:456}),ctx=full.getContext('2d');layout.draw(ctx,full);
+  const px=ctx.getImageData(0,0,832,456).data;let [left,top,right,bottom]=[832,456,0,0];
+  for(let y=0;y<456;y++)for(let x=0;x<832;x++)if(px[(y*832+x)*4+3]){left=Math.min(left,x);right=Math.max(right,x+1);top=Math.min(top,y);bottom=Math.max(bottom,y+1);}
+  if(right<=left)throw new Error('Empty logo');
+  const logo=Object.assign(document.createElement('canvas'),{width:right-left,height:bottom-top,className:'logo'});
+  logo.getContext('2d').drawImage(full,left,top,right-left,bottom-top,0,0,right-left,bottom-top);
+  const h1=$('.marquee h1');h1.querySelector('.logo')?.remove();h1.prepend(logo);h1.classList.add('has-logo');
+ }catch{logoShown=false;}
 }
 function selectGame(id,{focus=false,reveal=true,animate=true}={}){
  const card=[...$('#games').querySelectorAll('.game')].find(card=>card.dataset.game===id);
@@ -101,7 +116,7 @@ async function render(){
  const version=++renderVersion,focused=document.activeElement?.classList.contains('game');
  const library=await readLibrary(),fragment=document.createDocumentFragment();
  menuGroups=groupGames(games).map(group=>({...group,games:[...group.games.filter(g=>g.id===group.title.toLowerCase().replace(' ','')),...group.games.filter(g=>g.id!==group.title.toLowerCase().replace(' ',''))]}));
- const order=new Map(groupGames(games).flatMap(group=>group.games).map((game,i)=>[game.id,i+1]));let readyCount=0;
+ const order=new Map(groupGames(games).flatMap(group=>group.games).map((game,i)=>[game.id,i+1]));
  for(const [column,group] of menuGroups.entries()){
   const set=document.createElement('section');set.className='game-set';set.setAttribute('aria-labelledby','set-'+column);set.style.setProperty('--set-hue',String(column*47));
   const heading=Object.assign(document.createElement('h4'),{className:'set-title',id:'set-'+column,textContent:group.title});set.append(heading);
@@ -110,7 +125,6 @@ async function render(){
    const number=order.get(id),cardNumber=String(number).padStart(2,'0');
    const entry=library.games[id],ready=entry?.version===(build.assetVersion||build.version);
    const stored=build.local?(await fetch(new URL(id+'/assets/original-timeline.json',siteRoot),{method:'HEAD'})).ok:ready&&await (await caches.open(entry.cache)).match(new URL(id+'/assets/original-timeline.json',siteRoot));
-   if(stored)readyCount++;
    const card=document.createElement('button');card.type='button';card.className='game';card.setAttribute('aria-pressed',String(id===selected));card.setAttribute('aria-label',title);card.tabIndex=id===selected?0:-1;
    Object.assign(card.dataset,{game:id,title,group:String(column),row:String(row),number:String(number).padStart(2,'0'),ready:String(!!stored),update:String(!!entry&&!stored),remix:String(id.startsWith('remix'))});
    card.onclick=()=>selectGame(id);card.ondblclick=()=>$('#selected-action .play')?.click();
@@ -142,7 +156,7 @@ async function render(){
  for(const [i,group] of menuGroups.entries()){
   const dot=document.createElement('button');dot.type='button';dot.dataset.group=String(i);dot.setAttribute('aria-label','Go to '+group.title);dot.onclick=()=>moveSelection(i-Number($('#games .game[aria-pressed=true]').dataset.group),0);$('#set-dots').append(dot);
  }
- $('#collection-count').textContent=String(readyCount).padStart(2,'0')+' / '+String(listed().length).padStart(2,'0');
+ showLogo();
  selectGame(selected,{focus:focused,animate:false});
  const estimate=await navigator.storage?.estimate?.();
  $('#storage').textContent=estimate?`${Math.round((estimate.usage||0)/1048576)} MB stored by this origin. Clearing site data removes your games.`:'Clearing site data removes your imported games.';

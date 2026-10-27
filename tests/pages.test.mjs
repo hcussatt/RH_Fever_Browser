@@ -36,11 +36,11 @@ test('Pages project path, local import errors, storage isolation, and offline sh
   // A game no remix set lists goes under Other games, the last set (engine/menu.mjs).
   assert.ok((await page.locator('.game h3').allTextContents()).includes('New Plugin'));
   assert.equal(await page.locator('.set-title').last().textContent(),'Other games');
-  assert.equal(await page.locator('#collection-count').textContent(),'00 / '+String(listed.length+1).padStart(2,'0'));
+  assert.equal(await page.locator('.game[data-ready=true]').count(),0);
   await page.unroute('**/games.json');
   await page.goto(base);await page.waitForFunction(count=>document.querySelectorAll('.game').length===count,listed.length);
   assert.equal(await page.locator('.game').count(),listed.length);
-  assert.equal(await page.locator('#collection-count').textContent(),'00 / '+String(listed.length).padStart(2,'0'));
+  assert.equal(await page.locator('.game[data-ready=true]').count(),0);
   assert.equal(await page.locator('.play').count(),0);
   await page.locator('.game[data-game=golf]').focus();
   await page.locator('.game[data-game=golf]').press('ArrowRight');

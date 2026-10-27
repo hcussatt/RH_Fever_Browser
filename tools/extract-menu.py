@@ -146,12 +146,40 @@ def title_screen(out, folder):
     (out/'prologue-layout.json').write_text(json.dumps(data, separators=(',', ':'))+'\n')
 
 
+def title_logo(out, folder):
+    """The game's logo from its title screen (the N_logo_all_00 group of layout_title), drawn by the
+    menu at the end of the logo's opening animation. Only the logo's textures are kept."""
+    module = layout()
+    data = module.layout((folder/'blyt/title.brlyt').read_bytes())
+    data['animations'] = {'title_logo_open': module.animation((folder/'anim/title_logo_open.brlan').read_bytes())}
+    panes = data['panes']
+    logo = next(i for i, p in enumerate(panes) if p['name'] == 'N_logo_all_00')
+
+    def in_logo(i):
+        while i is not None:
+            if i == logo:
+                return True
+            i = panes[i].get('parent')
+        return False
+    texture = lambda p: data['textures'][data['materials'][p['material']]['texture']] \
+        if p.get('material') is not None and data['materials'][p['material']].get('texture') is not None else None
+    data['hidden'] = [p['name'] for i, p in enumerate(panes) if i and not in_logo(i) and p.get('material') is not None]
+    used = {texture(p) for i, p in enumerate(panes) if in_logo(i)} - {None}
+    data['images'] = {}
+    for name in sorted(used):
+        module.tpl((folder/'timg'/name).read_bytes()).save(out/('title-'+name+'.png'))
+        data['images'][name] = 'title-'+name+'.png'
+    (out/'title-layout.json').write_text(json.dumps(data, separators=(',', ':'))+'\n')
+
+
 def main():
     profile = manifest(game())
     web = profile.get('web', {})
     out = assets(game())
     module = layout()
     text = module.messages(require(DISC/'message'/'riq_title_E.bmg').read_bytes())
+    if (DISC/'title').exists():
+        title_logo(out, DISC/'title')
     if (DISC/game()/'prologue').exists():
         title_screen(out, DISC/game()/'prologue')
     (out/'menu.json').write_text(json.dumps({'description': description(profile['title'], text) or web.get('description')}, ensure_ascii=False)+'\n')
