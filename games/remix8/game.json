@@ -45,7 +45,7 @@
     "endsWithMusic": true
   },
   "web": {
-    "enabled": false,
+    "enabled": true,
     "expectedCues": 82,
     "icon": "game_08_5.00.tpl"
   }

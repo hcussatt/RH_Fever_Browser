@@ -1,0 +1,54 @@
+{
+  "$schema": "../../schemas/game.schema.json",
+  "schemaVersion": 1,
+  "id": "bun2",
+  "title": "Working Dough 2",
+  "action": "Hit",
+  "platform": "wii",
+  "wii": {
+    "scene": "Bun",
+    "sceneVariant": 1,
+    "cellanim": "EN/content2/cellanim/bun/ver1/cellanim.szs",
+    "units": [
+      "Game/Bun/SceneBun.cpp",
+      "Game/Bun/MyChecker.cpp",
+      "Game/Bun/MyFlow.cpp",
+      "Game/WindParticle.cpp"
+    ],
+    "banks": [
+      "bun_00",
+      "bun_01"
+    ],
+    "layout": {
+      "archive": "EN/content2/layout/layout_common.szs",
+      "file": "lyrics.brlyt",
+      "animations": [
+        [
+          "N_titleAll_00",
+          "lyrics_title_show"
+        ]
+      ],
+      "startAtEnd": [],
+      "texts": [
+        "T_title_00",
+        "T_singer_00"
+      ],
+      "panes": [],
+      "hidden": [
+        "T_lyrics_Top_00",
+        "T_lyrics_Down_00"
+      ],
+      "messages": "bonus"
+    },
+    "projection": [
+      854,
+      480
+    ],
+    "endsWithMusic": true
+  },
+  "web": {
+    "enabled": true,
+    "expectedCues": 69,
+    "icon": "game_08_2.00.tpl"
+  }
+}

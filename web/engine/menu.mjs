@@ -9,8 +9,8 @@ export const SETS=[
  {title:'Remix 5',games:['fishing','goma','batting','birds','remix5']},
  {title:'Remix 6',games:['rocket','concons','receive','rap','remix6']},
  {title:'Remix 7',games:['taptroupe','shrimp','panel','karateman','remix7']},
- // Remix 8's games all belong to earlier sets.
- {title:'Remix 8',games:['remix8']},
+ // Remix 8's own games belong to earlier sets; its row holds their "2" versions, as on the disc's song select.
+ {title:'Remix 8',games:['samurai2','bun2','seal2','date2','remix8']},
 ];
 export const OTHER='Other games';
 // Groups a game list ({id,...}) into [{title,games}], keeping only the sets that have a game.
