@@ -63,6 +63,14 @@ with tempfile.TemporaryDirectory() as tmp:
     texture=textures[bank['texture']];name='results-prompt.png'
     (out/name).write_bytes((Path(tmp)/texture).read_bytes());bank['texture']=0
     metadata['prompt']={'textures':[name],'bank':bank}
+# Remix 8's photo frame (remix08_Mask), for a chart that shows it with CExFlow 0x13f.
+if any(op==0x13f for _,op,_,_ in cmds):
+    extract.SOURCE=require(DISC/'remix-mask')
+    with tempfile.TemporaryDirectory() as tmp:
+        extract.OUT=Path(tmp);textures=extract.textures();bank=extract.bank('remix08_Mask')
+        if len(textures)!=1:raise ValueError('remix08_Mask: expected one texture')
+        name='remix-mask.png';(out/name).write_bytes((Path(tmp)/textures[0]).read_bytes())
+    metadata['remixMask']={'textures':[name],'bank':{**bank,'texture':0}}
 audio=json.loads((out/'original-assets.json').read_text())['audio']
 for sid,s in audio['sounds'].items():
     if not (s.get('name') or '').startswith(('WSD_RESULT_','WSD_EPILOGUE_')):

@@ -75,6 +75,12 @@ def main(iso, *, sound_archive=True):
         out.parent.mkdir(parents=True,exist_ok=True)
         out.write_bytes(data)
         report['files'][f'permanent/{name}']=hashlib.sha256(data).hexdigest()
+    # Remix 8's photo frame (CExFlow 0x13f loads it by this fixed path).
+    for name,data in u8_files(disc.get('EN/content2/cellanim/remix/ver8/cellanim.szs')).items():
+        out=DISC/'remix-mask'/name
+        out.parent.mkdir(parents=True,exist_ok=True)
+        out.write_bytes(data)
+        report['files'][f'remix-mask/{name}']=hashlib.sha256(data).hexdigest()
     for game, path in CELLANIM.items():
         for name, data in u8_files(disc.get(path)).items():
             out = DISC/game/name

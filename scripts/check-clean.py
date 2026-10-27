@@ -41,6 +41,8 @@ SIGNATURES = {
 }
 COMMON_KEY_SHA256 = 'de38aeab4fe0c36d828a47e6fd315100e7ce234d3b00aa25e6ad6f5ff2824af8'
 MAX_BYTES = 1_000_000
+# An approved runtime snapshot holds every scene's translated code for a remix (Remix 8 has seven).
+MAX_RUNTIME_SOURCE_BYTES = 4_000_000
 WINDOW = 64
 
 
@@ -89,8 +91,9 @@ def check(name, data, blocks):
             problems.append(label)
     if len(data) >= 0x1c and data[0x18:0x1c] == b'\x5d\x1c\x9e\xa3':
         problems.append('Wii disc image')
-    if len(data) > MAX_BYTES:
-        problems.append(f'larger than {MAX_BYTES} bytes')
+    limit = MAX_RUNTIME_SOURCE_BYTES if name in RUNTIME_SOURCES else MAX_BYTES
+    if len(data) > limit:
+        problems.append(f'larger than {limit} bytes')
     text = data.decode('latin-1')
     public_key_module = name in PUBLIC_KEY_MODULES and re.fullmatch(
         rb"// Public Wii common key bundled for the USA disc importer, explicitly authorized by the user\.\nexport const WII_COMMON_KEY = '[0-9a-f]{32}';\n", data)

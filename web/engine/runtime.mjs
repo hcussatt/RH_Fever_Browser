@@ -43,6 +43,11 @@ export async function loadGame(gameUrl,load=fetchBytes,{timeline:withTimeline=tr
   banks[254]={...gradingData.permanent.bank,texture:assets.textures.length};
   core._install_permanent(...install(banks[254]),...gradingData.permanent.you,gradingData.permanent.mask);
  }
+ // Remix 8's photo frame (bank 253, ExFlow 0x13f in platform.c), its texture after the permanent bank's.
+ if(gradingData.remixMask){
+  banks[253]={...gradingData.remixMask.bank,texture:assets.textures.length+(gradingData.permanent?.textures.length||0)};
+  core._install_bank(253,...install(banks[253]));
+ }
  scenes.forEach((list,scene)=>list.forEach(([name,b])=>{
   const p=alloc(name.length+1);for(let i=0;i<name.length;i++)w8(p+i,name.charCodeAt(i));w8(p+name.length,0);
   named[core._install_named_bank(scene,p,...install(b))]=b;

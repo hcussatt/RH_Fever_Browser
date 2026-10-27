@@ -58,7 +58,7 @@ static uint32_t profile_index,next_profile,next_chart,scene_state,fader_state,fa
 // CFaderFlash's black cover (mAlpha, mAlphaStep): faded by the chart (ExFlow 0x10A), drawn over all.
 static float fader_alpha,fader_step;
 // The platform's own cell animations (canvases, Perfect markers) outlive every scene.
-static uint32_t persistent[16],persistent_count;
+static uint32_t persistent[32],persistent_count;
 // Cell-animation banks: every bank of every scene is installed up front (install_bank); a scene's
 // registBank call puts one under the id it asks for, found by the file name it read.
 typedef struct {uint32_t scene,count,animations,cells;char name[48];} NamedBank;
@@ -69,8 +69,11 @@ typedef struct {uint32_t count,animations,cells;} Bank;
 static Bank banks[256];
 // Bank 255 is the platform's never-drawn placeholder; 254 holds the permanent bank (install_permanent).
 #define PERMANENT_BANK 254
+// Remix 8's photo frame (remix08_Mask, ExFlow 0x13f): the original registers it as bank 254 and its
+// permanent bank as 255, so here it takes the next free id.
+#define REMIX_MASK_BANK 253
 #define MASK_TWEEN 0x8032a1c0 // CExScene's CTRFloat lbl_8032A1C0
-static uint32_t you_animations[3],mask_animation;
+static uint32_t you_animations[3],mask_animation,remix_mask;
 EM_JS(void,panic_js,(uint32_t address,uint32_t kind,uint32_t pc,uint32_t stack,uint32_t depth),{console.error(Array.from(HEAPU32.subarray(stack/4,stack/4+depth)).map(x=>x.toString(16)));throw new Error('Original code '+kind+' at 0x'+address.toString(16)+' after 0x'+pc.toString(16));});
 #define panic(a,k) panic_js(a,k,lr,(uint32_t)(uintptr_t)trace,call_depth)
 static uint32_t idx(uint32_t a){if(a<0x80000000u||a>=0x82000000u)panic(a,1);return a-0x80000000u;}
@@ -305,7 +308,7 @@ static void exflow_command(void){
     scene_state=SCENE_SCHEDULE_DOWN;fader_state=FADER_WAIT1;fader_wait=5; // CScene::fn_801D8578, CFaderFlash::_10
   }
   else if(op==0x101&&find_profile(rd32(args))>=0)wr32(profiles[find_profile(rd32(args))].version,rd32(args+4));
-  else if(op==0x102&&find_profile(rd32(args))>=0){} // Scene assets: the browser loaded every scene's up front.
+  else if(op==0x102&&find_profile(rd32(args))>=0){} // Scene assets, 0 load and 1 free (CSceneManager fn_8008A704, fn_8008A82C): the browser loaded every scene's up front.
   else if(op==0x104)wr32(self+0x24,scene_state==SCENE_ACTIVE);
   // Ticks spent waiting for the next scene (a static at r13-27216, from the constant at r2-15420),
   // taken off the flow's rest so the chart keeps to the music.
@@ -403,6 +406,20 @@ static void exflow_command(void){
   // 1 grayscale, 2 invert, 3 edges; the renderer reads it from sCurrentEffType.
   else if(op==0x132){uint32_t type=rd32(args);if(type<=3)wr32(RENDER_EFFECT,type);}
   else if(op==0x131)wr32(self+0x24,0); // Scene version / play-mode query: normal play.
+  // CExFlow 0x13f: Remix 8's photo frame on the cork board (remix/ver8/cellanim.szs). 0 loads the
+  // archive and 2 asks whether it has loaded (fn_8000A084, fn_8000A0EC); 3 registers its bank and
+  // makes its one animation on canvas 2, hidden (fn_8000A0F8); 4 shows or hides it, 5 sets its layer
+  // (fn_8000A1D4, fn_8000A1E0); 1 ends it with its bank (fn_8000A0A4). It lasts across the remix's
+  // scene changes.
+  else if(op==0x13f&&arg0==2)wr32(self+0x24,1);
+  else if(op==0x13f&&arg0==3&&banks[REMIX_MASK_BANK].count&&!remix_mask){
+    uint32_t saved=base_canvas;base_canvas=canvas[2];
+    remix_mask=persistent[persistent_count++]=create_actor(REMIX_MASK_BANK,0);
+    base_canvas=saved;wr8(remix_mask+0xa7,0);
+  }
+  else if(op==0x13f&&arg0==4&&remix_mask)wr8(remix_mask+0xa7,rd32(args)!=0);
+  else if(op==0x13f&&arg0==5&&remix_mask){r[3]=remix_mask;r[4]=rd32(args);call(0x801dcf94);}
+  else if(op==0x13f&&arg0==1&&remix_mask){end_actor(remix_mask);remix_mask=0;}
   r[3]=0;
 }
 // The game's sequence user procedure (F0 E0 in a sound's program): it sets sequence variables from
@@ -682,7 +699,7 @@ EMSCRIPTEN_KEEPALIVE void reset_runtime(void){
   for(int i=0;i<256;i++)input_map[i]=i;
   memset(ram,0,sizeof(ram));memset(r,0,sizeof(r));memset(f,0,sizeof(f));memset(cr,0,sizeof(cr));memset(banks,0,sizeof(banks));
   memset(tf_values,0,sizeof(tf_values));tf_values[0]=32;tf_values[1]=16;tf_values[2]=16;tf_values[3]=8; // CTickFlowManager::_10's defaults
-  sound_handle=envelope=0;speed=1;anim_tempo_update=anim_tempo=handle_count=0;
+  sound_handle=envelope=remix_mask=0;speed=1;anim_tempo_update=anim_tempo=handle_count=0;
   chart_flow_count=chart_rerun=chart_instances=current_flow=music_started=song_ended=0;
   profile_index=next_profile=next_chart=fader_wait=flow_create_fn=persistent_count=named_bank_count=file_count=0;scene_state=SCENE_ACTIVE;fader_state=FADER_IDLE;grading=grading_scene=grading_ready=grading_pressed=grading_done=prompt_press=prompt_release=prompt_exit_remaining=message_table=message_count=0;prompt_exit_frames=5;fader_alpha=fader_step=0.0f;music_sound=0xffffffff;frame_ticks=0;heap=0x80500000;call_depth=actor_count=checker_count=event_count=frame_number=layout_count=0;
   hits=misses=through=stray=perfect_failed=score_sum=score_count=wrong_count=0;wrong_timer=0;
