@@ -2,6 +2,13 @@
 _rhf_root=$(cd "$(dirname "${BASH_SOURCE:-$0}")/.." 2>/dev/null && pwd)
 [ -d "$_rhf_root/.toolchain" ] || _rhf_root=$(pwd)
 export PATH="$_rhf_root/.toolchain/emsdk/upstream/emscripten:$_rhf_root/.toolchain/binutils:$PATH"
+# Emscripten brings its own Node.js; use it when no Node.js 18+ is installed.
+if ! node -e 'process.exit(+process.versions.node.split(".")[0] < 18)' 2>/dev/null; then
+  for _rhf_node in "$_rhf_root"/.toolchain/emsdk/node/*/bin; do
+    [ -x "$_rhf_node/node" ] && export PATH="$_rhf_node:$PATH"
+  done
+  unset _rhf_node
+fi
 if [ -x "$_rhf_root/.venv/bin/python3" ]; then
   export PATH="$_rhf_root/.venv/bin:$PATH"
 fi

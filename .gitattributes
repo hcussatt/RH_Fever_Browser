@@ -1,0 +1,4 @@
+# Shell scripts must keep LF endings, including in Windows checkouts that WSL reads.
+*.sh text eol=lf
+*.command text eol=lf
+hooks/* text eol=lf

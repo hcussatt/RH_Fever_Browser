@@ -66,10 +66,36 @@ can require reimport. There is no built-in Internet Archive downloader.
 - Python 3.10+ with `numpy`, `Pillow` and `cryptography`, Node.js 18+, git.
 - Emscripten 5.0.7 and PowerPC binutils: `tools/setup-toolchain.sh` downloads both into `.toolchain/`.
 
+The installers below get all of these for you.
+
+## One-step install
+
+Clone the repository with git first (the installers need a git checkout, not a ZIP).
+Each installer can be run again safely; it skips what is already there.
+
+| System | Run | What it installs, and from where |
+| --- | --- | --- |
+| macOS | Double-click `install/macos.command` in Finder (or run it in Terminal) | Xcode Command Line Tools for git (Apple's own dialog); Python 3.13 from python.org if no Python 3.10+ is installed (its Python Software Foundation signature is checked; asks for your password) |
+| Windows 10/11 | Right-click `install/windows.ps1`, **Run with PowerShell** | WSL with Ubuntu (`wsl --install`, from Microsoft; may ask for administrator rights and a restart, then run it again); Python, git, curl, unzip from Ubuntu's apt; copies the repository to `~/RH_Fever_Browser` in Ubuntu |
+| Ubuntu/Debian | `install/linux.sh` | Python, git, curl, unzip from apt (asks for your password) |
+
+All three then run `install/finish.sh`, which installs `requirements.txt` from PyPI into
+`.venv`, fetches the decomp submodule from GitHub, turns on the commit hook, and runs
+`tools/setup-toolchain.sh`: Emscripten 5.0.7 from its official GitHub and
+storage.googleapis.com (it includes Node.js, which `tools/env.sh` uses when no Node.js 18+
+is installed) and the PowerPC binutils from github.com/encounter/gc-wii-binutils.
+Nothing from the game is ever downloaded; you still supply your own ISO.
+
+On Windows the build scripts are POSIX shell, so they run in Ubuntu: open Ubuntu from
+the Start menu, `cd ~/RH_Fever_Browser`, and run the build with your ISO's path on the
+Windows drive, such as `"/mnt/c/Users/<you>/Downloads/Rhythm Heaven Fever (USA).iso"`.
+`./serve.sh --open` opens the page in your Windows browser.
+
 ## Build and play
 
 ```sh
 git clone --recurse-submodules <this repo> rhf-web && cd rhf-web
+# Either run the installer for your system (above), or by hand:
 git config core.hooksPath hooks
 # Use an installed Python 3.10+ executable here; macOS /usr/bin/python3 may be 3.9.
 python3.11 -m venv .venv
