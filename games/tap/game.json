@@ -18,15 +18,23 @@
       "agb_tap_bg"
     ],
     "perfectActive": true,
-    "projection": [
-      832,
-      456
-    ],
+    "projection": [832, 456],
     "endsWithMusic": true
   },
   "web": {
     "enabled": true,
     "order": 70,
-    "expectedCues": 102
+    "expectedCues": 102,
+    "iconArt": {
+      "bank": "agb_tap",
+      "animation": "agb_tap_giraffe_normal",
+      "crop": [0.35, 0, 1, 0.64],
+      "scale": 1.05,
+      "offset": [-4, 2],
+      "background": {
+        "texture": "texture-1.png",
+        "pixel": [797, 87]
+      }
+    }
   }
 }

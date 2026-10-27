@@ -16,15 +16,24 @@
     "banks": [
       "ghost"
     ],
-    "projection": [
-      832,
-      456
-    ],
+    "projection": [832, 456],
     "endsWithMusic": true
   },
   "web": {
     "enabled": true,
     "order": 80,
-    "expectedCues": 12
+    "expectedCues": 12,
+    "iconArt": {
+      "bank": "ghost",
+      "animation": "ghost_ghost_step",
+      "crop": [0, 0, 1, 0.42],
+      "align": "bottom",
+      "padding": 0,
+      "scale": 0.85,
+      "background": {
+        "texture": "texture-0.png",
+        "pixel": [392, 649]
+      }
+    }
   }
 }

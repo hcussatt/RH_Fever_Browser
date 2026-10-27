@@ -3,10 +3,11 @@
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="theme-color" content="#bade42"><title>Rhythm Heaven Fever · Select a game</title>
 <link rel="stylesheet" href="import/cabinet.css">
+<div id="title-backdrop" aria-hidden="true"></div>
 <main>
-<header class="page-header"><a class="wordmark" href="./">Rhythm Heaven Browser</a><span class="local-light">FREE PLAY</span></header>
+<header class="page-header"><a class="wordmark" href="./">Rhythm Heaven Browser</a></header>
 <div class="cabinet">
-  <header class="marquee"><h1>Rhythm Heaven <strong>Fever</strong></h1><p>Find your rhythm!</p></header>
+  <header class="marquee"><h1><span class="title-text">Rhythm Heaven <strong>Fever</strong></span></h1></header>
   <section class="screen-bezel" aria-label="Game selection">
     <div class="screen">
       <div class="screen-top"><span>Game Select</span><span id="current-set">Your collection</span></div>
@@ -19,13 +20,13 @@
         <nav id="set-dots" aria-label="Remix sets"></nav>
         <section class="game-preview" aria-live="polite">
           <div id="selected-art" hidden></div>
-          <p class="game-number">GAME <span id="selected-number">01</span> / <span id="game-count">…</span></p><h2 id="selected-title">Hole in One</h2><p id="selected-status">Prepare from your disc</p><div id="selected-action"><button class="screen-button" id="screen-import">Load disc</button></div>
+          <h2 id="selected-title">Hole in One</h2><p id="selected-status">Prepare from your disc</p><div id="selected-action"><button class="screen-button" id="screen-import">Load disc</button></div>
         </section>
       </div>
       <div class="screen-bottom"><span><span class="button-cue">↔</span> Scroll · D-pad / arrows</span><span><span class="button-cue">A</span> Choose · Enter to play</span></div>
     </div>
   </section>
-  <section class="control-deck" aria-label="Menu controls"><span class="collection-meter">Your collection <strong id="collection-count">00 / 37</strong></span><div class="deck-buttons"><button id="open-import" aria-label="Load your disc">Load disc</button><button id="help" aria-label="How to play">Controls</button><button id="open-delay" aria-label="Audio delay">Audio delay</button></div></section>
+  <section class="control-deck" aria-label="Menu controls"><div class="deck-buttons"><button id="open-import" aria-label="Load your disc">Load disc</button><button id="help" aria-label="How to play">Controls</button><button id="open-delay" aria-label="Audio delay">Audio delay</button></div></section>
 </div>
 <footer class="page-footer"><span>USA / SOME01</span><span id="version">LOADING…</span></footer>
 </main>

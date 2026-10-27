@@ -16,15 +16,20 @@
     "banks": [
       "handclap"
     ],
-    "projection": [
-      832,
-      456
-    ],
+    "projection": [832, 456],
     "endsWithMusic": true
   },
   "web": {
     "enabled": true,
     "order": 100,
-    "expectedCues": 29
+    "expectedCues": 29,
+    "iconArt": {
+      "bank": "handclap",
+      "animation": "handclap_man_wait",
+      "background": {
+        "texture": "texture-0.png",
+        "pixel": [131, 197]
+      }
+    }
   }
 }
