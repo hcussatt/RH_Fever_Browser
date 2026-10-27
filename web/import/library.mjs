@@ -61,12 +61,14 @@ function setTitle(t){
  if(old){old.classList.remove('shown');setTimeout(()=>old.remove(),700);}
  // The menu's colours follow the title screen: light panels with dark text over a light picture,
  // dark panels with light text over a dark one.
- const root=document.documentElement.style,names=['light','mid','shadow','paper','soft','dot','dark','text','ink'];
+ const root=document.documentElement.style,names=['light','mid','shadow','paper','soft','dot','dark','text','ink','accent','accent-ink','accent-shadow'];
  if(!t){for(const v of names)root.removeProperty('--theme-'+v);return;}
  const [r,g,b]=t.theme,mix=(k,to)=>[r,g,b].map(v=>Math.round(v+(to-v)*k)),rgb=c=>`rgb(${c})`;
- const colours=(.2126*r+.7152*g+.0722*b)/255<.4
+ const lum=(.2126*r+.7152*g+.0722*b)/255,colours=lum<.4
   ?{light:mix(.55,0),mid:mix(0,0),shadow:mix(.8,0),paper:mix(.3,0),soft:mix(.35,255),dot:`rgba(${mix(.4,255)},.25)`,dark:mix(.7,0),text:mix(.7,255),ink:mix(.92,255)}
   :{light:mix(.72,255),mid:mix(.45,255),shadow:mix(.45,0),paper:mix(.85,255),soft:mix(.3,255),dot:`rgba(${mix(.1,255)},.27)`,dark:mix(.25,0),text:mix(.6,0),ink:[37,39,31]};
+ // The play button wears the title screen's colour itself (lightened over a dark one).
+ Object.assign(colours,lum<.4?{accent:mix(.6,255),'accent-ink':mix(.6,0),'accent-shadow':mix(.2,255)}:{accent:mix(0,0),'accent-ink':lum>.55?[37,39,31]:[255,255,255],'accent-shadow':mix(.4,0)});
  for(const v of names)root.setProperty('--theme-'+v,v==='dot'?colours[v]:rgb(colours[v]));
 }
 // The game's own logo from its title screen heads the menu once any game is imported.
