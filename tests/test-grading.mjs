@@ -20,7 +20,10 @@ function referenceGrade(criteria,states){
  return {grade:bad?2:eligible>0&&good===eligible?0:1,but:!bad&&good>0&&good!==eligible};
 }
 for(const id of ids){
- const g=await load(id),cp=g.u32(0x8032016c),criteria=Array.from({length:g.u8(cp+0xc4)},(_,i)=>{
+ const g=await load(id);
+ // The rhythm test grades nothing: it has no criteria, results or epilogue.
+ if(g.manifest.wii.calibration){console.log(`${id}: no grading (rhythm test)`);continue;}
+ const cp=g.u32(0x8032016c),criteria=Array.from({length:g.u8(cp+0xc4)},(_,i)=>{
   const p=g.u32(cp+0xa4+i*4);return{superb:g.u16(p+8),minimum:g.u16(p+10),through:g.u16(p+12)};
  });
  assert.ok(criteria.length>0,'chart must have installed its original criteria');

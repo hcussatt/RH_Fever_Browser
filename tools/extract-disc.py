@@ -23,6 +23,7 @@ for game in GAMES:
                          for path in manifest(s['game'])['wii'].get('extraCellanims', [])})
     else:
         CELLANIM[game] = profile['cellanim']
+        CELLANIM.update({f'{game}/{path.split("/")[-3]}': path for path in profile.get('extraCellanims', [])})
 # Epilogue cell animations: beside the game's cellanim archive unless the manifest names one. A
 # scene only a remix changes to, and a game with no results (Night Walk), have none.
 EPILOGUE = {game: manifest(game)['wii'].get('epilogue') or manifest(game)['wii']['cellanim'].rsplit('/', 1)[0]+'/cellanim_epilogue.szs'

@@ -118,6 +118,14 @@ def group_loads(scene):
     return loads
 
 
+def chart_loads(start):
+    """Sound groups the chart loads itself, in a chart it starts alongside (op 0): the rhythm test's
+    metronome and navigator voices."""
+    groups = [args[0] for address in [a[0] for _, op, _, a in commands(start) if op == 0]
+              for _, op, _, args in commands(address, 1) if op == 0x12c]
+    return [groups] if groups else []
+
+
 def tempo_segments(sound):
     for i in range(WAVE_INFO_COUNT):
         sid, rate, table = struct.unpack('>HHI', read(WAVE_INFO_TABLE+i*8, 8))
@@ -240,6 +248,9 @@ def main():
     mains = [(t, v) for t, v in scene_changes(scene) if any(op == 0x118 and arg0 == 1 for _, op, arg0, _ in commands(t))]
     if 'sceneVariant' in profile:
         mains = [(t, v) for t, v in mains if v == profile['sceneVariant']]
+        # The rhythm test (the navigator) grades nothing: its chart is the scene change to that version.
+        if not mains and profile.get('calibration'):
+            mains = [(t, v) for t, v in scene_changes(scene) if v == profile['sceneVariant']]
     if len({t for t, _ in mains}) != 1:
         found = ', '.join(f'{t:#x} (variant {v})' for t, v in mains)
         raise SystemExit(f'{name}: expected one main chart for scene {profile["scene"]}, found [{found}]; '
@@ -249,7 +260,7 @@ def main():
     segments, table = tempo_segments(music)
     out = {'scene': profile['scene'], 'sceneId': scene, 'start': start, 'musicSound': music, 'tempoAddress': table,
            'beatCount': sum(s['beats'] for s in segments), 'sampleCount': sum(s['samples'] for s in segments),
-           'sampleRate': segments[0]['rate'], 'groupLoads': group_loads(scene),
+           'sampleRate': segments[0]['rate'], 'groupLoads': group_loads(scene)+(chart_loads(start) if profile.get('calibration') else []),
            'secondsPerTick': segments[0]['samples']/segments[0]['rate']/(segments[0]['beats']*48)}
     # The scene load before the chart (op 0x101) passes the scene's version, which the scene reads
     # to pick its setup (Double Date seats the girl beside the boy in version 1).

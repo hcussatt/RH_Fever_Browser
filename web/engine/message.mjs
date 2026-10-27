@@ -5,7 +5,7 @@
 // adapters/wii/platform.c); this draws them with layout.mjs.
 import {createLayout} from './layout.mjs';
 import {assetResponse} from './assets.mjs';
-const VISIBLE=0,TEXT=1,STRING=2,REGISTER=3,LAYOUT=4,CLEAR=5,TAIL=6,BOX_X=7,BOX_Y=8,BOX_W=9,BOX_H=10,TAIL_X=11,TAIL_Y=12,OVERLAY_Y=13,OVERLAY_H=14,FRAME=15,TAIL_FLIP=16,TEXT_Y=17,CREDIT_DARK=18;
+const VISIBLE=0,TEXT=1,STRING=2,REGISTER=3,LAYOUT=4,CLEAR=5,TAIL=6,BOX_X=7,BOX_Y=8,BOX_W=9,BOX_H=10,TAIL_X=11,TAIL_Y=12,OVERLAY_Y=13,OVERLAY_H=14,FRAME=15,TAIL_FLIP=16,TEXT_Y=17,CREDIT_DARK=18,TRIANGLE=19,BALLOON=20,TAIL2_X=21,TAIL2_Y=22,TAIL2_FLIP=23;
 const LAYOUTS={1:'balloon',2:'golf',3:'lyric',4:'credit'};
 // Wide screen: the balloon's x is narrowed like CBalloonLayout::getScaledX.
 const WIDE=608/832;
@@ -60,7 +60,7 @@ export async function createMessages(g){
   if(field===FRAME){if(!alive.has('golf'))throw new Error('Screen frame animation without its layout');events.golf.push({frame,action:6<<8|value>>2,value:value&3});return;}
   const balloon=layouts.balloon,v=f32(value);
   // CBalloonLayout::fn_8003A1D0 and fn_8003A418 place the balloon and the overlay strip,
-  // fn_80039F30 its tail.
+  // fn_80039F30 its tail; the navigator's (fn_80039E2C to fn_8003A030) also shows it and its second tail.
   if(field===BOX_X)pane(balloon,'N_message_00').translate[0]=v*WIDE;
   else if(field===BOX_Y)pane(balloon,'N_message_00').translate[1]=-v;
   else if(field===BOX_W){pane(balloon,'W_message_00').size[0]=v;pane(balloon,'T_message_00').size[0]=v-60;}
@@ -68,6 +68,11 @@ export async function createMessages(g){
   else if(field===TAIL){const p=pane(balloon,'P_triangle_00');p.visible=!!(value&1);p.scale=[1,value&2?-1:1];}
   else if(field===TAIL_X)pane(balloon,'P_triangle_00').translate[0]=v;
   else if(field===TAIL_Y)pane(balloon,'P_triangle_00').translate[1]=-v;
+  else if(field===TRIANGLE)pane(balloon,value&2?'P_triangle_01':'P_triangle_00').visible=!!(value&1);
+  else if(field===BALLOON)for(const n of ['W_message_00','T_message_00'])pane(balloon,n).visible=!!value;
+  else if(field===TAIL2_X)pane(balloon,'P_triangle_01').translate[0]=v;
+  else if(field===TAIL2_Y)pane(balloon,'P_triangle_01').translate[1]=-v;
+  else if(field===TAIL2_FLIP)pane(balloon,'P_triangle_01').scale=[value?1:-1,1];
   else if(field===TAIL_FLIP)pane(balloon,'P_triangle_00').scale=[1,value?-1:1];
   else if(field===OVERLAY_Y)pane(balloon,'N_message_01').translate[1]=-v;
   else if(field===OVERLAY_H)pane(balloon,'P_message_01').size[1]=v;

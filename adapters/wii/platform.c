@@ -125,8 +125,10 @@ static int is_flow_command(uint32_t address){for(int i=0;i<GAME_SCENE_COUNT;i++)
 // Walk's credit line i. MESG_FRAME plays one of the screen frame's animations in Hole in One's
 // layout: extra = animation<<2 | reverse<<1 | jump to its end. MESG_TEXT_Y moves a pane's text
 // box to y (extra = float bits). MESG_CREDIT_DARK turns Night Walk's credit lines black.
+// MESG_TRIANGLE shows or hides a balloon tail: extra = tail (0 or 1)<<1 | visible. MESG_BALLOON shows
+// or hides the balloon itself; MESG_TAIL2_X/Y/FLIP place its second tail (P_triangle_01).
 enum{MESG_VISIBLE,MESG_TEXT,MESG_STRING,MESG_REGISTER,MESG_LAYOUT,MESG_CLEAR,MESG_TAIL,
-  MESG_BOX_X,MESG_BOX_Y,MESG_BOX_W,MESG_BOX_H,MESG_TAIL_X,MESG_TAIL_Y,MESG_OVERLAY_Y,MESG_OVERLAY_H,MESG_FRAME,MESG_TAIL_FLIP,MESG_TEXT_Y,MESG_CREDIT_DARK};
+  MESG_BOX_X,MESG_BOX_Y,MESG_BOX_W,MESG_BOX_H,MESG_TAIL_X,MESG_TAIL_Y,MESG_OVERLAY_Y,MESG_OVERLAY_H,MESG_FRAME,MESG_TAIL_FLIP,MESG_TEXT_Y,MESG_CREDIT_DARK,MESG_TRIANGLE,MESG_BALLOON,MESG_TAIL2_X,MESG_TAIL2_Y,MESG_TAIL2_FLIP};
 enum{MESG_LAYOUT_BALLOON=1,MESG_LAYOUT_GOLF=2,MESG_LAYOUT_LYRIC=3,MESG_LAYOUT_CREDIT=4};
 static uint32_t fbits(float x){union{float v;uint32_t u;}b={.v=x};return b.u;}
 // The rest of the flow running now; 0 outside the chart (a press, a scene update).
@@ -274,6 +276,16 @@ static void run_flows(void){
 static void exflow_command(void){
   uint32_t self=r[3],op=r[4],arg0=r[5],args=r[6],cp=rd32(0x8032016c);
   if(op<0x100){
+#ifdef GAME_CALIBRATION
+    // The rhythm test's dialogue waits for A after each line (TF_BUTTON_PROMPT). Here each line
+    // moves on by itself after PROMPT_TICKS of the chart's 1-tick polls, so the test keeps one
+    // fixed timeline (its sounds are scheduled ahead, see web/engine/timeline.mjs).
+    if(!grading&&op==0x46&&arg0>=1){
+      enum{PROMPT_TICKS=150};static uint32_t waited;
+      if(arg0==1)waited=0;else if(arg0==2)wr32(self+0x24,++waited<PROMPT_TICKS);
+      r[3]=0;return;
+    }
+#endif
     if(grading&&op==0x46){if(arg0==1){grading_ready=1;grading_pressed=0;prompt_press=rd32(args+4);prompt_release=rd32(args+8);emit(20,5,rd32(self+0x1c));}else if(arg0==2)wr32(self+0x24,grading_pressed==2?0:1);r[3]=0;return;}
     // Message panes (CTickFlow's lbl_803D5D38 text boxes): shown or hidden with their container,
     // or given a string from the chart. Message events (15) for web/engine/message.mjs.
@@ -311,6 +323,10 @@ static void exflow_command(void){
   // Leaving for a scene the port does not have ends the game: Night Walk goes to the staff
   // credits, straight away when Play-Yan falls.
   else if(op==0x100&&arg0==0&&music_started&&!song_ended&&!grading&&find_profile(rd32(args))<0){song_ended=1;emit(7,0,rd32(self+0x1c));}
+#ifdef GAME_CALIBRATION
+  // The rhythm test ends by going back to the café (TF_SET_SCENE 1, the previous scene).
+  else if(op==0x100&&arg0==1&&music_started&&!song_ended&&!grading){song_ended=1;emit(7,0,rd32(self+0x1c));}
+#endif
   else if(op==0x101&&find_profile(rd32(args))>=0)wr32(profiles[find_profile(rd32(args))].version,rd32(args+4));
   else if(op==0x102&&find_profile(rd32(args))>=0){} // Scene assets, 0 load and 1 free (CSceneManager fn_8008A704, fn_8008A82C): the browser loaded every scene's up front.
   else if(op==0x104)wr32(self+0x24,scene_state==SCENE_ACTIVE);
@@ -322,7 +338,8 @@ static void exflow_command(void){
     else if(arg0==1)wrf32(ticks,rdf32(ticks)+(float)rd32(args));
     else if(arg0==2)wrf32(self+0x1c,rdf32(self+0x1c)-rdf32(ticks));
   }
-  else if(grading&&op==0x12f&&arg0==1)wr32(self+0x24,0);
+  // Whether sounds are still loading (fn_800836E0's query): never, the browser decoded them up front.
+  else if(op==0x12f&&arg0==1)wr32(self+0x24,0);
   else if(song_ended&&op==0x12e&&arg0==1)emit(18,0,rd32(self+0x1c)); // Original heap-1 sound reset.
   // Sound heap loads and frees (fn_8008364C, fn_80083668, fn_800836C0): the browser decoded every
   // group up front. fn_800836E0 only keeps its flag.
@@ -360,6 +377,11 @@ static void exflow_command(void){
     if(arg0<2)emit(kind,0x300|arg0,bmg_id(rd32(args)));else emit(kind,0x100,0);
   }
   else if(op==0x124)emit(15,(MESG_TEXT<<8)|(arg0&255),bmg_id(rd32(args))); // CMessageManager::fn_80088FEC(pane, fn_80087708(id))
+#ifdef GAME_CALIBRATION
+  // The A prompt beside each dialogue line (CExFlow 0x123): not drawn, as the lines move on by
+  // themselves (see the TF_BUTTON_PROMPT above); 2 asks whether its exit animation has finished.
+  else if(!grading&&op==0x123){if(arg0==2)wr32(self+0x24,1);}
+#endif
   else if(grading&&op==0x123){
     if(arg0==0)emit(16,0,rd32(args));
     // setAnimDisable starts at frame -1; the same frame's actor update
@@ -389,7 +411,13 @@ static void exflow_command(void){
   else if(op==0x121){switch(arg0){
     case 0:wr32(0x803201a4,0);break;
     case 1:wr8(0x803201a0,0);break;
+#ifdef GAME_CALIBRATION
+    // The rhythm test repeats a practice round until enough are clean. Here the delay it measures
+    // can be what made a round miss, so every round counts (as a clean play-through runs it).
+    case 2:wr32(0x803201a4,rd32(0x803201a4)+1);break;
+#else
     case 2:if(!rd8(0x803201a0))wr32(0x803201a4,rd32(0x803201a4)+1);break;
+#endif
     case 3:wr32(self+0x24,rd32(0x803201a4));break;
     case 4:call(0x80009abc);break;
     case 5:wr8(0x803201c0,1);break;
@@ -618,6 +646,16 @@ static void call(uint32_t address){
     break;
   }
   case 0x80039e00:emit(15,(MESG_REGISTER<<8)|(r[4]&255),r[5]?0x10:0x11);break;
+  // The navigator's balloon (CBalloonLayout): fn_80039E2C shows or hides it, fn_80039E94(x, y) and
+  // fn_8003A030(width, height) place and size it, fn_80039FB0(flip, x, y) places its second tail
+  // (mirrored unless flip), and fn_8003A11C only hands its place to CExScene::fn_800096EC.
+  case 0x80039e2c:emit(15,MESG_BALLOON<<8,r[4]&1);break;
+  case 0x80039e94:emit(15,MESG_BOX_X<<8,fbits(f[1].d));emit(15,MESG_BOX_Y<<8,fbits(f[2].d));break;
+  case 0x8003a030:emit(15,MESG_BOX_W<<8,fbits(f[1].d));emit(15,MESG_BOX_H<<8,fbits(f[2].d));break;
+  case 0x80039fb0:emit(15,MESG_TAIL2_X<<8,fbits(f[1].d));emit(15,MESG_TAIL2_Y<<8,fbits(f[2].d));emit(15,MESG_TAIL2_FLIP<<8,r[4]!=0);break;
+  case 0x8003a11c:break;
+  // CBalloonLayout::fn_80039E5C/78(visible): show or hide its tail P_triangle_00 or P_triangle_01.
+  case 0x80039e5c:case 0x80039e78:emit(15,MESG_TRIANGLE<<8,(address==0x80039e78)<<1|(r[4]&1));break;
   // CBalloonLayout::fn_80039F30(x, y, flip): the straight tail's place, turned upside down or not.
   case 0x80039f30:
     if(rd32(rd32(r[3])+0x10)!=0x800399e4)panic(r[3],20);

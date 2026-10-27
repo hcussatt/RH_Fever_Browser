@@ -27,6 +27,15 @@ built games for the picker page.
 - The frame loop advances the original code one 60 Hz frame at a time up to the
   frame of the audio the player is hearing (`heardTime()`), so audio drives the
   game, not the other way round.
+- `heardTime()` also takes off the player's audio delay (`delay.mjs`, kept in
+  this browser): what wireless headphones add beyond the latency the browser
+  reports. The Rhythm Test (`calibrate`, the café's rhythm retest from the
+  navigator scene) sets it: the median offset of the A presses on the beats its
+  signal sound plays on (`wii.calibration.signalSound`, not the visual timer
+  part) is added to the delay the test ran with. Both menus show it with a reset
+  to the default 0. In the test its dialogue lines move on by themselves and
+  every practice round counts, so its chart keeps one timeline
+  (`GAME_CALIBRATION` in `adapters/wii/platform.c`).
 - `input.mjs` turns each press and release of A or B into `{player, frame, at,
   button, down}` in a queue. The simulation reads only that queue. Original
   timing windows and Perfect rules are untouched: no widened windows, score

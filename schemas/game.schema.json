@@ -49,8 +49,13 @@
         },
         "epilogue": {"description": "The epilogue cell animation archive, when not beside the game's cellanim.", "$ref": "#/$defs/discPath"},
         "sceneOnly": {"description": "A scene only a remix changes to (Remix 10's navigator): it has no chart of its own, so it is never built or hosted on its own.", "const": true},
-        "extraCellanims": {"description": "Other games' cellanim archives a remix scene also loads (the navigator's metronome); their banks join the scene's.", "type": "array", "items": {"$ref": "#/$defs/discPath"}},
+        "extraCellanims": {"description": "Other games' cellanim archives the scene also loads (the navigator's metronome); their banks join the scene's.", "type": "array", "items": {"$ref": "#/$defs/discPath"}},
         "results": {"description": "false: the game has no results screen or epilogue (Night Walk, the credits game, ends on the staff credits).", "const": false},
+        "calibration": {
+          "description": "The rhythm test: the browser measures the presses against the beats its signal sound plays on (SE_CHECK_CLICK, not the visual timer's zero) and saves them as the audio delay.",
+          "type": "object", "additionalProperties": false, "required": ["signalSound"],
+          "properties": {"signalSound": {"type": "integer", "minimum": 0}}
+        },
         "perfectActive": {"type": "boolean"},
         "endsWithMusic": {"type": "boolean"},
         "messageLayout": {

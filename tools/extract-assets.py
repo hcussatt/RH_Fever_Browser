@@ -168,8 +168,22 @@ def remix():
         out['scenes'].append({'game':scene['game'],'banks':names})
     return out
 
+def single():
+    """A game's own archive, and any other game's it also loads (the calibration's metronome) from a
+    folder inside its own; textures are numbered across them."""
+    global SOURCE
+    main=SOURCE;out={'textures':[],'banks':{}}
+    for SOURCE in [main]+[require(main/path.split('/')[-3]) for path in PROFILE.get('extraCellanims',[])]:
+        first=len(out['textures']);out['textures']+=textures('' if SOURCE==main else SOURCE.name+'-')
+        for n in PROFILE['banks']:
+            if (SOURCE/(n+'.brcad')).exists():
+                out['banks'][n]=bank(n);out['banks'][n]['texture']+=first
+    out['banks']={n:out['banks'][n] for n in PROFILE['banks']}
+    SOURCE=main
+    return out
+
 if __name__=='__main__':
-    out=remix() if 'scenes' in PROFILE else {'textures':textures(),'banks':{n:bank(n) for n in PROFILE['banks']}}
+    out=remix() if 'scenes' in PROFILE else single()
     out['audio']=audio_groups()
     out['provenance']={'game':'Rhythm Heaven Fever SOME01','dolSha1':DOL_SHA1}
     (OUT/'original-assets.json').write_text(json.dumps(out,separators=(',',':'))+'\n')

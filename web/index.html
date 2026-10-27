@@ -1,9 +1,13 @@
 <!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Rhythm Heaven Fever web</title>
-<style>html,body{margin:0;min-height:100%;background:#0d1012;color:#eef2ef;font:16px system-ui}body{box-sizing:border-box;min-height:100vh;padding:24px 16px;display:grid;align-content:start;justify-content:center;gap:16px;text-align:center}nav{display:grid;gap:16px}h2{margin:12px 0 0;font-size:14px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#9fb3a5}a{display:block;padding:14px 28px;border:1px solid #53695b;border-radius:8px;background:#24312a;color:inherit;text-decoration:none}a:hover{background:#354b3d}</style>
-<h1>Rhythm Heaven Fever</h1><nav id="games"></nav>
+<style>html,body{margin:0;min-height:100%;background:#0d1012;color:#eef2ef;font:16px system-ui}body{box-sizing:border-box;min-height:100vh;padding:24px 16px;display:grid;align-content:start;justify-content:center;gap:16px;text-align:center}nav{display:grid;gap:16px}h2{margin:12px 0 0;font-size:14px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#9fb3a5}a{display:block;padding:14px 28px;border:1px solid #53695b;border-radius:8px;background:#24312a;color:inherit;text-decoration:none}a:hover{background:#354b3d}#delay{color:#9fb3a5}#delay a{display:inline;padding:0;border:0;background:none;color:#d2ded5;text-decoration:underline}</style>
+<h1>Rhythm Heaven Fever</h1><nav id="games"></nav><p id="delay">Audio delay: <span id="delay-value">0 ms</span> · <a id="delay-test" href="calibrate/">Rhythm Test</a> <button id="delay-reset" type="button">Reset to default</button></p>
 <script type="module">
 // games.json lists every game the build produced (tools/stage-index.sh), shown by remix set.
 import {groupGames} from './engine/menu.mjs';
+import {getDelayMs,resetDelay} from './engine/delay.mjs';
+// The audio delay the Rhythm Test (the calibrate game) set, and its reset to the default 0.
+const showDelay=()=>{document.querySelector('#delay-value').textContent=getDelayMs()+' ms';};showDelay();
+document.querySelector('#delay-reset').onclick=()=>{resetDelay();showDelay();};
 const nav=document.querySelector('#games');
 for(const group of groupGames(await (await fetch('games.json')).json())){
  const h=document.createElement('h2');h.textContent=group.title;nav.append(h);

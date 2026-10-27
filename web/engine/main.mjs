@@ -7,6 +7,7 @@ import {createResults} from './results.mjs';
 import {A,createInputQueue,bindControls} from './input.mjs';
 import {createTrack} from './clock.mjs';
 import {assetResponse,requireAssets} from './assets.mjs';
+import {getDelayMs,setDelayMs,measureDelay} from './delay.mjs';
 const gameUrl=new URL('./',location.href);
 const canvas=document.querySelector('canvas'),overlay=document.querySelector('#overlay'),play=document.querySelector('#play'),status=document.querySelector('#status');
 let g,renderer,audio,music,startTime,running=false,frame=0,sfx,paused=false,results,resultsStart,phase='game',track,backing,multiplayer,needsReset=false;const input=createInputQueue(),metrics=[];
@@ -105,11 +106,21 @@ function liveEvents(){
  for(const {target,op} of g.tunes){if(target.voice)applyTune(target,op);else if(pending.includes(target))(target.ops||=[]).push(op);}g.tunes.length=0;
  for(const v of g.musicVolumes)backing.volume(v.volume,v.frames,atTick(v.tick));g.musicVolumes.length=0;
 }
-// Time of the audio the player is hearing now, on the AudioContext clock.
+// Time of the audio the player is hearing now, on the AudioContext clock, less the delay the
+// rhythm test measured beyond what the browser reports (see delay.mjs).
+const delay=getDelayMs()/1000;
 function heardTime(){
  const t=audio.getOutputTimestamp?.();
- if(t&&t.performanceTime>0&&performance.now()-t.performanceTime<100)return Math.min(audio.currentTime,t.contextTime+(performance.now()-t.performanceTime)/1000);
- return audio.currentTime-(audio.outputLatency||0)-(audio.baseLatency||0);
+ if(t&&t.performanceTime>0&&performance.now()-t.performanceTime<100)return Math.min(audio.currentTime,t.contextTime+(performance.now()-t.performanceTime)/1000)-delay;
+ return audio.currentTime-(audio.outputLatency||0)-(audio.baseLatency||0)-delay;
+}
+// The rhythm test (wii.calibration): each beat its signal sound plays on (the part played by ear,
+// not the visual timer's) keeps the offset of the first A press within half a beat of it.
+const beatOffsets=new Map();
+function measurePress(heard){
+ const tick=g.tickAtSeconds(track.posAt(Math.max(0,heard-startTime))),{cues,sounds}=g.timeline,signal=g.manifest.wii.calibration.signalSound;let beat=null;
+ for(const cue of cues)if(Math.abs(cue-tick)<=24&&sounds.some(s=>s.sound===signal&&Math.abs(s.tick-cue)<2)&&(beat==null||Math.abs(cue-tick)<Math.abs(beat-tick)))beat=cue;
+ if(beat!=null&&!beatOffsets.has(beat))beatOffsets.set(beat,g.secondsAtTick(tick)-g.secondsAtTick(beat));
 }
 // An input belongs to the first frame after the audio heard when it happened, as the original
 // reads the controller once a frame. That frame runs as soon as its time is heard, not at the
@@ -118,6 +129,7 @@ function press(button,down,at=performance.now()){
  if(!running||heardTime()<startTime)return;
  if(phase==='results'){if(button===A)results.input(down);return;}
  const heard=heardTime()-Math.max(0,performance.now()-at)/1000;
+ if(g.manifest.wii.calibration&&button===A&&down)measurePress(heard);
  const due=Math.max(frame+1,Math.floor(Math.max(0,heard-startTime)*60)+1);
  input.push(due,button,down,at);runWhenHeard(due);
 }
@@ -163,6 +175,7 @@ const endSeconds=()=>g.secondsAtTick(g.ended?Math.min(g.endTick,g.timeline.endTi
 function finish(){
  // Night Walk has no results: it ends on the staff credits, which the port leaves out.
  if(!results){
+  if(g.manifest.wii.calibration){const ms=measureDelay([...beatOffsets.values()],delay*1000);if(ms!=null)setDelayMs(ms);}
   running=false;sfx.stop();audio.suspend();const result=g.result();window.rhf.result=result;
   window.dispatchEvent(new CustomEvent('rhf-result',{detail:result}));multiplayer?.finish(result);
   if(!multiplayer?.active)location.href=new URL('../',gameUrl).href;return;

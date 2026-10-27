@@ -2,6 +2,7 @@ import {siteRoot,readLibrary,writeLibrary,deployment} from '../engine/assets.mjs
 import {mountMultiplayer} from '../engine/multiplayer.mjs';
 import {WII_COMMON_KEY} from './common-key.mjs';
 import {groupGames} from '../engine/menu.mjs';
+import {getDelayMs,resetDelay} from '../engine/delay.mjs';
 const $=s=>document.querySelector(s);
 let worker,build,games,selected;
 const iconURLs=new Map();
@@ -104,6 +105,11 @@ $('#screen-import').onclick=openImport;
 $('#close-import').onclick=()=>$('#import-dialog').close();
 $('#help').onclick=()=>$('#help-dialog').showModal();
 $('#close-help').onclick=()=>$('#help-dialog').close();
+// The audio delay the Rhythm Test (the calibrate game) set, and its reset to the default 0.
+const showDelay=()=>{$('#delay-value').textContent=getDelayMs()+' ms';};
+$('#open-delay').onclick=()=>{showDelay();$('#delay-dialog').showModal();};
+$('#close-delay').onclick=()=>$('#delay-dialog').close();
+$('#delay-reset').onclick=()=>{resetDelay();showDelay();};
 try{
  if(!isSecureContext||!globalThis.caches)throw new Error('Use HTTPS or localhost in a browser with site storage enabled.');
  const deploymentResponse=await fetch(new URL('deployment.json',siteRoot));

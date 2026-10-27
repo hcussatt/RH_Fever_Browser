@@ -30,7 +30,8 @@ atlas.save(out/'results-font.png')
 main=json.loads((out/'original-chart.json').read_text())
 cmds=list(chart.commands(main['start']))
 string=lambda a:chart.read(a,128).split(b'\0')[0].decode('ascii')
-criteria=next(args[0] for _,op,arg,args in cmds if op==0x118 and arg==1)
+# The rhythm test grades nothing (no criteria).
+criteria=next((args[0] for _,op,arg,args in cmds if op==0x118 and arg==1),None)
 # A game with no results (Night Walk ends on the staff credits) has no caption, epilogue or result music.
 RESULTS=manifest(game())['wii'].get('results',True)
 caption=next(string(args[0]) for _,op,arg,args in cmds if op==0x108) if RESULTS else None
