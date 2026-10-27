@@ -108,7 +108,7 @@ async function render(){
    if(stored)readyCount++;
    const card=document.createElement('button');card.type='button';card.className='game';card.setAttribute('aria-pressed',String(id===selected));card.setAttribute('aria-label',title);card.tabIndex=id===selected?0:-1;
    Object.assign(card.dataset,{game:id,title,group:String(column),row:String(row),number:String(number).padStart(2,'0'),ready:String(!!stored),update:String(!!entry&&!stored),remix:String(id.startsWith('remix'))});
-   card.onclick=()=>selectGame(id);card.onmouseenter=()=>showTitle(id);card.ondblclick=()=>$('#selected-action .play')?.click();
+   card.onclick=()=>selectGame(id);card.ondblclick=()=>$('#selected-action .play')?.click();
    const art=document.createElement('span');art.className='game-art';art.setAttribute('aria-hidden','true');
    let icon;
    // A local build marks games without an original icon (Tap Trial), so a stale file from an older build stays hidden.
@@ -210,7 +210,6 @@ $('#import-form').onsubmit=async e=>{
   worker.postMessage({file,key,version:build.assetVersion||build.version,games});
  }catch(e){worker?.terminate();worker=null;busy(false);status(e.message,true);}
 };
-$('#games').addEventListener('mouseleave',()=>{if(selected)showTitle(selected);});
 $('#cancel').onclick=()=>{worker?.terminate();worker=null;busy(false);status('Import cancelled. Any games already prepared remain available.');render();};
 $('#remove').onclick=()=>$('#confirm-remove').showModal();
 $('#confirm-remove').onclose=async()=>{
