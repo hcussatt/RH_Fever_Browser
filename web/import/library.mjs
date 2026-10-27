@@ -57,7 +57,7 @@ async function render(){
    card.onclick=()=>selectGame(id);card.ondblclick=()=>$('#selected-action .play')?.click();
    const art=document.createElement('span');art.className='game-art';art.setAttribute('aria-hidden','true');
    let icon;
-   // A game without an original icon (Tap Trial) never shows one, even a stale file from an older build.
+   // A local build marks games without an original icon (Tap Trial), so a stale file from an older build stays hidden.
    if(hasIcon===false);
    else if(stored&&build.local)icon=new URL(id+'/assets/menu-icon.png',siteRoot);
    else if(stored){
