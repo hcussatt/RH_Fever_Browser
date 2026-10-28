@@ -2,6 +2,7 @@
 // files he prepared from his own disc instead of importing an ISO. The key arrives once through a
 // dev link (#dev=<key>; the part after # never reaches a server) and stays in this browser only.
 import {siteRoot,readLibrary,writeLibrary} from '../engine/assets.mjs';
+import {unpack} from './devpack.mjs';
 export const DEV_HOST_URL='https://rhf-devhost.hcussatt.workers.dev/';
 const STORE='rhf-dev-key';
 const mime=name=>name.endsWith('.json')?'application/json':name.endsWith('.png')?'image/png':name.endsWith('.wav')?'audio/wav':'application/octet-stream';
@@ -31,6 +32,14 @@ export async function devCommonKey({key=devKey(),fetchFn=fetch}={}){
  return wiiCommonKey;
 }
 const hex=buffer=>[...new Uint8Array(buffer)].map(b=>b.toString(16).padStart(2,'0')).join('');
+// Reads a response, reporting each chunk's size as it arrives.
+async function body(r,onBytes){
+ if(!r.body)return new Uint8Array(await r.arrayBuffer());
+ const chunks=[],reader=r.body.getReader();let length=0;
+ for(;;){const {done,value}=await reader.read();if(done)break;chunks.push(value);length+=value.byteLength;onBytes(value.byteLength);}
+ const out=new Uint8Array(length);let at=0;for(const c of chunks){out.set(c,at);at+=c.byteLength;}
+ return out;
+}
 // Stores each game exactly as an ISO import would (web/import/worker.mjs): one cache per game,
 // and the library pointer only once every file of that game is in place and checked.
 export async function installFromDevHost({build,games,key=devKey(),progress=()=>{},onGame=()=>{},signal,fetchFn=fetch}){
@@ -49,18 +58,39 @@ export async function installFromDevHost({build,games,key=devKey(),progress=()=>
   const name='rhf-assets:'+siteRoot.pathname+':'+version+':'+id+':'+crypto.randomUUID();
   const cache=await caches.open(name),base=new URL(id+'/',siteRoot);
   let done=0,bytes=0;
+  const canceled=()=>{if(signal?.aborted)throw new Error('Download canceled. Any games already downloaded remain available.');};
+  // Every file must match the manifest's hash, whether it came alone or out of a packed part.
+  const store=async(file,data)=>{
+   if(entry.files[file]===undefined||hex(await crypto.subtle.digest('SHA-256',data))!==entry.files[file])throw new Error(title+': '+file+' arrived damaged. Try again.');
+   await cache.put(new URL('assets/'+file,base),new Response(data,{headers:{'content-type':mime(file)}}));
+   bytes+=data.byteLength;++done;
+  };
   try{
-   const next=files.entries();
-   const worker=async()=>{
-    for(const [,[file,digest]] of next){
-     if(signal?.aborted)throw new Error('Download canceled. Any games already downloaded remain available.');
-     const data=await (await get('files/'+digest,key,fetchFn)).arrayBuffer();
-     if(hex(await crypto.subtle.digest('SHA-256',data))!==digest)throw new Error(title+': '+file+' arrived damaged. Try again.');
-     await cache.put(new URL('assets/'+file,base),new Response(data,{headers:{'content-type':mime(file)}}));
-     bytes+=data.byteLength;++done;progress(`Downloading ${title}… ${done}/${files.length} files`,{done:i,total,fraction:(i+done/files.length)/total});
-    }
-   };
-   await Promise.all(Array.from({length:6},worker));
+   if(entry.parts){
+    // A packed game (tools/devhost_pack.py): a few compressed parts instead of one request per file.
+    let received=0;const stored=new Set(),expected=entry.packedBytes||0,next=entry.parts.values();
+    const report=()=>progress(`Downloading ${title}… ${done}/${files.length} files`+(expected?` (${Math.round(received/1048576)} of ${Math.round(expected/1048576)} MB)`:''),{done:i,total,fraction:(i+(expected?Math.min(received/expected,1)*.9+done/files.length*.1:done/files.length))/total});
+    const worker=async()=>{
+     for(const digest of next){
+      canceled();
+      const part=await body(await get('files/'+digest,key,fetchFn),n=>{received+=n;report();});
+      if(hex(await crypto.subtle.digest('SHA-256',part))!==digest)throw new Error(title+': a part arrived damaged. Try again.');
+      for await(const {name,data} of unpack(part)){canceled();if(stored.has(name))throw new Error(title+': '+name+' arrived twice.');stored.add(name);await store(name,data);report();}
+     }
+    };
+    await Promise.all(Array.from({length:3},worker));
+    if(stored.size!==files.length){const n=files.length-stored.size;throw new Error(`${title}: ${n} file${n===1?' is':'s are'} missing from the dev host. Run tools/dev-host-upload.py on the Mac again.`);}
+   }else{
+    const next=files.entries();
+    const worker=async()=>{
+     for(const [,[file,digest]] of next){
+      canceled();
+      await store(file,new Uint8Array(await (await get('files/'+digest,key,fetchFn)).arrayBuffer()));
+      progress(`Downloading ${title}… ${done}/${files.length} files`,{done:i,total,fraction:(i+done/files.length)/total});
+     }
+    };
+    await Promise.all(Array.from({length:6},worker));
+   }
    const library=await readLibrary(),previous=library.games[id];
    library.games[id]={cache:name,version,bytes,importedAt:new Date().toISOString(),devFiles:fingerprint};
    await writeLibrary(library);

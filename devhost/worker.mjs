@@ -62,7 +62,8 @@ const LIMIT_REACHED='The dev host reached 80% of its free monthly allowance and 
 async function unused(env,remove){
  const manifest=await env.FILES.get('manifest.json');
  if(!manifest)return {error:'No manifest yet; nothing is cleaned up without one.'};
- const keep=new Set(Object.values((await manifest.json()).games).flatMap(g=>Object.values(g.files)).map(d=>'files/'+d));
+ // A packed game keeps only its parts; a game from an upload before packing keeps its single files.
+ const keep=new Set(Object.values((await manifest.json()).games).flatMap(g=>g.parts||Object.values(g.files)).map(d=>'files/'+d));
  const found=[];let cursor,bytes=0;
  do{
   if(!await allow(env,'write'))return {error:LIMIT_REACHED};
