@@ -36,12 +36,20 @@ The Worker never lets R2 cost money. A Durable Object (`Usage` in `devhost/worke
 each calendar month's (UTC) reads and writes and the total stored size, and the Worker refuses an
 operation that would pass 80% of R2's free allowance (8 GB stored, 800,000 writes, 8 million
 reads; `LIMITS`). Reads then answer 503 and uploads 507 with a message, until the month resets
-or, for storage, until the owner deletes objects in the Cloudflare dashboard (the counter
-assumes stored bytes only grow; reset it by deleting the `rhf-devhost` Durable Object's data
-or redeploying with a new migration). On its first run it lists the bucket to count what is
+or, for storage, until `--prune` (below) removes unused files. Objects deleted by hand in the
+Cloudflare dashboard are not subtracted, so use `--prune` instead. On its first run it lists the bucket to count what is
 already stored. Counts are saved every 25 reads and on every write, so a Worker restart can lose
 at most a few reads. The Worker and Durable Objects themselves are on the Workers free plan, which
 refuses requests past its daily limits rather than charging.
+
+## Cleaning up
+
+Uploads never delete: files a newer upload replaced stay in R2 and count toward the 8 GB cap.
+`tools/dev-host-upload.sh --prune` asks the Worker (`GET /prune`, upload key only) which stored
+files no game in the current manifest lists, shows their count and size, and deletes them
+(`POST /prune`) only after the owner types `yes`. The cap's stored size drops by the same amount.
+Run it only when no upload is in progress, since an upload's new files are unused until its
+manifest is stored. Listing costs one write per 1000 objects; deleting is free.
 
 ## Versions
 
