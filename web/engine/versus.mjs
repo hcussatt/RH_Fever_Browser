@@ -21,6 +21,12 @@ export function totals(results){
 export function compareTotals(a,b){
  return Math.sign(a.score-b.score)||Math.sign(b.missed-a.missed)||Math.sign(a.superbs-b.superbs)||Math.sign(a.perfects-b.perfects);
 }
+// Who leads during a song, from the live counters: -1 (friend far ahead) to 1 (you far ahead).
+// Each side's hits minus missed cues; a gap of about 10 cues pushes the diamond most of the way.
+export function lead(local,remote){
+ if(!local||!remote)return 0;
+ return Math.tanh(((local.hits-missed(local))-(remote.hits-missed(remote)))/10);
+}
 export const compareSongs=(a,b)=>compareTotals(totals([a]),totals([b]));
 // Standard: one remix row of the song select, its minigames then the remix.
 export const remixSets=available=>SETS.map(s=>({title:s.title,games:s.games.filter(id=>available.has(id))})).filter(s=>s.games.length>1&&s.games.at(-1).startsWith('remix'));

@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {PROTOCOL,PeerMatch,encodeSignal,decodeSignal,compareResults,clockSample} from '../web/engine/peer-match.mjs';
-import {songScore,totals,compareTotals,remixSets,shuffleMatch} from '../web/engine/versus.mjs';
+import {songScore,totals,compareTotals,remixSets,shuffleMatch,lead} from '../web/engine/versus.mjs';
 import {SETS} from '../web/engine/menu.mjs';
 const stats=(hits=10,misses=0,through=0)=>({hits,misses,through,stray:0,perfectFailed:0});
 function pair(){
@@ -129,4 +129,10 @@ test('a match plays its songs in order, records both results and ends with total
   // A guest ignores a match whose song does not match the selection.
   b.receive({type:'select',round:b.round+1,game:'golf',match:{title:'x',games:['robot'],index:0}});assert.equal(b.selectedGame,'seesaw');
  }finally{a.close();b.close();}
+});
+
+test('the lead bar is even at the start and leans toward whoever has more hits and fewer misses',()=>{
+ assert.equal(lead(stats(0),stats(0)),0);assert.equal(lead(stats(5),null),0);
+ assert.ok(lead(stats(10,0),stats(10,2))>0);assert.ok(lead(stats(10,2),stats(10,0))<0);
+ assert.ok(lead(stats(30,0),stats(10,20))>.99);assert.ok(Math.abs(lead(stats(10,1),stats(10,0)))<Math.abs(lead(stats(10,5),stats(10,0))));
 });

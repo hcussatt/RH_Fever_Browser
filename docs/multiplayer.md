@@ -48,6 +48,17 @@ fewer missed cues (misses + unanswered), then more Superbs, then more Perfects;
 otherwise it is a draw. Final results therefore also carry the original grade
 and per-category counts.
 
+## Look and lead bar
+
+The lobby uses the game select's theme: while a game is loaded, the selected
+game's title screen is the backdrop and the panels, buttons and table take its
+colours (`showTitle` in `web/import/library.mjs`). During a song a bar under the
+status shows who leads: green (left) is you, red (right) your friend, and the
+diamond slides toward the leader. The lead is each side's hits minus missed cues
+from the live counters, compared through `tanh(gap/10)` (`lead` in `versus.mjs`),
+so a gap of about ten cues pushes it most of the way. After the song it shows the
+final counts.
+
 ## Protocol and timing
 
 Protocol version 3 adds matches: a `select` may carry `match: {title, games, index}`,

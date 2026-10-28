@@ -157,6 +157,7 @@ test('Pages project path, local import errors, storage isolation, and offline sh
     await host.evaluate(r=>window.rhfLobby.peer.finish(r),cat(10,9));await guest.evaluate(r=>window.rhfLobby.peer.finish(r),cat(10,8));
     for(const p of [host,guest])await p.waitForFunction(i=>window.rhfLobby.peer.match.history[i],i);
     assert.equal(await host.locator('#lobby-rematch').isHidden(),true);
+    assert.ok(await host.evaluate(()=>parseFloat(document.querySelector('.lead-diamond').style.left)<50),'diamond leans to the leader (green, left)');
     if(i<songs.length-1){assert.match(await guest.locator('#lobby-status').textContent(),/Friend wins this song/);await host.locator('#lobby-next').click();}
    }
    assert.equal(await host.locator('#lobby-status').textContent(),'You win the match!');

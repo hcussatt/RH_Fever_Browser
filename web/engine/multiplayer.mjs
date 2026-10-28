@@ -1,8 +1,8 @@
 // The main Pages document owns the connection; game iframes can be replaced freely.
 import {siteRoot,assetResponse} from './assets.mjs';
 import {PeerMatch,compareResults,decodeSignal} from './peer-match.mjs';
-import {songScore,missed,totals,compareTotals,remixSets,shuffleMatch} from './versus.mjs';
-export function mountMultiplayer({games,version,openImport}){
+import {songScore,missed,totals,compareTotals,remixSets,shuffleMatch,lead} from './versus.mjs';
+export function mountMultiplayer({games,version,openImport,showGame=()=>{}}){
  const root=document.createElement('section');root.id='multiplayer-lobby';root.hidden=true;
  root.innerHTML=`<header class="lobby-heading"><h2>PLAY WITH A FRIEND</h2><button id="lobby-leave">Back to arcade</button></header>
  <p>Private two-player lobby. The host picks one game or a match. Both players use their own local disc data. Some networks block direct connections.</p>
@@ -10,7 +10,8 @@ export function mountMultiplayer({games,version,openImport}){
  <label>Invite link or answer code<textarea id="lobby-incoming" rows="2" maxlength="48000" spellcheck="false"></textarea></label><button id="lobby-accept" hidden>Connect with answer</button>
  <label id="lobby-output-label" hidden><span id="lobby-output-title">Connection code</span><textarea id="lobby-output" rows="2" readonly></textarea></label><button id="lobby-copy" hidden>Copy connection details</button></div>
  <div id="lobby-connected" hidden><label>Mode<select id="lobby-mode"><option value="single">One game</option></select></label><label id="lobby-game-label">Game<select id="lobby-game"></select></label><p id="lobby-role"></p><div class="lobby-actions"><button id="lobby-start-match" hidden>Start match</button><button id="lobby-ready" disabled>Ready</button><button id="lobby-next" hidden>Next song</button><button id="lobby-rematch" hidden>New round</button><button id="lobby-import">Load your disc</button><button id="lobby-reload">Reload local game</button></div></div>
- <p id="lobby-status" role="status" aria-live="polite"></p><p id="lobby-progress"></p><p id="lobby-results"></p><div id="lobby-match" hidden></div><div id="lobby-game-container"></div>`;
+ <p id="lobby-status" role="status" aria-live="polite"></p>
+ <div id="lobby-lead" hidden><div class="lead-names"><span>You</span><span id="lobby-lead-friend">Friend</span></div><div class="lead-track" role="img"><span class="lead-diamond"></span></div></div><p id="lobby-progress"></p><p id="lobby-results"></p><div id="lobby-match" hidden></div><div id="lobby-game-container"></div>`;
  document.querySelector('.cabinet').after(root);
  const $=id=>root.querySelector('#'+id),cabinet=document.querySelector('.cabinet');
  const entry=document.createElement('button');entry.id='open-multiplayer';entry.textContent='MULTIPLAYER';document.querySelector('.deck-buttons').prepend(entry);
@@ -45,7 +46,7 @@ export function mountMultiplayer({games,version,openImport}){
   const r=p.remote;$('lobby-progress').textContent=r?`${p.peerName}: ${r.hits} hits · ${r.misses+r.through} missed · Perfect ${r.perfectFailed?'broken':'active'}${p.state==='playing'&&performance.now()-p.lastRemote>2500?' · Updates interrupted':''}`:p.connected?`You: ${p.localReady?'ready':'not ready'} · ${p.peerName}: ${p.peerReady?'ready':'not ready'}`:'';
   const line=(who,r)=>`${who}: ${score(songScore(r))} (${grade(r)||'no grade'}), ${missed(r)} missed`;
   $('lobby-results').textContent=p.state==='finished'&&p.remoteResult?`${line('You',p.localResult)}. ${line(p.peerName,p.remoteResult)}. Higher score wins (0–100, the original's hit rate averaged over the song's categories); ties go to fewer missed cues.`:'';
-  scoreboard(p);
+  scoreboard(p);leadBar(p);
   if(p.connected&&p.host&&!autoSelected){autoSelected=true;peer.selectGame($('lobby-game').value);}
  }
  function outcome(p){
@@ -53,6 +54,15 @@ export function mountMultiplayer({games,version,openImport}){
   if(!p.match)return song>0?'You win':song<0?'Friend wins':'Draw';
   if(!p.matchOver)return songText+'. '+(p.host?'Press Next song when you’re both set.':'Waiting for the host to start the next song.');
   const c=compareTotals(...matchTotals(p));return c>0?'You win the match!':c<0?p.peerName+' wins the match':'The match is a draw';
+ }
+ // Green is you, red your friend: the diamond slides toward whoever leads, further the bigger the lead.
+ function leadBar(p){
+  const live=p.state==='playing'&&performance.now()>=p.began,done=p.state==='finished'&&p.remoteResult;
+  const mine=done?p.localResult:live?api?.snapshot():null,theirs=done?p.remoteResult:p.remote;
+  $('lobby-lead').hidden=!(mine&&theirs);if($('lobby-lead').hidden)return;
+  const l=lead(mine,theirs);$('lobby-lead-friend').textContent=p.peerName||'Friend';
+  root.querySelector('.lead-diamond').style.left=(50-l*50)+'%';
+  root.querySelector('.lead-track').setAttribute('aria-label',Math.abs(l)<.05?'Even':(l>0?'You lead':(p.peerName||'Friend')+' leads'));
  }
  function matchTotals(p){const h=p.match.history.filter(Boolean);return [totals(h.map(x=>x.local)),totals(h.map(x=>x.remote))];}
  // One row per song, then the running totals: score, then missed, Superbs and Perfects (the tie-breaks in order).
@@ -66,7 +76,7 @@ export function mountMultiplayer({games,version,openImport}){
   const caption=table.createCaption();caption.textContent=`${m.title} match`;board.replaceChildren(table);
  }
  async function load(id){
-  const token=++loadToken;api?.stop();api=null;loading=true;localError='';
+  const token=++loadToken;showGame(id);api?.stop();api=null;loading=true;localError='';
   frame=document.createElement('iframe');frame.id='lobby-player';frame.title=games.find(g=>g.id===id)?.title||'Selected game';frame.allow='autoplay';frame.src=new URL(id+'/?lobby=1',siteRoot);$('lobby-game-container').replaceChildren(frame);update(peer);
   const current=frame;
   try{
@@ -112,7 +122,7 @@ export function mountMultiplayer({games,version,openImport}){
  $('lobby-start-match').onclick=()=>{const mode=$('lobby-mode').value,match=mode==='shuffle'?shuffleMatch(available):sets.find(s=>'set:'+s.title===mode);if(match&&!peer.startMatch(match))update(peer);};
  $('lobby-next').onclick=()=>{if(!peer.nextSong())update(peer);};
  $('lobby-import').onclick=openImport;$('lobby-reload').onclick=()=>{if(peer.selectedGame&&peer.state==='lobby'&&!peer.localReady)load(peer.selectedGame);};
- $('lobby-leave').onclick=()=>{if(peer){peer.interrupt('Friend left the lobby.');peer.close();api?.stop();location.href=siteRoot.href;}else{root.hidden=true;cabinet.hidden=false;}};
+ $('lobby-leave').onclick=()=>{if(peer){peer.interrupt('Friend left the lobby.');peer.close();api?.stop();location.href=siteRoot.href;}else{root.hidden=true;cabinet.hidden=false;showGame(null);}};
  if(location.hash.startsWith('#invite=')){$('lobby-incoming').value=location.href;show();history.replaceState(null,'',location.pathname+location.search);}
  else if(location.hash==='#multiplayer')show();
  document.addEventListener('visibilitychange',()=>{if(document.hidden&&peer?.localReady)peer.interrupt('Hidden tab interrupted the round.');});
