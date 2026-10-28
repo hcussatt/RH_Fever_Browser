@@ -1,13 +1,15 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import worker from '../devhost/worker.mjs';
+import worker,{Usage,LIMITS} from '../devhost/worker.mjs';
 import {installFromDevHost,takeDevLink,devKey,forgetDevKey,devCommonKey,DEV_HOST_URL} from '../web/import/devhost.mjs';
 import {checkCommonKey,keyDigits} from '../web/import/wii-key.mjs';
 import {readLibrary} from '../web/engine/assets.mjs';
 const sha=async data=>[...new Uint8Array(await crypto.subtle.digest('SHA-256',typeof data==='string'?new TextEncoder().encode(data):data))].map(b=>b.toString(16).padStart(2,'0')).join('');
 // In-memory stand-ins for the R2 bucket, Cache Storage and localStorage.
-function bucket(){const data=new Map();return {data,async get(k){const v=data.get(k);return v&&{body:v.body,size:v.body.byteLength,httpMetadata:v.meta};},async put(k,body,o){data.set(k,{body:new Uint8Array(body),meta:o.httpMetadata});}};}
-const env=()=>({DEV_KEY:'dev-secret',UPLOAD_KEY:'upload-secret',ALLOWED_ORIGINS:'https://hcussatt.github.io',FILES:bucket()});
+function bucket(){const data=new Map();return {data,async get(k){const v=data.get(k);return v&&{body:v.body,size:v.body.byteLength,httpMetadata:v.meta};},async head(k){const v=await this.get(k);return v&&{...v,body:undefined};},async put(k,body,o){data.set(k,{body:new Uint8Array(body),meta:o.httpMetadata});},async list(){return {objects:[...data.values()].map(v=>({size:v.body.byteLength})),truncated:false};}};}
+// The usage counter: one Durable Object with in-memory storage.
+function usage(e){let object;const data=new Map();return {data,idFromName:n=>n,get(){object??=new Usage({storage:{async get(k){return data.get(k);},async put(k,v){data.set(k,structuredClone(v));},async setAlarm(){}}},e);return {fetch:(url,init)=>object.fetch(new Request(url,init))};}};}
+const env=()=>{const e={DEV_KEY:'dev-secret',UPLOAD_KEY:'upload-secret',ALLOWED_ORIGINS:'https://hcussatt.github.io',FILES:bucket()};e.USAGE=usage(e);return e;};
 const call=(e,path,{method='GET',key,origin='https://hcussatt.github.io',body,type}={})=>{
  const headers={};if(origin)headers.origin=origin;if(key)headers.authorization='Bearer '+key;if(type)headers['content-type']=type;
  return worker.fetch(new Request('https://devhost.example/'+path,{method,headers,body}),e);
@@ -76,4 +78,26 @@ test('the disc reader checks a typed Wii common key without the site holding it'
  assert.equal(keyDigits(' 0x00, 0x11 aa-bb '),'0011aabb');
  assert.match(await checkCommonKey('123'),/32 hexadecimal digits/);
  assert.match(await checkCommonKey('00112233445566778899aabbccddeeff'),/not the retail Wii common key/);
+});
+test('the dev host stops at 80% of the free monthly allowance',async()=>{
+ const saved={...LIMITS};
+ assert.deepEqual(LIMITS,{bytes:8e9,writes:8e5,reads:8e6});
+ try{
+  const e=env(),body='RIFF cap',digest=await sha(body);
+  e.FILES.data.set('files/old',{body:new Uint8Array(100),meta:{}});
+  LIMITS.writes=2;LIMITS.reads=2;LIMITS.bytes=100+body.length;
+  assert.equal((await call(e,'files/'+digest,{method:'PUT',key:'upload-secret',origin:null,body})).status,201,'the existing 100 bytes are counted');
+  const second='RIFF two';
+  assert.equal((await call(e,'files/'+await sha(second),{method:'PUT',key:'upload-secret',origin:null,body:second})).status,507,'stored size cap');
+  assert.equal((await call(e,'files/'+digest,{key:'dev-secret'})).status,200);
+  assert.equal((await call(e,'files/'+digest,{method:'HEAD',key:'dev-secret'})).status,200);
+  const r=await call(e,'files/'+digest,{key:'dev-secret'});
+  assert.equal(r.status,503);assert.match(await r.text(),/80% of its free monthly allowance/);
+  assert.equal((await call(e,'files/'+digest,{key:'wrong'})).status,401,'refused keys never count');
+  const saved2=e.USAGE.data.get('usage');assert.equal(saved2.writes,2,'one list call and one upload');assert.equal(saved2.bytes,100+body.length);
+  // A new month starts the read and write counts again; the stored size stays.
+  saved2.month='2000-01';e.USAGE.data.set('usage',saved2);
+  const fresh=env();fresh.FILES=e.FILES;fresh.USAGE=usage(fresh);fresh.USAGE.data.set('usage',saved2);
+  assert.equal((await call(fresh,'files/'+digest,{key:'dev-secret'})).status,200);
+ }finally{Object.assign(LIMITS,saved);}
 });

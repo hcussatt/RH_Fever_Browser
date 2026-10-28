@@ -30,6 +30,19 @@ Anyone with the dev key gets Nintendo's files. Keep the dev link private and nev
   game in Cache Storage exactly as an ISO import would, checking every file's SHA-256. With a
   dev key, the ISO import can also leave the key field empty and use the dev host's key.
 
+## Free-plan cap
+
+The Worker never lets R2 cost money. A Durable Object (`Usage` in `devhost/worker.mjs`) counts
+each calendar month's (UTC) reads and writes and the total stored size, and the Worker refuses an
+operation that would pass 80% of R2's free allowance (8 GB stored, 800,000 writes, 8 million
+reads; `LIMITS`). Reads then answer 503 and uploads 507 with a message, until the month resets
+or, for storage, until the owner deletes objects in the Cloudflare dashboard (the counter
+assumes stored bytes only grow; reset it by deleting the `rhf-devhost` Durable Object's data
+or redeploying with a new migration). On its first run it lists the bucket to count what is
+already stored. Counts are saved every 25 reads and on every write, so a Worker restart can lose
+at most a few reads. The Worker and Durable Objects themselves are on the Workers free plan, which
+refuses requests past its daily limits rather than charging.
+
 ## Versions
 
 `deployment.json` carries `importVersion` (`tools/import_version.py`): a hash of the converters,

@@ -12,3 +12,12 @@ ALLOWED_ORIGINS = "https://hcussatt.github.io"
 [[r2_buckets]]
 binding = "FILES"
 bucket_name = "rhf-dev-files"
+
+# Counts R2 use each month and stops the Worker at 80% of the free allowance (worker.mjs).
+[[durable_objects.bindings]]
+name = "USAGE"
+class_name = "Usage"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Usage"]
