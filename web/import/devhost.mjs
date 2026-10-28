@@ -37,14 +37,14 @@ export async function installFromDevHost({build,games,key=devKey(),progress=()=>
  const manifest=await (await get('manifest.json',key,fetchFn)).json();
  if(build.importVersion&&manifest.importVersion!==build.importVersion)
   throw new Error(`The dev host's files (commit ${manifest.commit||'?'}, ${manifest.uploadedAt||'unknown date'}) were made by a different converter version than this site. Rebuild on the Mac from this version and run tools/dev-host-upload.py again.`);
- const version=build.assetVersion||build.version;
- for(const {id,title} of games){
+ const version=build.assetVersion||build.version,total=games.length;
+ for(const [i,{id,title}] of games.entries()){
   const entry=manifest.games[id];
-  if(!entry){progress(title+' is not on the dev host; skipped.');continue;}
+  if(!entry){progress(title+' is not on the dev host; skipped.',{done:i+1,total,fraction:(i+1)/total});continue;}
   // A game already downloaded from these same files for this runtime is kept.
   const files=Object.entries(entry.files),fingerprint=hex(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(JSON.stringify(files))));
   const current=(await readLibrary()).games[id];
-  if(current?.version===version&&current.devFiles===fingerprint){await onGame(id,title);continue;}
+  if(current?.version===version&&current.devFiles===fingerprint){await onGame(id,title,{done:i+1,total,fraction:(i+1)/total});continue;}
   const name='rhf-assets:'+siteRoot.pathname+':'+version+':'+id+':'+crypto.randomUUID();
   const cache=await caches.open(name),base=new URL(id+'/',siteRoot);
   let done=0,bytes=0;
@@ -56,7 +56,7 @@ export async function installFromDevHost({build,games,key=devKey(),progress=()=>
      const data=await (await get('files/'+digest,key,fetchFn)).arrayBuffer();
      if(hex(await crypto.subtle.digest('SHA-256',data))!==digest)throw new Error(title+': '+file+' arrived damaged. Try again.');
      await cache.put(new URL('assets/'+file,base),new Response(data,{headers:{'content-type':mime(file)}}));
-     bytes+=data.byteLength;progress(`Downloading ${title}… ${++done}/${files.length}`);
+     bytes+=data.byteLength;++done;progress(`Downloading ${title}… ${done}/${files.length} files`,{done:i,total,fraction:(i+done/files.length)/total});
     }
    };
    await Promise.all(Array.from({length:6},worker));
@@ -65,6 +65,6 @@ export async function installFromDevHost({build,games,key=devKey(),progress=()=>
    await writeLibrary(library);
    if(previous?.cache&&previous.cache!==name)await caches.delete(previous.cache);
   }catch(e){await caches.delete(name);throw e;}
-  await onGame(id,title);
+  await onGame(id,title,{done:i+1,total,fraction:(i+1)/total});
  }
 }

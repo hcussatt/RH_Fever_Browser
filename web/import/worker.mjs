@@ -4,14 +4,19 @@ import {readLibrary,writeLibrary,siteRoot} from '../engine/assets.mjs';
 import {decodeDSP,decodeYaz0} from './codecs.mjs';
 const PYODIDE='https://cdn.jsdelivr.net/pyodide/v0.27.7/full/';
 let busy=false;
-const progress=message=>postMessage({type:'progress',message});
+// Each message says how far the whole import is: {done, total} games and fraction (0 to 1).
+// Reading the disc takes the first SETUP of the bar, then every game an equal share.
+const SETUP=.06;let meter={done:0,total:0,fraction:0};
+const progress=(message,fraction=meter.fraction)=>{meter.fraction=fraction;postMessage({type:'progress',message,...meter});};
+const gameFraction=(i,part)=>SETUP+(1-SETUP)*(i+part)/meter.total;
 const mime=name=>name.endsWith('.json')?'application/json':name.endsWith('.png')?'image/png':name.endsWith('.wav')?'audio/wav':'application/octet-stream';
 
 async function importISO({file,key,version,games}){
+ meter={done:0,total:games.length,fraction:0};
  if(file.size!==4699979776)throw new Error('Select a raw USA Wii ISO (4,699,979,776 bytes). RVZ and WBFS need conversion first.');
  if(new TextDecoder().decode(await file.slice(0,6).arrayBuffer())!=='SOME01')throw new Error('This runtime requires Rhythm Heaven Fever USA (SOME01).');
  if(!/^[0-9a-f]{32}$/i.test(key||''))throw new Error('The Wii common key must contain 32 hexadecimal digits.');
- progress('Loading the local asset converter…');
+ progress('Loading the local asset converter…',.01);
  const {loadPyodide}=await import(PYODIDE+'pyodide.mjs');
  const py=await loadPyodide({indexURL:PYODIDE,stdout:()=>{},stderr:console.warn});
  const [bundle]=await Promise.all([fetch(new URL('tools.zip',import.meta.url)),py.loadPackage(['numpy','pillow','cryptography'])]);
@@ -26,6 +31,7 @@ async function importISO({file,key,version,games}){
  self.fastDSP=(raw,coefs,yn1,yn2,length)=>decodeDSP(raw.toJs(),coefs.toJs(),yn1,yn2,length);
  self.fastYaz0=data=>decodeYaz0(data.toJs());
  py.globals.set('iso_path','/iso/'+file.name);
+ progress('Reading your disc…',.03);
  py.globals.set('common_key_value',key);
  await py.runPythonAsync(`
 import os, sys, runpy, pathlib, json, gc
@@ -54,16 +60,21 @@ def read_sound_range(offset, length):
 paths.read_sound_archive = read_sound_range
 os.environ.pop('RHF_WII_COMMON_KEY', None)
 `);
- progress('Disc validated. Preparing games…');
- for(const {id,title,expectedCues} of games){
-  progress('Converting '+title+' graphics and audio…');
+ progress('Disc validated. Preparing games…',SETUP);
+ for(const [i,{id,title,expectedCues}] of games.entries()){
+  progress('Converting '+title+' graphics and audio…',gameFraction(i,0));
+  // Each converter script moves the bar within this game's share (the chart check is the rest).
+  self.scriptDone=(n,count)=>progress('Converting '+title+' graphics and audio…',gameFraction(i,.85*n/count));
   py.globals.set('game_id',id);
   await py.runPythonAsync(`
 os.environ['RHF_GAME'] = game_id
 sys.argv = ['import-assets']
-for script in ['prepare-data.py', 'chart-index.py', 'extract-assets.py', 'extract-sfx.py', 'extract-layout.py', 'extract-results.py', 'extract-menu.py', 'decode-music.py']:
+from js import scriptDone
+scripts = ['prepare-data.py', 'chart-index.py', 'extract-assets.py', 'extract-sfx.py', 'extract-layout.py', 'extract-results.py', 'extract-menu.py', 'decode-music.py']
+for n, script in enumerate(scripts, 1):
     runpy.run_path('/project/tools/' + script, run_name='__main__')
     gc.collect()
+    scriptDone(n, len(scripts))
 `);
   const base=new URL(id+'/',siteRoot);
   const load=async url=>{
@@ -72,7 +83,7 @@ for script in ['prepare-data.py', 'chart-index.py', 'extract-assets.py', 'extrac
    if(path.includes(marker))return py.FS.readFile('/project/dist/'+id+'/assets/'+path.split(marker)[1]);
    const r=await fetch(url);if(!r.ok)throw new Error('Cannot load '+url);return new Uint8Array(await r.arrayBuffer());
   };
-  progress('Checking '+title+' chart…');
+  progress('Checking '+title+' chart…',gameFraction(i,.9));
   const timeline=await traceTimeline(base,load);
   if(timeline.cues.length!==expectedCues)throw new Error(title+': unexpected chart cue count.');
   const dir='/project/dist/'+id+'/assets';
@@ -91,7 +102,8 @@ for script in ['prepare-data.py', 'chart-index.py', 'extract-assets.py', 'extrac
    await writeLibrary(library);
    if(previous?.cache&&previous.cache!==name)await caches.delete(previous.cache);
   }catch(e){await caches.delete(name);throw e;}
-  postMessage({type:'game',id,title});
+  meter.done=i+1;meter.fraction=gameFraction(i,1);
+  postMessage({type:'game',id,title,...meter});
   await py.runPythonAsync(`
 import shutil
 shutil.rmtree('/project/dist/' + game_id)

@@ -12,8 +12,15 @@ let worker,build,games,selected;
 // The games game select shows (the importer still prepares every game, the unlisted Rhythm Test too).
 const listed=()=>games.filter(g=>!UNLISTED.has(g.id));
 const iconURLs=new Map();
+// The import bar: games finished out of all games, and how far the whole import is.
+function meter({done=0,total=0,fraction=0}={}){
+ const percent=Math.round(Math.min(1,Math.max(0,fraction))*100);
+ $('.meter-fill').style.width=percent+'%';$('.meter-fill').toggleAttribute('data-empty',percent===0);
+ $('.meter-track').setAttribute('aria-valuenow',String(percent));$('.meter-track').setAttribute('aria-valuetext',`${done} of ${total} games ready`);
+ $('#meter-games').textContent=`${done} of ${total}`;$('#meter-percent').textContent=percent+'%';
+}
 const status=(message,error=false)=>{$('#progress').textContent=message;$('#progress').classList.toggle('error',error);};
-function busy(value){$('#import').disabled=value;$('#iso').disabled=value;$('#key').disabled=value;$('#remove').disabled=value;$('#dev-download').disabled=value;$('#cancel').hidden=!value;$('#busy').hidden=!value;}
+function busy(value){$('#import').disabled=value;$('#iso').disabled=value;$('#key').disabled=value;$('#remove').disabled=value;$('#dev-download').disabled=value;$('#cancel').hidden=!value;$('#busy').hidden=!value;if(value)meter({total:games?.length||0});}
 let menuGroups=[],renderVersion=0;
 const reducedMotion=()=>matchMedia('(prefers-reduced-motion: reduce)').matches;
 // Behind the menu: the title screen the hovered or selected game opens with (its prologue layout at
@@ -237,8 +244,8 @@ $('#import-form').onsubmit=async e=>{
   status(persistent?'Preparing games. Local storage persistence granted.':'Preparing games. Your browser may reclaim storage when space is low.');
   worker=new Worker(new URL('worker.mjs',import.meta.url),{type:'module'});
   worker.onmessage=async({data})=>{
-   if(data.type==='progress')status(data.message);
-   if(data.type==='game'){status(data.title+' is ready.');await render();}
+   if(data.type==='progress'){status(data.message);meter(data);}
+   if(data.type==='game'){status(data.title+' is ready.');meter(data);await render();}
    if(data.type==='done'||data.type==='error'){
     worker?.terminate();worker=null;busy(false);await render();
     status(data.type==='done'?'Your games are ready. Select Play above.':data.message,data.type==='error');
@@ -264,7 +271,7 @@ $('#dev-download').onclick=async()=>{
  devDownload=new AbortController();busy(true);
  try{
   await navigator.storage?.persist?.();
-  await installFromDevHost({build,games,signal:devDownload.signal,progress:status,onGame:async(id,title)=>{status(title+' is ready.');await render();}});
+  await installFromDevHost({build,games,signal:devDownload.signal,progress:(message,state)=>{status(message);if(state)meter(state);},onGame:async(id,title,state)=>{status(title+' is ready.');meter(state);await render();}});
   status('Your games are ready. Select Play above.');
  }catch(e){status(e.message,true);}
  finally{devDownload=null;busy(false);await render();}
