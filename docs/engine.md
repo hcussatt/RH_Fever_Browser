@@ -100,6 +100,28 @@ the interpreter calls.
   the timeline. Their chart sounds play live: `runtime.mjs` schedules ahead only
   the sounds it can match to the timeline.
 
+## Practice
+
+Most minigames open with a practice, as in the original; game select's "Skip
+practice" switch (`web/engine/practice.mjs`, off by default) leaves it out.
+
+- `tools/chart-index.py` finds it as the other scene change to the game's scene
+  whose chart leads to the main one: it starts the main chart itself (op 0, Tap
+  Trial) or, in a chart it starts, changes to the scene again with it (op
+  `0x100`, Screwbot Factory). It writes `practice` in `original-chart.json`: the
+  chart, its scene version and the backing waves it prepares (`0x37`, `0x38`).
+  `extract-assets.py` keeps the sound groups holding those waves and
+  `decode-music.py` writes each as `practice-<sound>.wav` (most loop).
+- The page loads the practice as its own session (`loadGame(..., {practice:
+  true})`, `start_practice` in `platform.c`). It runs live: no build-time timeline,
+  its tick advances at the chart's own tempo and speed (`practice_rate`), and
+  its sounds play as it reaches them. Its dialogue waits for A
+  (`TF_BUTTON_PROMPT`) and repeats a section until it is played well, as the
+  original's does.
+- It ends where the original would start the main chart (event 30). The page
+  then plays the main chart from a fresh session, exactly as with the practice
+  skipped. Multiplayer rounds never play it.
+
 ## Remixes
 
 A remix manifest (`games/remix1/game.json`) names its music and the scenes it

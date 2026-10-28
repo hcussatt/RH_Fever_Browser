@@ -51,7 +51,10 @@ export async function createMessages(g){
   panes.set(index,{layout:box[0],text:box[1],container:box[2]});
  }
  const f32=u=>new Float32Array(new Uint32Array([u]).buffer)[0];
- const text=id=>(file.messages[id]??'').replace(/\{[0-9a-f]*\}/g,'');
+ // The controller button a message names ({010001} A, {010002} B) is written as its letter; the
+ // original draws its icon. Other tags (colours, sizes) are left out.
+ const BUTTONS={'010001':'A','010002':'B'};
+ const text=id=>(file.messages[id]??'').replace(/\{([0-9a-f]*)\}/g,(_,tag)=>BUTTONS[tag]??'');
  function string(address){let s='';for(let a=address;g.u16(a);a+=2)s+=String.fromCharCode(g.u16(a));return s;}
  function apply({frame,field,pane:index,value}){
   if(field===LAYOUT)return setup(LAYOUTS[value]);
