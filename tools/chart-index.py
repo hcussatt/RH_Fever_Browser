@@ -309,11 +309,13 @@ def main():
            'secondsPerTick': segments[0]['samples']/segments[0]['rate']/(segments[0]['beats']*48)}
     # The scene load before the chart (op 0x101) passes the scene's version, which the scene reads
     # to pick its setup (Double Date seats the girl beside the boy in version 1).
-    if mains[0][1]:
+    # The practice passes its own version, so the static is kept when either is set (Air Rally's
+    # practice is version 1, its main chart 0).
+    practice = practice_chart(scene, start) if profile.get('practice', True) else None
+    if mains[0][1] or (practice or {}).get('sceneVersion'):
         out['sceneVersion'] = {'address': scene_version_address(scene), 'value': mains[0][1]}
     if len(segments) > 1:
         out['tempoSegments'] = segments
-    practice = practice_chart(scene, start) if profile.get('practice', True) else None
     if practice:
         out['practice'] = practice
     (assets(name)/'original-chart.json').write_text(json.dumps(out, indent=2)+'\n')
