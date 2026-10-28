@@ -111,7 +111,7 @@ test('Pages project path, local import errors, storage isolation, and offline sh
     await c.route('**/?lobby=1',r=>r.fulfill({contentType:'text/html',body:`<!doctype html><p>Local engine fixture</p><script>
      const id=location.pathname.split('/').filter(Boolean).at(-1);let began=0;
      window.rhf={multiplayer:{attach(){},game:()=>({manifest:{id},chart:{}}),gameUrl:new URL('./',location.href),
-      prepare:async()=>{},hasPractice:()=>true,practice:async()=>{window.practised=(window.practised||0)+1;},skipPractice(){},start:at=>{began=at;},stop:()=>{began=0;},snapshot:()=>({hits:0,misses:0,through:0,stray:0,perfectFailed:0,position:began?Math.max(0,(performance.now()-began)/1000):0})}};
+      prepare:async()=>{},hasPractice:()=>true,practice:async()=>{window.practiced=(window.practiced||0)+1;},skipPractice(){},start:at=>{began=at;},stop:()=>{began=0;},snapshot:()=>({hits:0,misses:0,through:0,stray:0,perfectFailed:0,position:began?Math.max(0,(performance.now()-began)/1000):0})}};
     </script>`}));
    }
    await host.goto(base);await guest.goto(base);
@@ -131,7 +131,7 @@ test('Pages project path, local import errors, storage isolation, and offline sh
    assert.equal(await host.locator('#lobby-ready').textContent(),'Practice');assert.equal(await host.locator('#lobby-skip-practice').isVisible(),true);
    await guest.locator('#lobby-ready').click();await host.locator('#lobby-skip-practice').click();
    for(const p of [host,guest])await p.waitForFunction(()=>window.rhfLobby.peer.state==='playing');
-   assert.equal(await guest.evaluate(()=>window.rhfLobby.frame.contentWindow.practised),1);assert.equal(await host.evaluate(()=>window.rhfLobby.frame.contentWindow.practised),undefined);
+   assert.equal(await guest.evaluate(()=>window.rhfLobby.frame.contentWindow.practiced),1);assert.equal(await host.evaluate(()=>window.rhfLobby.frame.contentWindow.practiced),undefined);
    const result={hits:10,misses:0,through:0,stray:0,perfectFailed:0};
    await host.evaluate(r=>window.rhfLobby.peer.finish(r),result);
    assert.equal(await host.locator('#lobby-game').isEnabled(),false);

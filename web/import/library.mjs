@@ -237,7 +237,7 @@ $('#import-form').onsubmit=async e=>{
   worker.postMessage({file,key,version:build.assetVersion||build.version,games});
  }catch(e){worker?.terminate();worker=null;busy(false);status(e.message,true);}
 };
-$('#cancel').onclick=()=>{worker?.terminate();worker=null;busy(false);status('Import cancelled. Any games already prepared remain available.');render();};
+$('#cancel').onclick=()=>{worker?.terminate();worker=null;busy(false);status('Import canceled. Any games already prepared remain available.');render();};
 $('#remove').onclick=()=>$('#confirm-remove').showModal();
 $('#confirm-remove').onclose=async()=>{
  if($('#confirm-remove').returnValue!=='remove')return;

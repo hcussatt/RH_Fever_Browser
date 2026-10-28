@@ -1,12 +1,16 @@
 // The main Pages document owns the connection; game iframes can be replaced freely.
 import {siteRoot,assetResponse} from './assets.mjs';
 import {PeerMatch,compareResults,decodeSignal} from './peer-match.mjs';
+import {MATCHMAKER_URL,normalizeRoom,openRoom,readOffer,sendAnswer,waitForAnswer} from './matchmaker.mjs';
 import {songScore,missed,totals,compareTotals,remixSets,shuffleMatch,lead} from './versus.mjs';
 export function mountMultiplayer({games,version,openImport,showGame=()=>{}}){
  const root=document.createElement('section');root.id='multiplayer-lobby';root.hidden=true;
  root.innerHTML=`<header class="lobby-heading"><h2>PLAY WITH A FRIEND</h2><button id="lobby-leave">Back to arcade</button></header>
  <p>Private two-player lobby. The host picks one game or a match. Both players use their own local disc data. Some networks block direct connections.</p>
- <div id="lobby-setup"><label>Your name<input id="lobby-name" maxlength="24" value="Player"></label><div class="lobby-actions"><button id="lobby-create">Create invite</button><button id="lobby-join">Generate answer</button></div>
+ <div id="lobby-setup"><label>Your name<input id="lobby-name" maxlength="24" value="Player"></label><div id="lobby-room"${MATCHMAKER_URL?'':' hidden'}><div class="lobby-actions"><button id="lobby-room-create">Create room</button></div>
+ <p id="lobby-room-share" hidden>Room code <strong id="lobby-room-code"></strong> <button id="lobby-room-copy">Copy room link</button></p>
+ <label id="lobby-room-input-label">Friend’s room code<input id="lobby-room-input" maxlength="200" autocomplete="off" spellcheck="false" placeholder="ABC123"></label><button id="lobby-room-join">Join room</button>
+ <p>Or connect by copying codes back and forth:</p></div><div class="lobby-actions"><button id="lobby-create">Create invite</button><button id="lobby-join">Generate answer</button></div>
  <label>Invite link or answer code<textarea id="lobby-incoming" rows="2" maxlength="48000" spellcheck="false"></textarea></label><button id="lobby-accept" hidden>Connect with answer</button>
  <label id="lobby-output-label" hidden><span id="lobby-output-title">Connection code</span><textarea id="lobby-output" rows="2" readonly></textarea></label><button id="lobby-copy" hidden>Copy connection details</button></div>
  <div id="lobby-connected" hidden><label>Mode<select id="lobby-mode"><option value="single">One game</option></select></label><label id="lobby-game-label">Game<select id="lobby-game"></select></label><p id="lobby-role"></p><div class="lobby-actions"><button id="lobby-start-match" hidden>Start match</button><button id="lobby-ready" disabled>Ready</button><button id="lobby-skip-practice" hidden>Skip practice</button><button id="lobby-next" hidden>Next song</button><button id="lobby-rematch" hidden>New round</button><button id="lobby-import">Load your disc</button><button id="lobby-reload">Reload local game</button></div></div>
@@ -15,7 +19,7 @@ export function mountMultiplayer({games,version,openImport,showGame=()=>{}}){
  document.querySelector('.cabinet').after(root);
  const $=id=>root.querySelector('#'+id),cabinet=document.querySelector('.cabinet');
  const entry=document.createElement('button');entry.id='open-multiplayer';entry.textContent='MULTIPLAYER';document.querySelector('.deck-buttons').prepend(entry);
- let peer,frame,api,practising=false,practised=null,loading=false,loadToken=0,task=false,autoSelected=false,localError='';
+ let peer,frame,api,roomWait,practicing=false,practiced=null,loading=false,loadToken=0,task=false,autoSelected=false,localError='';
  for(const game of games){const option=document.createElement('option');option.value=game.id;option.textContent=game.title;$('lobby-game').append(option);}
  const available=new Set(games.map(g=>g.id)),title=id=>games.find(g=>g.id===id)?.title||id,sets=remixSets(available);
  for(const set of sets){const option=document.createElement('option');option.value='set:'+set.title;option.textContent=set.title+' set ('+set.games.length+' songs)';$('lobby-mode').append(option);}
@@ -25,6 +29,7 @@ export function mountMultiplayer({games,version,openImport,showGame=()=>{}}){
  function show(){root.hidden=false;cabinet.hidden=true;}
  entry.onclick=show;
  function update(p){
+  if(p.connected)roomWait?.abort();
   $('lobby-setup').hidden=!!p.connected;$('lobby-connected').hidden=!p.connected;
   const idle=p.state==='lobby'||p.state==='interrupted'||p.state==='finished'&&p.remoteResult;
   const m=p.match,single=$('lobby-mode').value==='single';
@@ -36,11 +41,11 @@ export function mountMultiplayer({games,version,openImport,showGame=()=>{}}){
   $('lobby-role').textContent=m?`${m.title} match · song ${m.index+1} of ${m.games.length}: ${title(m.games[m.index])}. `+(p.host?(p.matchOver?'Match over. Start another match or pick a mode.':'You are the host: press Next song after each song.'):'The host moves the match on. Your browser follows automatically.')
    :p.host?'You are the host. Choose a game or a match for both players.':'The host chooses the game. Your browser follows automatically.';
   if(p.selectedGame)$('lobby-game').value=p.selectedGame;
-  // A game with a practice makes each player practise (or skip it) to become ready; replays just Ready.
-  const practice=!!api?.hasPractice?.()&&practised!==p.selectedGame&&!p.localReady;
-  $('lobby-ready').disabled=p.state!=='lobby'||!p.selectedGame||!api||loading||p.localReady||p.preparing||practising;
-  $('lobby-ready').textContent=p.preparing?'Preparing…':p.localReady?'Ready — waiting for friend':practising?'Practising…':practice?'Practice':'Ready';
-  $('lobby-skip-practice').hidden=!(practice||practising);$('lobby-skip-practice').disabled=p.state!=='lobby'||loading||p.preparing;
+  // A game with a practice makes each player practice (or skip it) to become ready; replays just Ready.
+  const practice=!!api?.hasPractice?.()&&practiced!==p.selectedGame&&!p.localReady;
+  $('lobby-ready').disabled=p.state!=='lobby'||!p.selectedGame||!api||loading||p.localReady||p.preparing||practicing;
+  $('lobby-ready').textContent=p.preparing?'Preparing…':p.localReady?'Ready — waiting for friend':practicing?'Practicing…':practice?'Practice':'Ready';
+  $('lobby-skip-practice').hidden=!(practice||practicing);$('lobby-skip-practice').disabled=p.state!=='lobby'||loading||p.preparing;
   $('lobby-rematch').hidden=!p.canRematch;$('lobby-rematch').textContent=m?'Replay this song':'New round';
   let text=localError||(loading?'Loading the host’s selected game…':p.message||'');
   if(p.state==='playing')text=performance.now()<p.began?'Starts in '+Math.ceil((p.began-performance.now())/1000)+'…':'Playing '+(games.find(g=>g.id===p.selectedGame)?.title||'')+(p.connected?'':' · Connection lost; local play continues');
@@ -79,7 +84,7 @@ export function mountMultiplayer({games,version,openImport,showGame=()=>{}}){
   const caption=table.createCaption();caption.textContent=`${m.title} match`;board.replaceChildren(table);
  }
  async function load(id){
-  const token=++loadToken;showGame(id);practised=null;api?.stop();api=null;loading=true;localError='';
+  const token=++loadToken;showGame(id);practiced=null;api?.stop();api=null;loading=true;localError='';
   frame=document.createElement('iframe');frame.id='lobby-player';frame.title=games.find(g=>g.id===id)?.title||'Selected game';frame.allow='autoplay';frame.src=new URL(id+'/?lobby=1',siteRoot);$('lobby-game-container').replaceChildren(frame);update(peer);
   const current=frame;
   try{
@@ -118,22 +123,41 @@ export function mountMultiplayer({games,version,openImport,showGame=()=>{}}){
  $('lobby-create').onclick=()=>run(async()=>{const p=create(),code=await p.invite(),url=new URL(siteRoot);url.hash='invite='+code;output(url.href,'Invite link');$('lobby-create').hidden=true;$('lobby-join').hidden=true;$('lobby-accept').hidden=false;});
  $('lobby-join').onclick=()=>run(async()=>{decodeSignal($('lobby-incoming').value,'offer');output(await create().answer($('lobby-incoming').value),'Answer code');$('lobby-create').hidden=true;$('lobby-join').hidden=true;});
  $('lobby-accept').onclick=()=>run(()=>peer.accept($('lobby-incoming').value));
+ // A room carries the same invite and answer through the matchmaker. The manual invite link is
+ // shown too, so the host can still fall back to copying codes.
+ function roomStarted(){for(const id of ['lobby-room-create','lobby-room-join','lobby-room-input-label','lobby-create','lobby-join'])$(id).hidden=true;}
+ $('lobby-room-create').onclick=()=>run(async()=>{
+  const p=create(),invite=await p.invite(),code=await openRoom(invite),url=new URL(siteRoot);
+  url.hash='invite='+invite;output(url.href,'Invite link (if the room code does not work)');roomStarted();$('lobby-accept').hidden=false;
+  $('lobby-room-code').textContent=code;$('lobby-room-share').hidden=false;
+  p.changed('Send your friend the room code or link. Keep this tab open.');
+  roomWait=new AbortController();
+  waitForAnswer(code,{signal:roomWait.signal}).then(answer=>{if(p.state==='connecting'&&!p.pc.remoteDescription)return p.accept(answer);}).catch(e=>{if(!roomWait.signal.aborted&&!p.connected)$('lobby-status').textContent=e.message;});
+ });
+ $('lobby-room-copy').onclick=()=>run(async()=>{const url=new URL(siteRoot);url.hash='room='+$('lobby-room-code').textContent;await navigator.clipboard.writeText(url.href);$('lobby-status').textContent='Copied. Send it to your friend.';});
+ $('lobby-room-join').onclick=()=>run(async()=>{
+  const code=normalizeRoom($('lobby-room-input').value),offer=await readOffer(code);decodeSignal(offer,'offer');
+  const p=create(),answer=await p.answer(offer);roomStarted();
+  try{await sendAnswer(code,answer);}catch(e){output(answer,'Answer code (send this to your friend instead)');throw e;}
+  if(!p.connected)p.changed('Joined the room. Connecting…');
+ });
  $('lobby-copy').onclick=()=>run(async()=>{await navigator.clipboard.writeText($('lobby-output').value);$('lobby-status').textContent='Copied. Send it to your friend.';});
  $('lobby-ready').onclick=()=>{
-  if(!api?.hasPractice?.()||practised===peer.selectedGame){run(()=>peer.ready());return;}
-  // Practise in the game frame; once it is done (or skipped) the song waits, paused, and this player is ready.
-  const active=api,game=peer.selectedGame;practising=true;update(peer);frame.contentWindow.focus();
-  active.practice().then(()=>{practising=false;if(active!==api||game!==peer.selectedGame)return update(peer);practised=game;run(()=>peer.ready());},
-   e=>{practising=false;$('lobby-status').textContent=e.message;update(peer);});
+  if(!api?.hasPractice?.()||practiced===peer.selectedGame){run(()=>peer.ready());return;}
+  // Practice in the game frame; once it is done (or skipped) the song waits, paused, and this player is ready.
+  const active=api,game=peer.selectedGame;practicing=true;update(peer);frame.contentWindow.focus();
+  active.practice().then(()=>{practicing=false;if(active!==api||game!==peer.selectedGame)return update(peer);practiced=game;run(()=>peer.ready());},
+   e=>{practicing=false;$('lobby-status').textContent=e.message;update(peer);});
  };
- $('lobby-skip-practice').onclick=()=>{if(practising){api?.skipPractice();return;}practised=peer.selectedGame;run(()=>peer.ready());};$('lobby-rematch').onclick=()=>peer.rematch();
+ $('lobby-skip-practice').onclick=()=>{if(practicing){api?.skipPractice();return;}practiced=peer.selectedGame;run(()=>peer.ready());};$('lobby-rematch').onclick=()=>peer.rematch();
  $('lobby-game').onchange=()=>{if(!peer.selectGame($('lobby-game').value))update(peer);};
  $('lobby-mode').onchange=()=>{if($('lobby-mode').value==='single'&&peer.match&&!peer.selectGame($('lobby-game').value))$('lobby-mode').value=modeOf(peer.match);update(peer);};
  $('lobby-start-match').onclick=()=>{const mode=$('lobby-mode').value,match=mode==='shuffle'?shuffleMatch(available):sets.find(s=>'set:'+s.title===mode);if(match&&!peer.startMatch(match))update(peer);};
  $('lobby-next').onclick=()=>{if(!peer.nextSong())update(peer);};
  $('lobby-import').onclick=openImport;$('lobby-reload').onclick=()=>{if(peer.selectedGame&&peer.state==='lobby'&&!peer.localReady)load(peer.selectedGame);};
- $('lobby-leave').onclick=()=>{if(peer){peer.interrupt('Friend left the lobby.');peer.close();api?.stop();location.href=siteRoot.href;}else{root.hidden=true;cabinet.hidden=false;showGame(null);}};
- if(location.hash.startsWith('#invite=')){$('lobby-incoming').value=location.href;show();history.replaceState(null,'',location.pathname+location.search);}
+ $('lobby-leave').onclick=()=>{roomWait?.abort();if(peer){peer.interrupt('Friend left the lobby.');peer.close();api?.stop();location.href=siteRoot.href;}else{root.hidden=true;cabinet.hidden=false;showGame(null);}};
+ if(location.hash.startsWith('#room=')&&MATCHMAKER_URL){$('lobby-room-input').value=decodeURIComponent(location.hash.slice(6));show();history.replaceState(null,'',location.pathname+location.search);}
+ else if(location.hash.startsWith('#invite=')){$('lobby-incoming').value=location.href;show();history.replaceState(null,'',location.pathname+location.search);}
  else if(location.hash==='#multiplayer')show();
  document.addEventListener('visibilitychange',()=>{if(document.hidden&&peer?.localReady)peer.interrupt('Hidden tab interrupted the round.');});
  window.addEventListener('beforeunload',()=>peer?.close());

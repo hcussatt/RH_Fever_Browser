@@ -68,7 +68,7 @@ try{
  // Plays the practice on its own; resolves once it is done or skipped, leaving the song paused
  // until the lobby starts it.
  practice:async()=>{
-  if(!practice)return;if(document.hidden)throw new Error('Keep the game tab visible to practise.');
+  if(!practice)return;if(document.hidden)throw new Error('Keep the game tab visible to practice.');
   await audio.resume();overlay.hidden=true;
   return new Promise((resolve,reject)=>{practiceDone={resolve,reject};startPractice();});
  },skipPractice:()=>{if(phase==='practice'&&running)endPractice().catch(fail);},start:at=>{overlay.hidden=true;start(at).catch(fail);},stop:()=>{

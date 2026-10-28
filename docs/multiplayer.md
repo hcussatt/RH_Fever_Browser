@@ -1,8 +1,14 @@
 # Private multiplayer
 
-Open the main Pages arcade and choose **MULTIPLAYER**. Create an invite and send
-its link to your friend. Your friend opens the main-site link, generates an answer
-and sends it back. Paste the answer and connect. Keep both lobby tabs open.
+Open the main Pages arcade and choose **MULTIPLAYER**. Choose **Create room** and
+send your friend the six-character room code or the room link. Your friend enters the
+code and chooses **Join room**; the two browsers then connect directly. Keep both lobby
+tabs open.
+
+Without the matchmaker (or if it cannot be reached), connect by copying codes: create
+an invite and send its link to your friend. Your friend opens the main-site link,
+generates an answer and sends it back. Paste the answer and connect. Creating a room
+also shows the invite link, so the host can fall back without starting over.
 
 The host chooses the game from the lobby selector; the guest automatically loads
 the same game and cannot change the selection. Both choose **Ready** after their
@@ -20,7 +26,7 @@ comparisons are displayed above the game. The higher song score wins (see Matche
 equal scores and missed counts draw. Results are self-reported. New round requires both Ready
 again. Pause, restart or hiding a ready/playing tab interrupts an incomplete round.
 
-There are no accounts or signaling backend. STUN is external infrastructure
+There are no accounts. The only server is the optional room-code matchmaker below. STUN is external infrastructure
 (`stun.l.google.com:19302`); no TURN relay is configured, so some networks cannot
 connect. HTTPS or localhost is required. Each player supplies their own disc data;
 no assets are transferred. Localhost invite links are for same-machine testing.
@@ -159,3 +165,34 @@ rematch and narrow layout, using disc-free iframe fixtures. These checks validat
 lobby integration; they do not establish game fidelity or WAN/NAT connectivity.
 Local browser execution is unavailable because this environment blocks HTTP
 listeners. GitHub Actions must pass before merge.
+
+## Room codes (matchmaker)
+
+`matchmaker/worker.mjs` is a Cloudflare Worker that passes the invite and the answer
+between the two browsers, so players share a six-character code instead of two long
+codes. Each room is one Durable Object holding one invite and one answer. The room is
+deleted when the host collects the answer, or after ten minutes. The Worker only
+accepts the hosted site's origin (`ALLOWED_ORIGINS` in `matchmaker/wrangler.toml`) and
+localhost. It never sees gameplay, scores or input: after the exchange the players are
+connected directly, exactly as with copied codes. Codes use 31 characters without
+look-alikes (no 0/O, 1/I/L), so they are easy to read out.
+
+The lobby shows room codes only when `MATCHMAKER_URL` in `web/engine/matchmaker.mjs`
+is set. The copy-paste codes always remain available.
+
+Deployment is automatic: `.github/workflows/matchmaker.yml` publishes the Worker on
+every push to main that changes `matchmaker/`, or when run by hand from the Actions
+tab. It needs two repository secrets (Settings → Secrets and variables → Actions):
+
+- `CLOUDFLARE_API_TOKEN`: a Cloudflare API token from the **Edit Cloudflare Workers**
+  template.
+- `CLOUDFLARE_ACCOUNT_ID`: the account ID from the Workers & Pages overview.
+
+Without them the workflow skips. The Worker is served at
+`https://rhf-matchmaker.<workers.dev subdomain>.workers.dev/`, and this URL goes into
+`MATCHMAKER_URL`. It fits the Workers free plan: a match makes a few requests while the
+host waits (one poll every 1.5 s).
+
+Tests: `node --test tests/matchmaker.test.mjs` exercises the Worker and the lobby's
+client against an in-memory Durable Object. `tests/lobby-rooms.test.mjs` connects two
+browsers through the built lobby by room code, with the Worker code answering in-process.
