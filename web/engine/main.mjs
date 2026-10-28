@@ -111,7 +111,9 @@ function liveEvents(){
 const delay=getDelayMs()/1000;
 function heardTime(){
  const t=audio.getOutputTimestamp?.();
- if(t&&t.performanceTime>0&&performance.now()-t.performanceTime<100)return Math.min(audio.currentTime,t.contextTime+(performance.now()-t.performanceTime)/1000)-delay;
+ // A stamp from the future (its clock base disagrees with this page's) is ignored, not trusted.
+ const age=t?performance.now()-t.performanceTime:-1;
+ if(t&&t.performanceTime>0&&age>=0&&age<100)return Math.min(audio.currentTime,t.contextTime+age/1000)-delay;
  return audio.currentTime-(audio.outputLatency||0)-(audio.baseLatency||0)-delay;
 }
 // The rhythm test (wii.calibration): each beat its signal sound plays on (the part played by ear,
