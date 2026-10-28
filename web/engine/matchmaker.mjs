@@ -1,7 +1,8 @@
 // Room codes for the multiplayer lobby: the matchmaker (matchmaker/worker.mjs) passes the invite and
 // answer between the two browsers, so players share a six-letter code instead of pasting both.
-// Empty turns room codes off; the manual codes keep working either way.
-export const MATCHMAKER_URL='';
+// Empty turns room codes off; the manual codes keep working either way. Deployed by
+// .github/workflows/matchmaker.yml to the repo owner's workers.dev subdomain.
+export const MATCHMAKER_URL='https://rhf-matchmaker.hcussatt.workers.dev/';
 const ALPHABET='ABCDEFGHJKMNPQRSTUVWXYZ23456789',LENGTH=6;
 // Accepts a room link (#room=…) or the code typed in any case, with spaces or dashes.
 export function normalizeRoom(text){

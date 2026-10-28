@@ -23,7 +23,7 @@ test('players connect with a room code; a wrong code fails clearly',async()=>{
  const base=`http://127.0.0.1:${server.address().port}${prefix}`;
  const rooms=new Map(),storage=()=>{const data=new Map();return {async get(k){return data.get(k);},async put(k,v){data.set(k,v);},async deleteAll(){data.clear();},async setAlarm(){},async deleteAlarm(){}};};
  const env={ALLOWED_ORIGINS:'https://hcussatt.github.io',ROOMS:{idFromName:n=>n,get(id){if(!rooms.has(id))rooms.set(id,new Room({storage:storage()}));const room=rooms.get(id);return {fetch:(url,init)=>room.fetch(new Request(url,init))};}}};
- const module=(await readFile(resolve(root,'engine/matchmaker.mjs'),'utf8')).replace("MATCHMAKER_URL=''",`MATCHMAKER_URL='${MATCHMAKER}'`);
+ const module=(await readFile(resolve(root,'engine/matchmaker.mjs'),'utf8')).replace(/MATCHMAKER_URL='[^']*'/,`MATCHMAKER_URL='${MATCHMAKER}'`);
  const browser=await chromium.launch({headless:true,channel:process.env.RHF_BROWSER_CHANNEL||undefined});
  try{
   const contexts=await Promise.all([browser.newContext({serviceWorkers:'block'}),browser.newContext({serviceWorkers:'block'})]);
