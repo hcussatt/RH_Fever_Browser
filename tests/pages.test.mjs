@@ -111,7 +111,7 @@ test('Pages project path, local import errors, storage isolation, and offline sh
     await c.route('**/?lobby=1',r=>r.fulfill({contentType:'text/html',body:`<!doctype html><p>Local engine fixture</p><script>
      const id=location.pathname.split('/').filter(Boolean).at(-1);let began=0;
      window.rhf={multiplayer:{attach(){},game:()=>({manifest:{id},chart:{}}),gameUrl:new URL('./',location.href),
-      prepare:async()=>{},start:at=>{began=at;},stop:()=>{began=0;},snapshot:()=>({hits:0,misses:0,through:0,stray:0,perfectFailed:0,position:began?Math.max(0,(performance.now()-began)/1000):0})}};
+      prepare:async()=>{},hasPractice:()=>true,practice:async()=>{window.practised=(window.practised||0)+1;},skipPractice(){},start:at=>{began=at;},stop:()=>{began=0;},snapshot:()=>({hits:0,misses:0,through:0,stray:0,perfectFailed:0,position:began?Math.max(0,(performance.now()-began)/1000):0})}};
     </script>`}));
    }
    await host.goto(base);await guest.goto(base);
@@ -127,8 +127,11 @@ test('Pages project path, local import errors, storage isolation, and offline sh
    const next=listed[1].id;await host.locator('#lobby-game').selectOption(next);
    await guest.waitForFunction(id=>window.rhfLobby.peer.selectedGame===id&&window.rhfLobby.api?.game().manifest.id===id,next);
    await host.waitForFunction(id=>window.rhfLobby.api?.game().manifest.id===id,next);
-   await guest.locator('#lobby-ready').click();await host.locator('#lobby-ready').click();
+   // Games with a practice: Practice makes a player ready once it ends; Skip practice readies at once.
+   assert.equal(await host.locator('#lobby-ready').textContent(),'Practice');assert.equal(await host.locator('#lobby-skip-practice').isVisible(),true);
+   await guest.locator('#lobby-ready').click();await host.locator('#lobby-skip-practice').click();
    for(const p of [host,guest])await p.waitForFunction(()=>window.rhfLobby.peer.state==='playing');
+   assert.equal(await guest.evaluate(()=>window.rhfLobby.frame.contentWindow.practised),1);assert.equal(await host.evaluate(()=>window.rhfLobby.frame.contentWindow.practised),undefined);
    const result={hits:10,misses:0,through:0,stray:0,perfectFailed:0};
    await host.evaluate(r=>window.rhfLobby.peer.finish(r),result);
    assert.equal(await host.locator('#lobby-game').isEnabled(),false);
@@ -143,6 +146,27 @@ test('Pages project path, local import errors, storage isolation, and offline sh
    for(const p of [host,guest])await p.waitForFunction(()=>window.rhfLobby.peer.state==='interrupted');
    await guest.locator('#lobby-rematch').click();
    for(const p of [host,guest])await p.waitForFunction(()=>window.rhfLobby.peer.state==='lobby'&&!window.rhfLobby.peer.localReady);
+   // A remix-set match: each song is a round, the guest follows, the scoreboard totals both players.
+   await host.locator('#lobby-mode').selectOption('set:Remix 1');
+   assert.equal(await host.locator('#lobby-game-label').isHidden(),true);
+   await host.locator('#lobby-start-match').click();
+   const songs=await host.evaluate(()=>window.rhfLobby.peer.match.games);assert.equal(songs.at(-1),'remix1');
+   const cat=(total,hits)=>({hits,misses:total-hits,through:0,stray:0,perfectFailed:1,grade:1,categories:[{total,hits,misses:total-hits,through:0}]});
+   for(let i=0;i<songs.length;i++){
+    for(const p of [host,guest])await p.waitForFunction(id=>window.rhfLobby.peer.selectedGame===id&&window.rhfLobby.api?.game().manifest.id===id&&window.rhfLobby.peer.state==='lobby',songs[i]);
+    assert.equal(await guest.locator('#lobby-mode').inputValue(),'set:Remix 1');
+    await host.locator('#lobby-ready').click();await guest.locator('#lobby-ready').click();
+    for(const p of [host,guest])await p.waitForFunction(()=>window.rhfLobby.peer.state==='playing');
+    await host.evaluate(r=>window.rhfLobby.peer.finish(r),cat(10,9));await guest.evaluate(r=>window.rhfLobby.peer.finish(r),cat(10,8));
+    for(const p of [host,guest])await p.waitForFunction(i=>window.rhfLobby.peer.match.history[i],i);
+    assert.equal(await host.locator('#lobby-rematch').isHidden(),true);
+    assert.ok(await host.evaluate(()=>parseFloat(document.querySelector('.lead-diamond').style.left)<50),'diamond leans to the leader (green, left)');
+    if(i<songs.length-1){assert.match(await guest.locator('#lobby-status').textContent(),/Friend wins this song/);await host.locator('#lobby-next').click();}
+   }
+   assert.equal(await host.locator('#lobby-status').textContent(),'You win the match!');
+   assert.match(await guest.locator('#lobby-status').textContent(),/wins the match/);
+   assert.match(await host.locator('#lobby-match').textContent(),new RegExp('Total score'+(90*songs.length).toFixed(1)+(80*songs.length).toFixed(1)));
+   assert.equal(await host.locator('#lobby-next').isHidden(),true);
    await host.setViewportSize({width:390,height:844});assert.equal(await host.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
   }finally{await hostContext.close();await guestContext.close();}
   // Wait for install to finish, then verify the static shell survives an offline reload.

@@ -1,6 +1,7 @@
 // Static-site WebRTC: signaling is an invite/answer exchanged by the players.
 // Only summaries cross the wire. The simulation never reads remote input.
-export const PROTOCOL=2;
+import {compareSongs,validMatch} from './versus.mjs';
+export const PROTOCOL=3;
 const MAX_CODE=48000,MAX_MESSAGE=8192;
 export function encodeSignal(value){return btoa(JSON.stringify(value)).replaceAll('+','-').replaceAll('/','_').replace(/=+$/,'');}
 export function decodeSignal(text,type){
@@ -10,10 +11,14 @@ export function decodeSignal(text,type){
  if(v.v!==PROTOCOL||v.type!==type||typeof v.sdp!=='string'||v.sdp.length>32000||! /^[a-z0-9-]{8,64}$/.test(v.id))throw new Error('Wrong or incompatible connection code.');
  return v;
 }
-export function validStats(s){return s&&['hits','misses','through','stray','perfectFailed'].every(k=>Number.isSafeInteger(s[k])&&s[k]>=0&&s[k]<=1000000);}
-export function compareResults(a,b){if(!validStats(a)||!validStats(b))throw new Error('Invalid result');return Math.sign((b.misses+b.through)-(a.misses+a.through));}
+const count=(v,max)=>Number.isSafeInteger(v)&&v>=0&&v<=max;
+// Final results also carry the original grade and per-category checkpoint counts (versus.mjs).
+export function validStats(s){return !!s&&['hits','misses','through','stray','perfectFailed'].every(k=>count(s[k],1000000))&&(s.grade===undefined||count(s.grade,2))
+ &&(s.categories===undefined||Array.isArray(s.categories)&&s.categories.length<=8&&s.categories.every(c=>c&&['total','hits','misses','through'].every(k=>count(c[k],65535))));}
+export function compareResults(a,b){if(!validStats(a)||!validStats(b))throw new Error('Invalid result');return compareSongs(a,b);}
 export function clockSample(t0,t1,t2,t3){return {rtt:(t3-t0)-(t2-t1),offset:((t1-t0)+(t2-t3))/2};}
-const statsOnly=s=>Object.fromEntries(['hits','misses','through','stray','perfectFailed'].map(k=>[k,s[k]]));
+const statsOnly=s=>{const o=Object.fromEntries(['hits','misses','through','stray','perfectFailed'].map(k=>[k,s[k]]));
+ if(s.grade!==undefined)o.grade=s.grade;if(s.categories)o.categories=s.categories.map(c=>({total:c.total,hits:c.hits,misses:c.misses,through:c.through}));return o;};
 export class PeerMatch {
  constructor({identity,name='Player',prepare,start,stop,snapshot,onchange=()=>{},onselect=()=>{},games=[],iceServers=[{urls:'stun:stun.l.google.com:19302'}]}){
   Object.assign(this,{identity,name:name.slice(0,24),prepare,start,stop,snapshot,onchange,onselect,games,iceServers});
@@ -67,7 +72,9 @@ export class PeerMatch {
    this.peerName=typeof m.name==='string'?m.name.slice(0,24):'Friend';this.connected=true;this.state='lobby';this.round=1;this.changed('Connected. Both players can Ready.');return;
   }
   if(!this.connected)return;
-  if(m.type==='select'&&!this.host&&m.round===this.round+1&&this.games.includes(m.game)&&['lobby','finished','interrupted'].includes(this.state)){this.selectedGame=m.game;this.resetRound(m.round);this.onselect(m.game);return;}
+  if(m.type==='select'&&!this.host&&m.round===this.round+1&&this.games.includes(m.game)&&['lobby','finished','interrupted'].includes(this.state)){
+   if(m.match!==undefined&&!(validMatch(m.match,this.games)&&m.match.games[m.match.index]===m.game))return;
+   this.follow(m.match);this.selectedGame=m.game;this.resetRound(m.round);this.onselect(m.game);return;}
   if(m.type==='new-round'&&!this.host&&m.round===this.round+1&&['finished','interrupted'].includes(this.state)){this.resetRound(m.round);return;}
   if(m.round!==this.round)return;
   switch(m.type){
@@ -80,10 +87,10 @@ export class PeerMatch {
    case 'ack':if(this.host&&this.state==='armed'&&this.at-performance.now()>1500){this.send('commit');this.launch();}break;
    case 'commit':if(!this.host&&this.state==='armed'&&this.at-performance.now()>500)this.launch();else this.interrupt('Countdown arrived too late. Try a new round.');break;
    case 'interrupt':this.interrupt(typeof m.reason==='string'?m.reason.slice(0,120):'Round interrupted.',false);break;
-   case 'result':if(validStats(m.result)&&['playing','finished'].includes(this.state)){this.remoteResult=statsOnly(m.result);this.send('result-ack');this.changed();}break;
+   case 'result':if(validStats(m.result)&&['playing','finished'].includes(this.state)){this.remoteResult=statsOnly(m.result);this.record();this.send('result-ack');this.changed();}break;
    case 'result-ack':this.resultAck=true;break;
    case 'timing-warning':this.unsynchronized=true;this.changed();break;
-   case 'rematch':if(this.host&&(this.state==='interrupted'||this.state==='finished'&&this.remoteResult))this.newRound();break;
+   case 'rematch':if(this.host&&this.canRematch)this.newRound();break;
   }
  }
  async ready(){
@@ -92,10 +99,25 @@ export class PeerMatch {
   try{const identity=await this.prepare();if(this.state!=='lobby'||this.round!==round)return;this.localGameIdentity=identity||this.identity;if(this.peerReady&&this.peerGameIdentity!==this.localGameIdentity){this.interrupt('Local game versions differ. Reload or reimport the selected game.');return;}this.localReady=true;this.send('ready',{identity:this.localGameIdentity});this.changed('Ready. Waiting for friend…');this.maybeSync();}
   finally{this.preparing=false;this.changed();}
  }
- selectGame(id){
-  if(!this.host||!this.connected||!this.games.includes(id)||!['lobby','finished','interrupted'].includes(this.state)||this.state==='finished'&&!this.remoteResult)return false;
-  this.selectedGame=id;const round=this.round+1;this.send('select',{round,game:id});this.resetRound(round);this.onselect(id);return true;
+ get idle(){return this.connected&&(['lobby','interrupted'].includes(this.state)||this.state==='finished'&&!!this.remoteResult);}
+ // A single game ends any match. The host's choice; the guest follows.
+ selectGame(id,match){
+  if(!this.host||!this.games.includes(id)||!this.idle)return false;
+  this.match=match?{...match,history:match.index?this.match.history:[]}:null;
+  const round=this.round+1;this.selectedGame=id;
+  this.send('select',{round,game:id,...match?{match:{title:match.title,games:match.games,index:match.index}}:{}});this.resetRound(round);this.onselect(id);return true;
  }
+ // A match is a list of songs, each its own round: both players Ready before every song.
+ startMatch({title,games}){const m={title,games:[...games],index:0};return validMatch(m,this.games)&&this.selectGame(m.games[0],m);}
+ nextSong(){const m=this.match;if(!m||!m.history[m.index]||m.index+1>=m.games.length)return false;return this.selectGame(m.games[m.index+1],{...m,index:m.index+1});}
+ follow(match){
+  const same=match&&this.match&&match.index>0&&match.title===this.match.title&&match.games.join()===this.match.games.join();
+  this.match=match?{title:match.title,games:[...match.games],index:match.index,history:same?this.match.history:[]}:null;
+ }
+ record(){if(this.match&&this.state==='finished'&&this.localResult&&this.remoteResult)this.match.history[this.match.index]={local:this.localResult,remote:this.remoteResult};}
+ get matchOver(){const m=this.match;return !!m&&m.games.every((_,i)=>m.history[i]);}
+ // Inside a match only an interrupted song is replayed; finished ones move on.
+ get canRematch(){return this.connected&&(this.state==='interrupted'||this.state==='finished'&&!!this.remoteResult&&!this.match);}
  maybeSync(){if(!this.host||!this.localReady||!this.peerReady||this.state!=='lobby')return;this.state='syncing';this.syncAt=performance.now();this.samples=[];this.pingCount=0;this.changed('Synchronizing clocks…');}
  launch(){this.state='playing';this.began=this.at;this.lastRemote=performance.now();this.start(this.at);this.changed('Countdown…');}
  tick(){
@@ -123,7 +145,7 @@ export class PeerMatch {
   if(!this.unsynchronized&&Math.abs(Math.max(0,(now-this.began)/1000)-m.position)>.5){this.unsynchronized=true;this.send('timing-warning');}
   this.changed();
  }
- finish(result){if(this.state!=='playing')return;this.localResult=statsOnly(result);this.state='finished';this.finishedAt=performance.now();this.send('result',{result:this.localResult});this.changed();}
+ finish(result){if(this.state!=='playing')return;this.localResult=statsOnly(result);this.state='finished';this.finishedAt=performance.now();this.record();this.send('result',{result:this.localResult});this.changed();}
  interrupt(reason='Round interrupted.',notify=true){
   // Completed comparisons survive pausing the original results presentation.
   if(this.state==='finished'&&this.remoteResult){this.stop();return;}
@@ -131,7 +153,7 @@ export class PeerMatch {
   if(notify)this.send('interrupt',{reason});this.state='interrupted';this.localReady=false;this.stop();this.changed(reason);
  }
  disconnected(){this.connected=false;this.changed('Connection lost. Local play can finish; reconnect with a new invite afterward.');if(['syncing','armed'].includes(this.state))this.interrupt('Connection lost during countdown.',false);}
- rematch(){if(!this.connected||!(this.state==='interrupted'||this.state==='finished'&&this.remoteResult))return;if(this.host)this.newRound();else this.send('rematch');}
+ rematch(){if(!this.canRematch)return;if(this.host)this.newRound();else this.send('rematch');}
  newRound(){const round=this.round+1;this.send('new-round',{round});this.resetRound(round);}
  resetRound(round){this.stop();Object.assign(this,{round,state:'lobby',localReady:false,peerReady:false,localGameIdentity:null,peerGameIdentity:null,remote:null,localResult:null,remoteResult:null,resultAck:false,unsynchronized:false,lastSeq:-1});this.pings.clear();this.changed('New round. Both players must Ready again.');}
  close(){clearInterval(this.timer);this.connected=false;this.pc?.close();this.state='closed';}

@@ -11,7 +11,7 @@ import {getDelayMs,setDelayMs,measureDelay} from './delay.mjs';
 import {skipPractice} from './practice.mjs';
 const gameUrl=new URL('./',location.href);
 const canvas=document.querySelector('canvas'),overlay=document.querySelector('#overlay'),play=document.querySelector('#play'),status=document.querySelector('#status');
-let g,renderer,audio,music,practice,startTime,running=false,frame=0,sfx,paused=false,results,resultsStart,phase='game',track,backing,multiplayer,needsReset=false;const input=createInputQueue(),metrics=[];
+let g,renderer,audio,music,practice,practiceDone,startTime,running=false,frame=0,sfx,paused=false,results,resultsStart,phase='game',track,backing,multiplayer,needsReset=false;const input=createInputQueue(),metrics=[];
 // Crash log: every runtime error is kept in this browser's storage with the game, frame and chart
 // tick, so a reload does not lose it. rhf.crashLog() returns it; after a crash the page offers it
 // as a file.
@@ -48,10 +48,11 @@ try{
  const controls=!inputs.has(6)?'Space / X / click / controller A · '+action:!inputs.has(4)?`A + B together · ${action} (A: Space / Left Shift / click / controller A, B: Right Shift / right click / controller B)`:`${action} · A: Space / X / Left Shift / click / controller A · B: Right Shift / right click / controller B · some cues need A + B together`;for(const e of document.querySelectorAll('.controls'))e.textContent=controls+' · Start / Escape: pause';
  renderer=await createRenderer(g,canvas);renderer.draw();music=await musicData;sfx=await createAudio(audio,gameUrl,{envelope:g.envelope});
  results=g.manifest.wii.results===false?null:await createResults(g,canvas);
- practice=g.chart.practice&&!skipPractice()&&!(window.parent!==window&&new URLSearchParams(location.search).get('lobby')==='1')?await loadPractice():null;
+ const embedded=window.parent!==window&&new URLSearchParams(location.search).get('lobby')==='1';
+ // In the lobby the practice is what makes a player ready (multiplayer.practice below), whatever the switch says.
+ practice=g.chart.practice&&(embedded||!skipPractice())?await loadPractice():null;
  window.rhf={g,renderer,audio,sfx,results,inputs:input.presses,metrics,heardTime,stats:g.stats,result:null,crashLog,get startTime(){return startTime;},get track(){return track;},get phase(){return phase;},get practice(){return practice;},get frame(){return frame;}};
  play.disabled=false;play.textContent='Play';
- const embedded=window.parent!==window&&new URLSearchParams(location.search).get('lobby')==='1';
  let session;
  multiplayer={get active(){return embedded;},get peer(){return session;},attach:peer=>{session=peer;},game:()=>g,gameUrl,prepare:async()=>{
   if(document.hidden)throw new Error('Keep the game tab visible before pressing Ready.');
@@ -63,7 +64,15 @@ try{
    Object.assign(window.rhf,{g,renderer,sfx,results,stats:g.stats});renderer.draw();
   }
   needsReset=true;
- },start:at=>{overlay.hidden=true;start(at).catch(fail);},stop:()=>{
+ },hasPractice:()=>!!practice,
+ // Plays the practice on its own; resolves once it is done or skipped, leaving the song paused
+ // until the lobby starts it.
+ practice:async()=>{
+  if(!practice)return;if(document.hidden)throw new Error('Keep the game tab visible to practise.');
+  await audio.resume();overlay.hidden=true;
+  return new Promise((resolve,reject)=>{practiceDone={resolve,reject};startPractice();});
+ },skipPractice:()=>{if(phase==='practice'&&running)endPractice().catch(fail);},start:at=>{overlay.hidden=true;start(at).catch(fail);},stop:()=>{
+  if(phase==='practice'){leavePractice();practiceDone?.reject(new Error('Practice stopped.'));practiceDone=null;}
   running=false;paused=false;sfx.stop();audio.suspend();overlay.hidden=false;play.textContent='Multiplayer — use Ready';
  },snapshot:()=>{const s=g.stats();return {hits:s[0],misses:s[1],through:s[2],stray:s[3],perfectFailed:s[4],position:running?Math.max(0,heardTime()-startTime):0};},finish:r=>session?.finish(r),interrupt:reason=>session?.interrupt(reason)};
  if(embedded){
@@ -191,10 +200,15 @@ function startPractice(){
 // The practice is over: the song starts from its own lead-in, as when the practice is skipped.
 function endPractice(){
  if(phase!=='practice')return Promise.resolve();
- document.querySelector('#skip').hidden=true;running=false;sfx.stop();pending.length=0;voiced.length=0;input.presses.length=0;
+ leavePractice();
+ // In the lobby the song waits for both players: this one is now ready.
+ if(multiplayer?.active){overlay.hidden=false;play.textContent='Practice done · waiting for the lobby';renderer.draw();const done=practiceDone;practiceDone=null;done?.resolve();return Promise.resolve();}
+ return start();
+}
+function leavePractice(){
+ document.querySelector('#skip').hidden=true;running=false;paused=false;sfx.stop();pending.length=0;voiced.length=0;input.presses.length=0;
  ({g,renderer}=practice.main);practice=null;Object.assign(window.rhf,{g,renderer,stats:g.stats});
  phase='game';frame=0;status.textContent='';
- return start();
 }
 // Starts the song. A later versus mode calls this when both players are ready.
 async function start(at){
@@ -210,7 +224,7 @@ async function start(at){
  running=true;window.rhf.source=backing.source;requestAnimationFrame(loop);
 }
 play.onclick=async()=>{
- if(play.disabled||multiplayer?.active)return;play.disabled=true;
+ if(play.disabled||multiplayer?.active&&!(paused&&phase==='practice'))return;play.disabled=true;
  try{await audio.resume();play.disabled=false;overlay.hidden=true;if(paused){paused=false;running=true;requestAnimationFrame(loop);return;}if(practice)startPractice();else await start();}catch(e){fail(e);}
 };
 document.querySelector('#restart').onclick=()=>{if(multiplayer?.active){multiplayer.interrupt('Restart interrupted the round.');return;}location.reload();};
@@ -251,5 +265,5 @@ function loop(){if(!running)return;try{
  requestAnimationFrame(loop);
  }catch(e){fail(e);}}
 
-async function pause(){if(multiplayer?.active){multiplayer.interrupt('Pause or hidden tab interrupted the round.');return;}if(!running)return;running=false;paused=true;await audio.suspend();overlay.hidden=false;play.textContent='Resume';}
+async function pause(){if(multiplayer?.active&&phase!=='practice'){multiplayer.interrupt('Pause or hidden tab interrupted the round.');return;}if(!running)return;running=false;paused=true;await audio.suspend();overlay.hidden=false;play.textContent='Resume';}
 document.addEventListener('visibilitychange',()=>{if(document.hidden&&(running||multiplayer?.peer?.localReady))pause();});
