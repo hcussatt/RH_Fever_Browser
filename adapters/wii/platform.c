@@ -48,6 +48,10 @@ static uint32_t anim_tempo_update,anim_tempo;
 // Sound handles the game keeps (an SNDHandle in its own data): each gets a stand-in sound object
 // so the game sees it attached; the browser plays and tunes the real sound by handle address.
 static uint32_t handle_sounds[64][2],handle_count,chart_handles;
+// Practice (the chart a game plays before its main one, from start_practice): it runs live on its
+// own tempo and ends where it would start the main chart (practice_main), which the page then starts
+// in a fresh session as when practice is skipped. Its dialogue waits for A (TF_BUTTON_PROMPT).
+static uint32_t practice,practice_main,practice_done,practice_prompt,practice_pressed,practice_press_sfx,practice_release_sfx;
 static uint32_t grading,grading_ready,grading_pressed,message_table,message_count,grading_scene,grading_done,prompt_press,prompt_release;
 static uint32_t prompt_exit_frames,prompt_exit_remaining;
 // Scene manager (CGameManager::_1C, CScene::fn_801D83DC, CFaderFlash): a remix changes scene in the
@@ -287,6 +291,13 @@ static void exflow_command(void){
       r[3]=0;return;
     }
 #endif
+    if(practice&&op==0x46&&arg0>=1){
+      if(arg0==1){practice_prompt=1;practice_pressed=0;practice_press_sfx=rd32(args+4);practice_release_sfx=rd32(args+8);}
+      else wr32(self+0x24,practice_pressed!=2);
+      r[3]=0;return;
+    }
+    // TF_ASYNC_CALL of the main chart ends the practice.
+    if(practice&&op==0&&rd32(args)==practice_main){if(!practice_done){practice_done=1;emit(30,0,rd32(self+0x1c));}r[3]=0;return;}
     if(grading&&op==0x46){if(arg0==1){grading_ready=1;grading_pressed=0;prompt_press=rd32(args+4);prompt_release=rd32(args+8);emit(20,5,rd32(self+0x1c));}else if(arg0==2)wr32(self+0x24,grading_pressed==2?0:1);r[3]=0;return;}
     // Message panes (CTickFlow's lbl_803D5D38 text boxes): shown or hidden with their container,
     // or given a string from the chart. Message events (15) for web/engine/message.mjs.
@@ -309,6 +320,8 @@ static void exflow_command(void){
   else if(op==0x11b){wr32(cp+0xcc,rd32(args));wr32(cp+0xd0,rd32(args));}
   else if(op==0x11c){r[3]=cp;f[1].d=(int32_t)rd32(args);call(0x801eb10c);}
   else if(op==0x11d){if(arg0==0)invoke1(0x801eb130,cp);else wr32(self+0x24,rd32(cp+0x2fc));}
+  // Practice ends where its chart changes to the scene again with the main chart.
+  else if(practice&&op==0x100&&arg0==0&&rd32(args+4)==practice_main){if(!practice_done){practice_done=1;emit(30,0,rd32(self+0x1c));}}
   else if(song_ended&&op==0x100&&arg0==0&&rd32(args)==0x39){enter_grading();emit(20,9,rd32(self+0x1c));}
   else if(song_ended&&op==0x100&&arg0==0&&rd32(args)==0x38){grading=2;grading_ready=0;emit(20,10,rd32(self+0x1c));}
   else if(grading==2&&op==0x100&&arg0==1){grading_done=1;emit(20,11,rd32(self+0x1c));}
@@ -383,6 +396,8 @@ static void exflow_command(void){
   // themselves (see the TF_BUTTON_PROMPT above); 2 asks whether its exit animation has finished.
   else if(!grading&&op==0x123){if(arg0==2)wr32(self+0x24,1);}
 #endif
+  // The A prompt beside a practice dialogue line: its exit animation is taken as done.
+  else if(practice&&!grading&&op==0x123){if(arg0==2)wr32(self+0x24,1);}
   else if(grading&&op==0x123){
     if(arg0==0)emit(16,0,rd32(args));
     // setAnimDisable starts at frame -1; the same frame's actor update
@@ -616,15 +631,15 @@ static void call(uint32_t address){
   // CTickFlowManager services used by the interpreter.
   case 0x801e4124:r[3]=++chart_instances;break;
   case 0x801e2928:f[1].d=(float)(frame_ticks*f[1].d);break;
-  case 0x801e2b9c:if(song_ended){current_tempo=f[1].d;frame_ticks=current_tempo*.8f/60.0f;}break;
+  case 0x801e2b9c:if(song_ended||practice){current_tempo=f[1].d;frame_ticks=current_tempo*.8f/60.0f;}break;
   case 0x801e26a8:break; // Tempo follows the backing track.
   // Speed (14): the chart and the backing track slow down or speed up together (the track's pitch with them).
   case 0x801e2c04:speed=f[1].d;wrf32(r[3]+0x60,speed);emit(14,fbits(speed),flow_rest());break;
   case 0x801e3938:music_sound=r[4];wr32(rd32(0x80320174)+0x1c,3);break; // prepareWave (the music is a wave sound)
   case 0x801e3960:music_sound=r[4];wr32(rd32(0x80320174)+0x1c,3); // playWave
-  case 0x801e3a5c:if(grading)emit(21,music_sound,rd32(current_flow+0x1c));else if(!music_started){music_started=1;emit(6,music_sound,rd32(current_flow+0x1c));}break; // playPreparedWave: chart tick 0, overshot by -rest
+  case 0x801e3a5c:if(practice){emit(31,music_sound,rd32(current_flow+0x1c));break;}if(grading)emit(21,music_sound,rd32(current_flow+0x1c));else if(!music_started){music_started=1;emit(6,music_sound,rd32(current_flow+0x1c));}break; // playPreparedWave: chart tick 0, overshot by -rest
   case 0x801e3e3c:r[3]=1;break; // wave prepared
-  case 0x801e3c00:if(grading)emit(23,r[4],rd32(current_flow+0x1c));break;
+  case 0x801e3c00:if(grading)emit(23,r[4],rd32(current_flow+0x1c));else if(practice)emit(32,r[4],rd32(current_flow+0x1c));break;
   case 0x801e4134:tf_values[r[4]&15]=r[5]&0xffff;break; // rest-length slots (TF 0x0a)
   case 0x801e4144:r[3]=tf_values[r[4]&15];break;
   case 0x801e4154:sound_handle=r[4];break;
@@ -760,7 +775,7 @@ EMSCRIPTEN_KEEPALIVE void reset_runtime(void){
   memset(tf_values,0,sizeof(tf_values));tf_values[0]=32;tf_values[1]=16;tf_values[2]=16;tf_values[3]=8; // CTickFlowManager::_10's defaults
   sound_handle=envelope=remix_mask=0;speed=1;anim_tempo_update=anim_tempo=handle_count=0;
   chart_flow_count=chart_rerun=chart_instances=current_flow=music_started=song_ended=0;
-  profile_index=next_profile=next_chart=fader_wait=flow_create_fn=persistent_count=named_bank_count=file_count=0;scene_state=SCENE_ACTIVE;fader_state=FADER_IDLE;grading=grading_scene=grading_ready=grading_pressed=grading_done=prompt_press=prompt_release=prompt_exit_remaining=message_table=message_count=0;prompt_exit_frames=5;fader_alpha=fader_step=0.0f;music_sound=0xffffffff;frame_ticks=0;heap=0x80500000;call_depth=actor_count=checker_count=event_count=frame_number=layout_count=0;
+  profile_index=next_profile=next_chart=fader_wait=flow_create_fn=persistent_count=named_bank_count=file_count=0;scene_state=SCENE_ACTIVE;fader_state=FADER_IDLE;grading=grading_scene=grading_ready=grading_pressed=grading_done=prompt_press=prompt_release=prompt_exit_remaining=message_table=message_count=0;prompt_exit_frames=5;practice=practice_main=practice_done=practice_prompt=practice_pressed=0;fader_alpha=fader_step=0.0f;music_sound=0xffffffff;frame_ticks=0;heap=0x80500000;call_depth=actor_count=checker_count=event_count=frame_number=layout_count=0;
   hits=misses=through=stray=perfect_failed=score_sum=score_count=wrong_count=0;wrong_timer=0;
   memset(canvas_timing,0,sizeof(canvas_timing));base_canvas=0;
   r[1]=0x81800000;r[2]=0x80328fe0;r[13]=0x80326ec0;
@@ -815,6 +830,11 @@ EMSCRIPTEN_KEEPALIVE void set_delta(float ticks){delta_ticks=ticks;}
 EMSCRIPTEN_KEEPALIVE void set_perfect_active(uint32_t enabled){wr8(0x803201b9,enabled);}
 // Start the minigame's chart at its first command.
 EMSCRIPTEN_KEEPALIVE void start_chart(uint32_t code){create_flow(code,0);}
+EMSCRIPTEN_KEEPALIVE void start_practice(uint32_t code,uint32_t main_chart){practice=1;practice_main=main_chart;create_flow(code,0);}
+// Chart ticks per second in practice: its own tempo and speed.
+EMSCRIPTEN_KEEPALIVE float practice_rate(void){return current_tempo*speed*48.0f/60.0f;}
+// Whether a practice dialogue line waits for A.
+EMSCRIPTEN_KEEPALIVE uint32_t practice_waiting(void){return practice_prompt;}
 EMSCRIPTEN_KEEPALIVE void install_messages(uint32_t table,uint32_t count){
   message_table=table;message_count=count;uint32_t cp=rd32(0x8032016c);
   wr32(cp+0x2e8,message(0));wr32(cp+0x2ec,message(101));wr32(cp+0x2f0,message(102));wr32(cp+0x2f4,message(103));wr32(cp+0x2f8,message(100));
@@ -927,6 +947,11 @@ static void cool_buttons(uint32_t *trig,uint32_t *release){
 }
 EMSCRIPTEN_KEEPALIVE void buttons(uint32_t trig,uint32_t release){
   cool_buttons(&trig,&release);
+  // A practice dialogue line's prompt: A pressed, then let go, with its sounds.
+  if(practice_prompt){
+    if((trig&1)&&!practice_pressed){practice_pressed=1;if((int32_t)practice_press_sfx>=0)emit(1,practice_press_sfx,0);}
+    else if((release&1)&&practice_pressed==1){practice_pressed=2;practice_prompt=0;if((int32_t)practice_release_sfx>=0)emit(1,practice_release_sfx,0);}
+  }
   combo_was_down=combo_down;
   if(!combo_was_down){
     if(combo_state==0){

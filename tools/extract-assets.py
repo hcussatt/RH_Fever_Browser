@@ -124,6 +124,8 @@ def audio_groups():
         return g,[ref(items,i) for i in range(u32(b,items))]
     file_of=lambda sid:u32(b,ref(sounds,sid)+4)
     music_file=file_of(CHART['musicSound'])
+    # The practice's backing waves (tools/chart-index.py), in groups the same loads bring in.
+    practice_files={file_of(w) for w in CHART.get('practice',{}).get('waves',[])}
     holds=lambda gi,fid:any(u32(b,item)==fid for item in items(gi)[1])
     loads=[l for l in CHART['groupLoads'] if any(holds(gi,music_file) for gi in l)]
     if not loads:raise SystemExit(f'{GAME}: no sound group load includes the music (file {music_file})')
@@ -136,7 +138,7 @@ def audio_groups():
             fid,off,size,woff,wsize=struct.unpack_from('>5I',b,item)
             metadata=read_sound_archive(u32(b,g+16)+off,size)
             found[fid]=(metadata,read_sound_archive(u32(b,g+24)+woff,wsize) if wsize else b'')
-        if gi not in (162,163) and music_file not in found and not any(m[:4] in (b'RBNK',b'RSEQ') for m,_ in found.values()):
+        if gi not in (162,163) and music_file not in found and not practice_files&found.keys() and not any(m[:4] in (b'RBNK',b'RSEQ') for m,_ in found.values()):
             continue
         for fid,(metadata,wave_data) in found.items():
             persistent=gi==0 or files.get(fid,{}).get('persistent',False)
@@ -154,6 +156,8 @@ def audio_groups():
         if records[sid]['type']==1:
             records[sid]['bankFile']=u32(b,ref(banks,records[sid]['data'][1])+4)
             records[sid]['persistent'] &= files.get(records[sid]['bankFile'],{}).get('persistent',False)
+    missing=practice_files-files.keys()
+    if missing:raise SystemExit(f'{GAME}: practice wave files {sorted(missing)} are in no group the game loads')
     return {'sounds':records,'files':files,'musicFile':music_file}
 
 def remix():

@@ -3,6 +3,7 @@ import {mountMultiplayer} from '../engine/multiplayer.mjs';
 import {WII_COMMON_KEY} from './common-key.mjs';
 import {groupGames,UNLISTED} from '../engine/menu.mjs';
 import {getDelayMs,setDelayMs,resetDelay,LIMIT_MS} from '../engine/delay.mjs';
+import {skipPractice,setSkipPractice} from '../engine/practice.mjs';
 import {createLayout} from '../engine/layout.mjs';
 import {assetResponse} from '../engine/assets.mjs';
 const $=s=>document.querySelector(s);
@@ -197,6 +198,10 @@ $('#delay-form').onsubmit=e=>{e.preventDefault();const v=Number($('#delay-input'
 $('#open-delay').onclick=()=>{showDelay();$('#delay-dialog').showModal();};
 $('#close-delay').onclick=()=>$('#delay-dialog').close();
 $('#delay-reset').onclick=()=>{resetDelay();showDelay();};
+// Games with a practice play it first unless this is on (engine/practice.mjs).
+function showSkipPractice(){const on=skipPractice();$('#skip-practice').setAttribute('aria-checked',String(on));$('#skip-practice').textContent=`Skip practice: ${on?'On':'Off'}`;}
+$('#skip-practice').onclick=()=>{setSkipPractice(!skipPractice());showSkipPractice();};
+showSkipPractice();
 try{
  if(!isSecureContext||!globalThis.caches)throw new Error('Use HTTPS or localhost in a browser with site storage enabled.');
  const deploymentResponse=await fetch(new URL('deployment.json',siteRoot));

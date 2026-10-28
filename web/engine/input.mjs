@@ -13,12 +13,14 @@ export function createInputQueue(player=0){
 }
 
 // A: Space, Left Shift, X, left click, gamepad A. B: Right Shift, right click, gamepad B.
-// Escape / controller Start pauses or resumes. Space, X or controller A also starts.
+// Escape / controller Start pauses or resumes. Space, X or controller A also starts. Enter or
+// controller Select / Back (the original's −) skips a practice.
 const KEYS={Space:A,KeyX:A,ShiftLeft:A,ShiftRight:B};
-export function bindControls(canvas,{press,pause,start}){
+export function bindControls(canvas,{press,pause,start,skip=()=>{}}){
  // Each event passes its own timestamp, so a busy page does not make an input late.
  window.addEventListener('keydown',e=>{
   if(e.code==='Escape'&&!e.repeat){e.preventDefault();pause();return;}
+  if((e.code==='Enter'||e.code==='NumpadEnter')&&!e.repeat&&skip())return e.preventDefault();
   const button=KEYS[e.code];if(!button)return;e.preventDefault();if(e.repeat)return;
   if(button===A&&e.code!=='ShiftLeft'&&start())return;
   press(button,true,e.timeStamp);
@@ -36,12 +38,13 @@ export function bindControls(canvas,{press,pause,start}){
  window.addEventListener('pointermove',e=>{if(mouseDown)mouse(e);});
  window.addEventListener('pointerup',mouse);window.addEventListener('pointercancel',mouse);
  canvas.addEventListener('contextmenu',e=>e.preventDefault());
- let lastPad=0,lastPause=false,starting=false;
+ let lastPad=0,lastPause=false,lastSkip=false,starting=false;
  // Poll even while the game is stopped so A can start/resume and Start can unpause.
  return function pollGamepad(){
   const pads=Array.from(navigator.getGamepads?.()||[]).filter(Boolean);
   const down=pads.reduce((held,pad)=>held|(pad.buttons[0]?.pressed?A:0)|(pad.buttons[1]?.pressed?B:0),0);
-  const pauseDown=pads.some(pad=>pad.buttons[9]?.pressed);
+  const pauseDown=pads.some(pad=>pad.buttons[9]?.pressed),skipDown=pads.some(pad=>pad.buttons[8]?.pressed);
+  if(skipDown&&!lastSkip&&!document.hidden)skip();lastSkip=skipDown;
   if(document.hidden){lastPad=down;lastPause=pauseDown;return;}
   if(pauseDown&&!lastPause){pause();lastPad=down;lastPause=pauseDown;return;}
   for(const button of [A,B])if((down^lastPad)&button){

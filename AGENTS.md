@@ -128,6 +128,7 @@ These come from the repository owner and apply to every contributor and agent.
 
 - Next: the remaining remixes, each with its source minigames, following the steps above.
 - Planned: a settings menu with separate volume controls for the music and the sound effects (Henry, 2026-10-27).
+- Done: each game's practice plays before the song, as in the original, unless the game select switch "Skip practice" is on (default off; Henry, 2026-10-28). Not yet drawn: the practice counter, the A-button icon beside waiting lines and the "(-) Skip" graphic; Night Walk's practice (its own night sky) is left out. See docs/engine.md, Practice.
 - Done: Power Calligraphy (`agbkanji`) and The Clappy Trio (`agbclap`) under Other games (Henry, 2026-10-27).
 - Done: the Rhythm Test (`calibrate`) sets the audio delay for wireless headphones, with a reset to default in both menus (Henry, 2026-10-27; see docs/engine.md, Timing model).
 - Planned versus mode (designed for, not built): each player plays in their own session under a username; misses are counted and compared at the end to pick a winner. A match is four songs: a remix's source minigames then that remix, or three random minigames then a random remix. Networking must never touch local timing or audio.

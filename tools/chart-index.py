@@ -126,6 +126,51 @@ def chart_loads(start):
     return [groups] if groups else []
 
 
+def practice_chart(scene, main):
+    """The practice the game plays before its main chart: the other scene change to the game's scene
+    whose chart leads to the main one, starting it itself (op 0) or changing to the scene again with
+    it (op 0x100) in a chart it starts. Its scene version and the backing waves it prepares (TF 0x37)
+    or starts (0x38), in it and the charts it calls or starts."""
+    def leads(chart, depth=0, seen=None):
+        seen = set() if seen is None else seen
+        if chart in seen or depth > 3:
+            return False
+        seen.add(chart)
+        for _, op, _, args in commands(chart):
+            if op == 0 and args[0] == main or op == 0x100 and len(args) > 1 and args[0] == scene and args[1] == main:
+                return True
+            if op == 0 and leads(args[0], depth+1, seen):
+                return True
+        return False
+    found = [(t, v) for t, v in scene_changes(scene) if t != main and leads(t)]
+    if not found:
+        return None
+    if len({t for t, _ in found}) != 1:
+        raise SystemExit(f'Expected one practice chart, found {[hex(t) for t, _ in found]}')
+    start, version = found[0]
+    waves, todo, seen = [], [start], set()
+    while todo:
+        chart = todo.pop()
+        if chart in seen or chart == main:
+            continue
+        seen.add(chart)
+        for _, op, arg0, args in commands(chart, 1):
+            if op in (0x37, 0x38) and arg0 not in waves:
+                waves.append(arg0)
+            elif op == 0:
+                todo.append(args[0])
+    out = {'start': start, 'waves': waves, 'waveTempos': {str(w): wave_tempo(w) for w in waves}}
+    if version:
+        out['sceneVersion'] = version
+    return out
+
+
+def wave_tempo(sound):
+    """A wave's tempo in beats per minute, from its first tempo entry (CSoundManager::get_wave_tempo)."""
+    segments, _ = tempo_segments(sound)
+    return segments[0]['beats']*segments[0]['rate']*60/segments[0]['samples']
+
+
 def tempo_segments(sound):
     for i in range(WAVE_INFO_COUNT):
         sid, rate, table = struct.unpack('>HHI', read(WAVE_INFO_TABLE+i*8, 8))
@@ -268,8 +313,12 @@ def main():
         out['sceneVersion'] = {'address': scene_version_address(scene), 'value': mains[0][1]}
     if len(segments) > 1:
         out['tempoSegments'] = segments
+    practice = practice_chart(scene, start) if profile.get('practice', True) else None
+    if practice:
+        out['practice'] = practice
     (assets(name)/'original-chart.json').write_text(json.dumps(out, indent=2)+'\n')
-    print(f'{name}: chart {start:#x}, music sound {music}, {len(segments)} tempo segment(s)')
+    print(f'{name}: chart {start:#x}, music sound {music}, {len(segments)} tempo segment(s)'
+          + (f', practice {practice["start"]:#x}' if practice else ''))
 
 
 if __name__ == '__main__':

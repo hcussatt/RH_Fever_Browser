@@ -8,9 +8,10 @@ import {A,createInputQueue,bindControls} from './input.mjs';
 import {createTrack} from './clock.mjs';
 import {assetResponse,requireAssets} from './assets.mjs';
 import {getDelayMs,setDelayMs,measureDelay} from './delay.mjs';
+import {skipPractice} from './practice.mjs';
 const gameUrl=new URL('./',location.href);
 const canvas=document.querySelector('canvas'),overlay=document.querySelector('#overlay'),play=document.querySelector('#play'),status=document.querySelector('#status');
-let g,renderer,audio,music,startTime,running=false,frame=0,sfx,paused=false,results,resultsStart,phase='game',track,backing,multiplayer,needsReset=false;const input=createInputQueue(),metrics=[];
+let g,renderer,audio,music,practice,startTime,running=false,frame=0,sfx,paused=false,results,resultsStart,phase='game',track,backing,multiplayer,needsReset=false;const input=createInputQueue(),metrics=[];
 // Crash log: every runtime error is kept in this browser's storage with the game, frame and chart
 // tick, so a reload does not lose it. rhf.crashLog() returns it; after a crash the page offers it
 // as a file.
@@ -47,7 +48,8 @@ try{
  const controls=!inputs.has(6)?'Space / X / click / controller A · '+action:!inputs.has(4)?`A + B together · ${action} (A: Space / Left Shift / click / controller A, B: Right Shift / right click / controller B)`:`${action} · A: Space / X / Left Shift / click / controller A · B: Right Shift / right click / controller B · some cues need A + B together`;for(const e of document.querySelectorAll('.controls'))e.textContent=controls+' · Start / Escape: pause';
  renderer=await createRenderer(g,canvas);renderer.draw();music=await musicData;sfx=await createAudio(audio,gameUrl,{envelope:g.envelope});
  results=g.manifest.wii.results===false?null:await createResults(g,canvas);
- window.rhf={g,renderer,audio,sfx,results,inputs:input.presses,metrics,heardTime,stats:g.stats,result:null,crashLog,get startTime(){return startTime;},get track(){return track;},get phase(){return phase;},get frame(){return frame;}};
+ practice=g.chart.practice&&!skipPractice()&&!(window.parent!==window&&new URLSearchParams(location.search).get('lobby')==='1')?await loadPractice():null;
+ window.rhf={g,renderer,audio,sfx,results,inputs:input.presses,metrics,heardTime,stats:g.stats,result:null,crashLog,get startTime(){return startTime;},get track(){return track;},get phase(){return phase;},get practice(){return practice;},get frame(){return frame;}};
  play.disabled=false;play.textContent='Play';
  const embedded=window.parent!==window&&new URLSearchParams(location.search).get('lobby')==='1';
  let session;
@@ -78,7 +80,9 @@ try{
 // started yet are handed over again at their new time.
 const LOOKAHEAD=.3;
 const pending=[],voiced=[];
-const atTick=tick=>startTime+track.wallAt(g.secondsAtTick(tick));
+// In practice the chart keeps its own tempo: a tick is as far from the frame just run as the
+// practice's rate makes it.
+const atTick=tick=>phase==='practice'?startTime+frame/60+(tick-g.tick)/Math.max(1,g.practiceRate()):startTime+track.wallAt(g.secondsAtTick(tick));
 function applyTune(s,op){sfx.tune(s.voice,op,atTick(op.tick));(s.applied||=[]).push(op);}
 function schedule(){
  const horizon=audio.currentTime+LOOKAHEAD;
@@ -100,11 +104,12 @@ function changeSpeed({tick,speed}){
  for(let i=voiced.length-1;i>=0;i--){const s=voiced[i];if(s.tick!=null&&s.voice.start>startTime+wall&&sfx.cancel(s.voice)){voiced.splice(i,1);s.voice=null;s.ops=s.applied||null;s.applied=null;pending.push(s);}}
 }
 function liveEvents(){
+ if(phase==='practice')g.speeds.length=0;
  for(const c of g.speeds)changeSpeed(c);g.speeds.length=0;
  pending.push(...g.sounds);g.sounds.length=0;
  schedule();
  for(const {target,op} of g.tunes){if(target.voice)applyTune(target,op);else if(pending.includes(target))(target.ops||=[]).push(op);}g.tunes.length=0;
- for(const v of g.musicVolumes)backing.volume(v.volume,v.frames,atTick(v.tick));g.musicVolumes.length=0;
+ for(const v of g.musicVolumes)backing?.volume(v.volume,v.frames,atTick(v.tick));g.musicVolumes.length=0;
 }
 // Time of the audio the player is hearing now, on the AudioContext clock, less the delay the
 // rhythm test measured beyond what the browser reports (see delay.mjs).
@@ -136,12 +141,16 @@ function press(button,down,at=performance.now()){
  input.push(due,button,down,at);runWhenHeard(due);
 }
 function runWhenHeard(due){
- if(!running||phase!=='game'||frame>=due)return;
+ if(!running||phase==='results'||frame>=due)return;
  const wait=(startTime+due/60-heardTime())*1000;
  if(wait>0)setTimeout(()=>runWhenHeard(due),wait+.5);else advance(Math.floor((heardTime()-startTime)*60));
 }
 // Runs the game up to this frame.
 function advance(target){
+ if(phase==='practice'){
+  while(frame<target&&!g.practiceDone){frame++;g.step(g.tick+g.practiceRate()/60,input.take(frame));practiceMusic();liveEvents();}
+  return;
+ }
  while(frame<target&&!g.ended){frame++;
   const pressed=input.take(frame);
   g.step(g.tickAtSeconds(track.posAt(frame/60)),pressed);
@@ -150,10 +159,43 @@ function advance(target){
 }
 const pollGamepad=bindControls(canvas,{press,
  pause(){if(running)pause();else if(paused)play.click();},
+ skip(){if(phase!=='practice'||!running)return false;endPractice().catch(fail);return true;},
  start(){if(!running&&!play.disabled){if(audio?.state==='suspended'&&navigator.userActivation&&!navigator.userActivation.hasBeenActive){status.textContent='Click Play once to enable controller audio.';return true;}play.click();return true;}return false;}});
 // Controls remain active on the Play and Resume overlays, independent of simulation.
 function pollControllers(){pollGamepad();requestAnimationFrame(pollControllers);}
 requestAnimationFrame(pollControllers);
+// The practice (chart.practice): its own session, loaded with the page, played before the song
+// unless the player turned it off in game select (practice.mjs). Its backing waves loop while it
+// repeats; it ends where the original would start the main chart, which then plays as without it.
+async function loadPractice(){
+ const p=await loadGame(gameUrl,undefined,{practice:true});
+ const waves=new Map(await Promise.all(g.chart.practice.waves.map(async sound=>{
+  const [buffer,info]=await Promise.all([assetResponse(new URL(`assets/practice-${sound}.wav`,gameUrl)).then(r=>r.arrayBuffer()).then(b=>audio.decodeAudioData(b)),assetResponse(new URL(`assets/practice-${sound}.json`,gameUrl)).then(r=>r.json())]);
+  return [sound,{buffer,info}];
+ })));
+ return {g:p,renderer:await createRenderer(p,canvas),waves,main:null};
+}
+function practiceMusic(){
+ for(const m of g.practiceMusic){
+  if(m.sound!=null){backing?.source.stop();const w=practice.waves.get(m.sound);if(!w)throw new Error('Missing practice wave '+m.sound);backing=sfx.playMusic(w.buffer,Math.max(audio.currentTime,atTick(m.tick)),w.info);}
+  else if(backing)sfx.stopWave(backing.source,atTick(m.tick),m.stop);
+ }
+ g.practiceMusic.length=0;
+}
+document.querySelector('#skip').onclick=()=>{if(phase==='practice'&&running)endPractice().catch(fail);};
+function startPractice(){
+ practice.main={g,renderer};g=practice.g;renderer=practice.renderer;Object.assign(window.rhf,{g,renderer,stats:g.stats});
+ phase='practice';frame=0;backing=null;startTime=audio.currentTime+.1;document.querySelector('#skip').hidden=false;
+ running=true;requestAnimationFrame(loop);
+}
+// The practice is over: the song starts from its own lead-in, as when the practice is skipped.
+function endPractice(){
+ if(phase!=='practice')return Promise.resolve();
+ document.querySelector('#skip').hidden=true;running=false;sfx.stop();pending.length=0;voiced.length=0;input.presses.length=0;
+ ({g,renderer}=practice.main);practice=null;Object.assign(window.rhf,{g,renderer,stats:g.stats});
+ phase='game';frame=0;status.textContent='';
+ return start();
+}
 // Starts the song. A later versus mode calls this when both players are ready.
 async function start(at){
  needsReset=true;
@@ -169,7 +211,7 @@ async function start(at){
 }
 play.onclick=async()=>{
  if(play.disabled||multiplayer?.active)return;play.disabled=true;
- try{await audio.resume();play.disabled=false;overlay.hidden=true;if(paused){paused=false;running=true;requestAnimationFrame(loop);return;}await start();}catch(e){fail(e);}
+ try{await audio.resume();play.disabled=false;overlay.hidden=true;if(paused){paused=false;running=true;requestAnimationFrame(loop);return;}if(practice)startPractice();else await start();}catch(e){fail(e);}
 };
 document.querySelector('#restart').onclick=()=>{if(multiplayer?.active){multiplayer.interrupt('Restart interrupted the round.');return;}location.reload();};
 // The original chart owns the outro; a longer backing wave must not delay grading.
@@ -191,6 +233,13 @@ function loop(){if(!running)return;try{
  if(phase==='results'){
   results.draw(heardTime()-resultsStart);
   if(results.done){running=false;sfx.stop();audio.suspend();if(!multiplayer?.active)location.href=new URL('../',gameUrl).href;return;}
+  requestAnimationFrame(loop);return;
+ }
+ if(phase==='practice'){
+  advance(Math.floor(Math.max(0,heardTime()-startTime)*60));schedule();renderer.draw();
+  // The original shows an A button beside a line that waits for it; the port names it here.
+  status.textContent=g.practiceWaiting()?'Practice · press A to go on':'Practice';
+  if(g.practiceDone){endPractice().catch(fail);return;}
   requestAnimationFrame(loop);return;
  }
  const began=performance.now();const elapsed=Math.max(0,heardTime()-startTime);

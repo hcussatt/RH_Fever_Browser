@@ -6,13 +6,15 @@ import {assetBytes as fetchBytes} from './assets.mjs';
 // gameUrl: the game's folder (dist/<id>/). load: url -> bytes (Node tests pass readFile).
 // The chart runs live in the original interpreter. original-timeline.json is the build's silent
 // dry run of it (chart sounds, cue ticks, end tick); the dry run itself loads with timeline:false.
-export async function loadGame(gameUrl,load=fetchBytes,{timeline:withTimeline=true}={}) {
+// practice: run the game's practice chart (chart.practice) instead, live on its own tempo, until it
+// would start the main chart (practiceDone); the page then plays the main chart in a new session.
+export async function loadGame(gameUrl,load=fetchBytes,{timeline:withTimeline=true,practice=false}={}) {
  const base=new URL(gameUrl);
  const json=async url=>JSON.parse(new TextDecoder().decode(await load(url)));
  const manifest=await json(new URL('game.json',base)),profile=manifest.wii;
  const read=name=>load(new URL('assets/'+name,base));
  const {default:createCore}=await import(new URL(`${manifest.id}-core.mjs`,base));
- const [assets,segments,chart,timeline,core,gradingData]=await Promise.all([json(new URL('assets/original-assets.json',base)),json(new URL('assets/original-segments.json',base)),json(new URL('assets/original-chart.json',base)),withTimeline?json(new URL('assets/original-timeline.json',base)):null,createCore(),json(new URL('assets/results.json',base))]);
+ const [assets,segments,chart,timeline,core,gradingData]=await Promise.all([json(new URL('assets/original-assets.json',base)),json(new URL('assets/original-segments.json',base)),json(new URL('assets/original-chart.json',base)),withTimeline&&!practice?json(new URL('assets/original-timeline.json',base)):null,createCore(),json(new URL('assets/results.json',base))]);
  const clock=createClock(chart);
  core._reset_runtime();
  const ramBase=core._ram_ptr()-0x80000000;
@@ -53,7 +55,8 @@ export async function loadGame(gameUrl,load=fetchBytes,{timeline:withTimeline=tr
   named[core._install_named_bank(scene,p,...install(b))]=b;
  }));
  // The scene's version, as the scene load before the chart sets it (see tools/chart-index.py).
- if(chart.sceneVersion)w32(chart.sceneVersion.address,chart.sceneVersion.value);
+ // A practice runs in the version its own scene load passes (often 0, where the main chart's is 1).
+ if(chart.sceneVersion)w32(chart.sceneVersion.address,practice?chart.practice.sceneVersion||0:chart.sceneVersion.value);
  if(chart.firstScene)core._select_scene(chart.firstScene);
  core._set_tempo(clock.tempoAtTick(0));core._initialize_scene();
  // Original grading routines operate on Wii UTF-16 strings and original criteria
@@ -81,7 +84,7 @@ export async function loadGame(gameUrl,load=fetchBytes,{timeline:withTimeline=tr
  let pairHeld=false;
  function frame(ticks,press){
   core._set_delta(ticks);core._set_frame_ticks(ticks);
-  core._set_tempo(clock.tempoAtTick(tick));
+  if(!practice)core._set_tempo(clock.tempoAtTick(tick));
   core._begin_frame();
   // press: {trig, release} button masks (1 A, 2 B); an input type a checker waits for (4 A,
   // 5 B, 6 A and B together, 18-20 their releases), with A or B let go the next frame; or true
@@ -98,9 +101,10 @@ export async function loadGame(gameUrl,load=fetchBytes,{timeline:withTimeline=tr
  }
  // Pre-roll: run the chart from its first command to the music start at the nominal tempo.
  // Music start is chart tick 0; the frame that reaches it ends -rest ticks past it.
- const preroll=[drain()];core._start_chart(chart.start);
+ const preroll=[drain()];
  const nominal=1/60/chart.secondsPerTick;
- for(let n=0;!(core._chart_state()&1);n++){
+ if(practice)core._start_practice(chart.practice.start,chart.start);else core._start_chart(chart.start);
+ for(let n=0;!practice&&!(core._chart_state()&1);n++){
   if(n>=36000)throw new Error('Chart never started its music');
   const events=frame(nominal),start=events.find(e=>e[0]===6);
   preroll.push(events);
@@ -114,7 +118,7 @@ export async function loadGame(gameUrl,load=fetchBytes,{timeline:withTimeline=tr
  // (a hit or a miss starts one, for example) are not in them, so their sounds play live.
  // Layout events (11): the game's 2D layouts (Love Rap's lyric captions), drawn by layout.mjs.
  // Message events (15): the speech balloon and the message panes, drawn by message.mjs.
- const layoutEvents=[],lyricEvents=[],messageEvents=[];let steps=0,scene=chart.firstScene||0;
+ const layoutEvents=[],lyricEvents=[],messageEvents=[],practiceMusic=[];let steps=0,scene=chart.firstScene||0,practiceDone=false;
  const consumed=new Set();
  function prescheduled(sound,at){
   const list=timeline?.sounds||[];
@@ -169,6 +173,10 @@ export async function loadGame(gameUrl,load=fetchBytes,{timeline:withTimeline=tr
    else if(e[0]===13)musicVolumes.push({tick:frameTick,frames:e[1],volume:rest(e[2])});
    else if(e[0]===14)speeds.push({tick:frameTick+rest(e[2]),speed:rest(e[1])});
    else if(e[0]===20||e[0]===22)resultEvents.push(e);
+   // Practice: its end (30), and its backing wave started (31) or stopped over some frames (32).
+   else if(e[0]===30)practiceDone=true;
+   else if(e[0]===31)practiceMusic.push({tick:frameTick+rest(e[2]),sound:e[1]});
+   else if(e[0]===32)practiceMusic.push({tick:frameTick+rest(e[2]),stop:e[1]});
   }
  }
  // Sounds and tuning from before the music started (the scene's setup and the chart's lead-in):
@@ -241,5 +249,6 @@ export async function loadGame(gameUrl,load=fetchBytes,{timeline:withTimeline=tr
   if(press){core._grading_input(1);core._grading_input(0);}core._grading_frame();gradingFrame++;
   return drain().map(e=>({kind:e[0],value:e[1],extra:e[2],frame:gradingFrame,seconds:gradingFrame/60+((e[0]===5||e[0]===20||e[0]===21)?rest(e[2])/(core._grading_tempo()*.8):0)}));
  }
- return {manifest,base,core,options,assets,chart,clock,secondsAtTick:clock.secondsAtTick,tickAtSeconds:clock.tickAtSeconds,banks,timeline,step,drain,sounds,chartSounds,gameSounds,tunes,speeds,musicVolumes,commands,cues,cueInputs,cueWithdrawn,layoutEvents,lyricEvents,messageEvents,get steps(){return steps;},envelope,stats,result,gradingData,resultEvents,startGrading,stepGrading,u8,u16,u32,f32,w8,w16,w32,wf,alloc,offset,get tick(){return tick;},get ended(){return ended;},get endTick(){return endTick;}};
+ return {manifest,base,core,options,assets,chart,clock,secondsAtTick:clock.secondsAtTick,tickAtSeconds:clock.tickAtSeconds,banks,timeline,step,drain,sounds,chartSounds,gameSounds,tunes,speeds,musicVolumes,commands,cues,cueInputs,cueWithdrawn,layoutEvents,lyricEvents,messageEvents,get steps(){return steps;},envelope,stats,result,gradingData,resultEvents,startGrading,stepGrading,u8,u16,u32,f32,w8,w16,w32,wf,alloc,offset,get tick(){return tick;},get ended(){return ended;},get endTick(){return endTick;},
+  practice,practiceMusic,get practiceDone(){return practiceDone;},practiceRate:()=>core._practice_rate(),practiceWaiting:()=>core._practice_waiting()};
 }

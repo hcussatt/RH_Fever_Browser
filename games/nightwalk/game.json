@@ -20,6 +20,7 @@
     "projection": [832, 456],
     "endsWithMusic": true,
     "results": false,
+    "practice": false,
     "layout": {
       "archive": "EN/content2/layout/layout_nightWalk.szs",
       "file": "nightWalkBg.brlyt",
