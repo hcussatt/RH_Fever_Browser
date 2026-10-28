@@ -1,0 +1,41 @@
+name: Deploy matchmaker
+
+# Publishes matchmaker/ (room codes for the multiplayer lobby) to Cloudflare Workers. It skips
+# until the repo has the CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID secrets; see docs/multiplayer.md.
+on:
+  push:
+    branches: [main]
+    paths: ['matchmaker/**', '.github/workflows/matchmaker.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: matchmaker
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      HAS_CLOUDFLARE: ${{ secrets.CLOUDFLARE_API_TOKEN != '' && secrets.CLOUDFLARE_ACCOUNT_ID != '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Skip without Cloudflare secrets
+        if: env.HAS_CLOUDFLARE != 'true'
+        run: echo "::notice::CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID are not set; matchmaker not deployed."
+      - uses: actions/setup-node@v4
+        if: env.HAS_CLOUDFLARE == 'true'
+        with:
+          node-version: '22'
+      - name: Test matchmaker
+        if: env.HAS_CLOUDFLARE == 'true'
+        run: node --test tests/matchmaker.test.mjs
+      - name: Deploy to Cloudflare Workers
+        if: env.HAS_CLOUDFLARE == 'true'
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: matchmaker

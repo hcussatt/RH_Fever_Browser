@@ -1,11 +1,15 @@
 // The main Pages document owns the connection; game iframes can be replaced freely.
 import {siteRoot,assetResponse} from './assets.mjs';
 import {PeerMatch,compareResults,decodeSignal} from './peer-match.mjs';
+import {MATCHMAKER_URL,normalizeRoom,openRoom,readOffer,sendAnswer,waitForAnswer} from './matchmaker.mjs';
 export function mountMultiplayer({games,version,openImport}){
  const root=document.createElement('section');root.id='multiplayer-lobby';root.hidden=true;
  root.innerHTML=`<header class="lobby-heading"><h2>PLAY WITH A FRIEND</h2><button id="lobby-leave">Back to arcade</button></header>
  <p>Private two-player lobby. The host picks the game. Both players use their own local disc data. Some networks block direct connections.</p>
- <div id="lobby-setup"><label>Your name<input id="lobby-name" maxlength="24" value="Player"></label><div class="lobby-actions"><button id="lobby-create">Create invite</button><button id="lobby-join">Generate answer</button></div>
+ <div id="lobby-setup"><label>Your name<input id="lobby-name" maxlength="24" value="Player"></label><div id="lobby-room"${MATCHMAKER_URL?'':' hidden'}><div class="lobby-actions"><button id="lobby-room-create">Create room</button></div>
+ <p id="lobby-room-share" hidden>Room code <strong id="lobby-room-code"></strong> <button id="lobby-room-copy">Copy room link</button></p>
+ <label id="lobby-room-input-label">Friend’s room code<input id="lobby-room-input" maxlength="200" autocomplete="off" spellcheck="false" placeholder="ABC123"></label><button id="lobby-room-join">Join room</button>
+ <p>Or connect by copying codes back and forth:</p></div><div class="lobby-actions"><button id="lobby-create">Create invite</button><button id="lobby-join">Generate answer</button></div>
  <label>Invite link or answer code<textarea id="lobby-incoming" rows="2" maxlength="48000" spellcheck="false"></textarea></label><button id="lobby-accept" hidden>Connect with answer</button>
  <label id="lobby-output-label" hidden><span id="lobby-output-title">Connection code</span><textarea id="lobby-output" rows="2" readonly></textarea></label><button id="lobby-copy" hidden>Copy connection details</button></div>
  <div id="lobby-connected" hidden><label>Game<select id="lobby-game"></select></label><p id="lobby-role"></p><div class="lobby-actions"><button id="lobby-ready" disabled>Ready</button><button id="lobby-rematch" hidden>New round</button><button id="lobby-import">Load your disc</button><button id="lobby-reload">Reload local game</button></div></div>
@@ -13,11 +17,12 @@ export function mountMultiplayer({games,version,openImport}){
  document.querySelector('.cabinet').after(root);
  const $=id=>root.querySelector('#'+id),cabinet=document.querySelector('.cabinet');
  const entry=document.createElement('button');entry.id='open-multiplayer';entry.textContent='MULTIPLAYER';document.querySelector('.deck-buttons').prepend(entry);
- let peer,frame,api,loading=false,loadToken=0,task=false,autoSelected=false,localError='';
+ let peer,frame,api,roomWait,loading=false,loadToken=0,task=false,autoSelected=false,localError='';
  for(const game of games){const option=document.createElement('option');option.value=game.id;option.textContent=game.title;$('lobby-game').append(option);}
  function show(){root.hidden=false;cabinet.hidden=true;}
  entry.onclick=show;
  function update(p){
+  if(p.connected)roomWait?.abort();
   $('lobby-setup').hidden=!!p.connected;$('lobby-connected').hidden=!p.connected;
   const idle=p.state==='lobby'||p.state==='interrupted'||p.state==='finished'&&p.remoteResult;
   $('lobby-game').disabled=!p.host||!idle||!p.connected;
@@ -74,12 +79,31 @@ export function mountMultiplayer({games,version,openImport}){
  $('lobby-create').onclick=()=>run(async()=>{const p=create(),code=await p.invite(),url=new URL(siteRoot);url.hash='invite='+code;output(url.href,'Invite link');$('lobby-create').hidden=true;$('lobby-join').hidden=true;$('lobby-accept').hidden=false;});
  $('lobby-join').onclick=()=>run(async()=>{decodeSignal($('lobby-incoming').value,'offer');output(await create().answer($('lobby-incoming').value),'Answer code');$('lobby-create').hidden=true;$('lobby-join').hidden=true;});
  $('lobby-accept').onclick=()=>run(()=>peer.accept($('lobby-incoming').value));
+ // A room carries the same invite and answer through the matchmaker. The manual invite link is
+ // shown too, so the host can still fall back to copying codes.
+ function roomStarted(){for(const id of ['lobby-room-create','lobby-room-join','lobby-room-input-label','lobby-create','lobby-join'])$(id).hidden=true;}
+ $('lobby-room-create').onclick=()=>run(async()=>{
+  const p=create(),invite=await p.invite(),code=await openRoom(invite),url=new URL(siteRoot);
+  url.hash='invite='+invite;output(url.href,'Invite link (if the room code does not work)');roomStarted();$('lobby-accept').hidden=false;
+  $('lobby-room-code').textContent=code;$('lobby-room-share').hidden=false;
+  p.changed('Send your friend the room code or link. Keep this tab open.');
+  roomWait=new AbortController();
+  waitForAnswer(code,{signal:roomWait.signal}).then(answer=>{if(p.state==='connecting'&&!p.pc.remoteDescription)return p.accept(answer);}).catch(e=>{if(!roomWait.signal.aborted&&!p.connected)$('lobby-status').textContent=e.message;});
+ });
+ $('lobby-room-copy').onclick=()=>run(async()=>{const url=new URL(siteRoot);url.hash='room='+$('lobby-room-code').textContent;await navigator.clipboard.writeText(url.href);$('lobby-status').textContent='Copied. Send it to your friend.';});
+ $('lobby-room-join').onclick=()=>run(async()=>{
+  const code=normalizeRoom($('lobby-room-input').value),offer=await readOffer(code);decodeSignal(offer,'offer');
+  const p=create(),answer=await p.answer(offer);roomStarted();
+  try{await sendAnswer(code,answer);}catch(e){output(answer,'Answer code (send this to your friend instead)');throw e;}
+  if(!p.connected)p.changed('Joined the room. Connecting…');
+ });
  $('lobby-copy').onclick=()=>run(async()=>{await navigator.clipboard.writeText($('lobby-output').value);$('lobby-status').textContent='Copied. Send it to your friend.';});
  $('lobby-ready').onclick=()=>run(()=>peer.ready());$('lobby-rematch').onclick=()=>peer.rematch();
  $('lobby-game').onchange=()=>{if(!peer.selectGame($('lobby-game').value))update(peer);};
  $('lobby-import').onclick=openImport;$('lobby-reload').onclick=()=>{if(peer.selectedGame&&peer.state==='lobby'&&!peer.localReady)load(peer.selectedGame);};
- $('lobby-leave').onclick=()=>{if(peer){peer.interrupt('Friend left the lobby.');peer.close();api?.stop();location.href=siteRoot.href;}else{root.hidden=true;cabinet.hidden=false;}};
- if(location.hash.startsWith('#invite=')){$('lobby-incoming').value=location.href;show();history.replaceState(null,'',location.pathname+location.search);}
+ $('lobby-leave').onclick=()=>{roomWait?.abort();if(peer){peer.interrupt('Friend left the lobby.');peer.close();api?.stop();location.href=siteRoot.href;}else{root.hidden=true;cabinet.hidden=false;}};
+ if(location.hash.startsWith('#room=')&&MATCHMAKER_URL){$('lobby-room-input').value=decodeURIComponent(location.hash.slice(6));show();history.replaceState(null,'',location.pathname+location.search);}
+ else if(location.hash.startsWith('#invite=')){$('lobby-incoming').value=location.href;show();history.replaceState(null,'',location.pathname+location.search);}
  else if(location.hash==='#multiplayer')show();
  document.addEventListener('visibilitychange',()=>{if(document.hidden&&peer?.localReady)peer.interrupt('Hidden tab interrupted the round.');});
  window.addEventListener('beforeunload',()=>peer?.close());
