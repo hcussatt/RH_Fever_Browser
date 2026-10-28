@@ -5,6 +5,7 @@
 - Use `agent-browser` first for browser work; read `.agents/skills/agent-browser/SKILL.md` before use. Its references and templates are bundled alongside it. The CLI must be installed separately.
 - For HTML rendering, formatting, and UI changes, validate the rendered result and affected interactions in a browser. Iterate when the result differs from the intended behavior.
 - Follow the existing Python, shell, C, and ES module style. There is no npm install step or JavaScript framework.
+- Write in American English (practice, color, center, canceled, behavior) in UI text, docs, comments and commit messages. Convert older British spellings when you touch those lines.
 - Read `README.md` and `docs/engine.md` for current behavior. `docs/README.md` maps historical handoff paths to this repository; older notes are reference material and can be stale.
 
 ## Scope and fidelity
