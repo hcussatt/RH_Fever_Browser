@@ -98,13 +98,15 @@ test('song score averages the original category hit rates; match totals break ti
  assert.equal(compareTotals(totals([r(90,0,1)]),totals([r(90,0,1)])),0);
  assert.throws(()=>compareResults({...stats(),categories:[{total:-1,hits:0,misses:0,through:0}]},stats()));
 });
-test('standard sets follow the song select rows; shuffle draws 3 different minigames and a remix',()=>{
+test('standard sets follow the song select rows; shuffle draws 3 version 1 minigames, a "2" game and a remix',()=>{
  const all=new Set(SETS.flatMap(s=>s.games));
  const sets=remixSets(all);assert.equal(sets.length,10);assert.deepEqual(sets[0].games,['golf','robot','seesaw','date','remix1']);
  assert.equal(remixSets(new Set(['golf','robot'])).length,0,'a set needs its remix');
  for(let seed=0;seed<50;seed++){let x=seed;const m=shuffleMatch(all,()=>(x=(x*9301+49297)%233280)/233280);
-  assert.equal(m.games.length,4);assert.equal(new Set(m.games).size,4);assert.ok(m.games.slice(0,3).every(id=>!id.startsWith('remix')));assert.ok(m.games[3].startsWith('remix'));}
- assert.equal(shuffleMatch(new Set(['golf','remix1'])),null);
+  assert.equal(m.games.length,5);assert.equal(new Set(m.games).size,5);
+  assert.ok(m.games.slice(0,3).every(id=>!id.startsWith('remix')&&!id.endsWith('2')),'three version 1 minigames');
+  assert.ok(m.games[3].endsWith('2')&&!m.games.slice(0,3).includes(m.games[3].slice(0,-1)),'a different "2" game');assert.ok(m.games[4].startsWith('remix'));}
+ assert.equal(shuffleMatch(new Set(['golf','robot','seesaw','remix1'])),null,'needs a "2" game');
 });
 test('a match plays its songs in order, records both results and ends with totals',async()=>{
  const [a,b]=pair();try{await flush();const list=['golf','robot','remix1'];a.games=b.games=['golf','robot','seesaw','remix1'];

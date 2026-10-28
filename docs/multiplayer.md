@@ -31,8 +31,9 @@ The host's **Mode** picks one game (as before), a remix set, or Shuffle:
 
 - **Remix N set**: that song-select row's minigames in order, then the remix
   (`SETS` in `web/engine/menu.mjs`; Remix 8 to 10 use the row's "2" games).
-- **Shuffle**: three different minigames from the remix rows, then a random
-  remix. The host draws the list and sends it, so both players get the same one.
+- **Shuffle**: three different version 1 minigames from the remix rows, one
+  "2" game (never the same game as a pick before it), then a random remix. The
+  host draws the list and sends it, so both players get the same one.
 
 Each song is its own round: both players press Ready before every song, and the
 host presses **Next song** once both results are in. An interrupted song can be

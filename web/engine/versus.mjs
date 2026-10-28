@@ -24,13 +24,19 @@ export function compareTotals(a,b){
 export const compareSongs=(a,b)=>compareTotals(totals([a]),totals([b]));
 // Standard: one remix row of the song select, its minigames then the remix.
 export const remixSets=available=>SETS.map(s=>({title:s.title,games:s.games.filter(id=>available.has(id))})).filter(s=>s.games.length>1&&s.games.at(-1).startsWith('remix'));
-// Shuffle: three different minigames from the remix rows, then a random remix.
+// Shuffle (Henry, 2026-10-28): three different minigames from the remix rows (version 1),
+// one "2" version from rows 8 to 10 (never the same game as a version 1 pick), then a random remix.
+const second=id=>/2$/.test(id);
 export function shuffleMatch(available,random=Math.random){
  const pick=list=>list.splice(Math.floor(random()*list.length),1)[0];
  const minigames=[...new Set(SETS.flatMap(s=>s.games.slice(0,-1)))].filter(id=>available.has(id));
+ const firsts=minigames.filter(id=>!second(id)),seconds=minigames.filter(second);
  const remixes=SETS.map(s=>s.games.at(-1)).filter(id=>available.has(id));
- if(minigames.length<3||!remixes.length)return null;
- return {title:'Shuffle',games:[pick(minigames),pick(minigames),pick(minigames),pick(remixes)]};
+ if(firsts.length<3||!seconds.length||!remixes.length)return null;
+ const games=[pick(firsts),pick(firsts),pick(firsts)];
+ const twos=seconds.filter(id=>!games.includes(id.slice(0,-1)));
+ if(!twos.length)return null;
+ return {title:'Shuffle',games:[...games,pick(twos),pick(remixes)]};
 }
 export function validMatch(m,games){
  return m&&typeof m.title==='string'&&m.title.length<=40&&Array.isArray(m.games)&&m.games.length>=1&&m.games.length<=MAX_SONGS&&m.games.every(id=>games.includes(id))&&Number.isSafeInteger(m.index)&&m.index>=0&&m.index<m.games.length;

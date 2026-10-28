@@ -18,7 +18,7 @@ export function mountMultiplayer({games,version,openImport}){
  for(const game of games){const option=document.createElement('option');option.value=game.id;option.textContent=game.title;$('lobby-game').append(option);}
  const available=new Set(games.map(g=>g.id)),title=id=>games.find(g=>g.id===id)?.title||id,sets=remixSets(available);
  for(const set of sets){const option=document.createElement('option');option.value='set:'+set.title;option.textContent=set.title+' set ('+set.games.length+' songs)';$('lobby-mode').append(option);}
- if(shuffleMatch(available)){const option=document.createElement('option');option.value='shuffle';option.textContent='Shuffle (3 random games + a random remix)';$('lobby-mode').append(option);}
+ if(shuffleMatch(available)){const option=document.createElement('option');option.value='shuffle';option.textContent='Shuffle (3 random games, a random "2" game and a random remix)';$('lobby-mode').append(option);}
  const modeOf=m=>!m?'single':m.title==='Shuffle'?'shuffle':'set:'+m.title;
  const score=n=>n.toFixed(1),grade=r=>['Superb','OK','Try Again'][r.grade]??'';
  function show(){root.hidden=false;cabinet.hidden=true;}
