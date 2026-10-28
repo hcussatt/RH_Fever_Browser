@@ -122,9 +122,10 @@ with an old-Python error, rerun `tools/setup-toolchain.sh` after fixing Python.
 
 ## Wii common key
 
-The Pages importer includes the Wii common key, so visitors only select their
-ISO. Its publication was explicitly authorized by the user. The same bundled
-module is the local builder's default. To override it:
+The key is not part of this repository or the hosted site. The hosted importer
+asks for it next to the ISO and remembers it in that browser (the owner's dev
+link can supply it instead; see [docs/dev-host.md](docs/dev-host.md)). For local
+builds, either:
 
 - put the 32 hex digits in `local/wii-common-key.txt` (git-ignored),
 - set `RHF_WII_COMMON_KEY`, or

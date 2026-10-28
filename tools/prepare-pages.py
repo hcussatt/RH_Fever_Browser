@@ -11,11 +11,9 @@ import re
 import shutil
 import zipfile
 from game_registry import scene_only, web_games
+from import_version import TOOLS, import_version
 
 ROOT = Path(__file__).resolve().parents[1]
-TOOLS = ['paths.py', 'wii_files.py', 'extract-disc.py', 'prepare-data.py',
-         'chart-index.py', 'extract-assets.py', 'extract-sfx.py',
-         'extract-layout.py', 'extract-results.py', 'extract-menu.py', 'decode-music.py', 'nintendo_audio.py']
 
 
 def stage(snapshot=False, output='site'):
@@ -86,7 +84,8 @@ def stage(snapshot=False, output='site'):
     compatibility = {name: digest for name, digest in checksums.items()
                      if name.endswith(('.wasm', '/game.json')) or name == 'import/tools.zip'}
     asset_version = hashlib.sha256(json.dumps(compatibility, sort_keys=True).encode()).hexdigest()[:20]
-    (out/'deployment.json').write_text(json.dumps({'version': version, 'assetVersion': asset_version, 'isoId': 'SOME01',
+    (out/'deployment.json').write_text(json.dumps({'version': version, 'assetVersion': asset_version,
+        'importVersion': import_version(ROOT), 'isoId': 'SOME01',
         'dolSha1': 'd96d2c7e50b0c713cb8fcb18835258351ada5576', 'files': checksums})+'\n')
     worker = (ROOT/'web/sw.js').read_text().replace('__VERSION__', version).replace('__FILES__', json.dumps(list(checksums)+['deployment.json']))
     (out/'sw.js').write_text(worker)

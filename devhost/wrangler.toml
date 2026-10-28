@@ -1,0 +1,14 @@
+# Deployed by .github/workflows/devhost.yml once the repo has the Cloudflare secrets and the
+# RHF_DEV_KEY / RHF_UPLOAD_KEY secrets (docs/dev-host.md). Uses R2 on the free plan.
+name = "rhf-devhost"
+main = "worker.mjs"
+compatibility_date = "2025-09-01"
+workers_dev = true
+
+[vars]
+# Sites allowed to read with the dev key (comma-separated). localhost and 127.0.0.1 are always allowed.
+ALLOWED_ORIGINS = "https://hcussatt.github.io"
+
+[[r2_buckets]]
+binding = "FILES"
+bucket_name = "rhf-dev-files"

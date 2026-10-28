@@ -27,7 +27,7 @@ Preserve original timing windows, float operation order, scoring, and Perfect ru
 
 ## Build and run
 
-Requires Python 3.10+ with `requirements.txt`, Node.js 18+, Git, Emscripten 5.0.7, and PowerPC binutils. `tools/setup-toolchain.sh` installs toolchain components into `.toolchain/`. `install/` holds the one-step prerequisite installers (`macos.command`, `windows.ps1` via WSL Ubuntu, `linux.sh`), which all end in `install/finish.sh`; keep them in step with any new build prerequisite, download only from official sources, and never download game material. Node.js comes from Emscripten's bundle when none is installed (`tools/env.sh`). The user supplies a USA SOME01 raw ISO and a Wii common key through the mechanisms documented in `README.md`. Only the explicitly authorized public common-key module may contain the key.
+Requires Python 3.10+ with `requirements.txt`, Node.js 18+, Git, Emscripten 5.0.7, and PowerPC binutils. `tools/setup-toolchain.sh` installs toolchain components into `.toolchain/`. `install/` holds the one-step prerequisite installers (`macos.command`, `windows.ps1` via WSL Ubuntu, `linux.sh`), which all end in `install/finish.sh`; keep them in step with any new build prerequisite, download only from official sources, and never download game material. Node.js comes from Emscripten's bundle when none is installed (`tools/env.sh`). The user supplies a USA SOME01 raw ISO and a Wii common key through the mechanisms documented in `README.md`. No tracked file and no part of the public site may contain the key; the owner's private dev host (`docs/dev-host.md`) supplies it to his own browsers.
 
 Run from the repository root:
 
@@ -63,9 +63,9 @@ Use `web/engine/qa/audio-check.mjs` for relevant offline audio checks, and inspe
 
 ## Git and game material
 
-The user authorizes publishing the compiled game runtime, including statically translated game code/WASM, for GitHub Pages. The hosted player should import assets and required original data locally from the user's ISO. This overrides the earlier blanket prohibition on publishing generated runtime code. Never publish disc images, original executables, Nintendo archives, extracted charts/media, original data segments, or unrelated key material. The user explicitly authorized bundling the public Wii common key in `web/import/common-key.mjs` and its generated Pages copy `import/common-key.mjs`; this is the only key-publication exception. Do not import the outer workspace's reference material into tracked paths.
+The user authorizes publishing the compiled game runtime, including statically translated game code/WASM, for GitHub Pages. The hosted player should import assets and required original data locally from the user's ISO. This overrides the earlier blanket prohibition on publishing generated runtime code. Never publish disc images, original executables, Nintendo archives, extracted charts/media, original data segments, or key material. The owner withdrew the earlier bundled Wii common key (2026-10-28): the hosted importer asks visitors for their own key, and the owner's key-gated dev host (`docs/dev-host.md`) serves his prepared files and key only to his own browsers. Never commit the dev or upload keys. Do not import the outer workspace's reference material into tracked paths.
 
-The clean-material checker allows only `runtime-src/<id>/original-functions.inc` translated-code snapshots for registered manifests with `web.enabled: true`. WASM remains excluded from tracked source; CI compiles it into the ignored `site/` artifact, which `scripts/check-pages.py` audits. See `docs/pages.md` for the importer, cache compatibility, and Pages workflow. Retain asset and original-data protections and the key check outside that exact public module.
+The clean-material checker allows only `runtime-src/<id>/original-functions.inc` translated-code snapshots for registered manifests with `web.enabled: true`. WASM remains excluded from tracked source; CI compiles it into the ignored `site/` artifact, which `scripts/check-pages.py` audits. See `docs/pages.md` for the importer, cache compatibility, and Pages workflow. Retain asset and original-data protections and the key check everywhere.
 
 Keep `hooks/pre-commit`, `.gitignore`, and `scripts/check-clean.py` effective. Before committing, inspect the diff and run `python3 scripts/check-clean.py --staged` after staging the intended files. The tracked-file check also runs in GitHub Actions on pushes and pull requests; passing it without local disc references does not perform the optional comparison against extracted disc bytes.
 
@@ -162,7 +162,7 @@ then explicitly enable it as part of completing the port.
   `python3 tests/test_game_registry.py`. Run source/public policy checks,
   `python3 scripts/check-pages.py` on the staged artifact, and `npm test`.
   Never add the ISO, charts, original data segments, or extracted media to Git
-  or the public site. The exact public common-key module is the sole key exception.
+  or the public site. The Wii common key is never published either.
 - `.github/workflows/pages.yml` discovers enabled games, compiles each through
   its generated Actions matrix, assembles/audits `site/`, and runs browser
   integration tests on PRs. Require these checks on the final merged tree;

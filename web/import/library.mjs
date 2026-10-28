@@ -1,18 +1,26 @@
 import {siteRoot,readLibrary,writeLibrary,deployment} from '../engine/assets.mjs';
 import {mountMultiplayer} from '../engine/multiplayer.mjs';
-import {WII_COMMON_KEY} from './common-key.mjs';
 import {groupGames,UNLISTED} from '../engine/menu.mjs';
 import {getDelayMs,setDelayMs,resetDelay,LIMIT_MS} from '../engine/delay.mjs';
 import {skipPractice,setSkipPractice} from '../engine/practice.mjs';
 import {createLayout} from '../engine/layout.mjs';
 import {assetResponse} from '../engine/assets.mjs';
+import {devKey,forgetDevKey,takeDevLink,installFromDevHost,devCommonKey} from './devhost.mjs';
+import {readCommonKey,checkCommonKey,rememberCommonKey,keyDigits} from './wii-key.mjs';
 const $=s=>document.querySelector(s);
 let worker,build,games,selected;
 // The games game select shows (the importer still prepares every game, the unlisted Rhythm Test too).
 const listed=()=>games.filter(g=>!UNLISTED.has(g.id));
 const iconURLs=new Map();
+// The import bar: games finished out of all games, and how far the whole import is.
+function meter({done=0,total=0,fraction=0}={}){
+ const percent=Math.round(Math.min(1,Math.max(0,fraction))*100);
+ $('.meter-fill').style.width=percent+'%';$('.meter-fill').toggleAttribute('data-empty',percent===0);
+ $('.meter-track').setAttribute('aria-valuenow',String(percent));$('.meter-track').setAttribute('aria-valuetext',`${done} of ${total} games ready`);
+ $('#meter-games').textContent=`${done} of ${total}`;$('#meter-percent').textContent=percent+'%';
+}
 const status=(message,error=false)=>{$('#progress').textContent=message;$('#progress').classList.toggle('error',error);};
-function busy(value){$('#import').disabled=value;$('#iso').disabled=value;$('#remove').disabled=value;$('#cancel').hidden=!value;$('#busy').hidden=!value;}
+function busy(value){$('#import').disabled=value;$('#iso').disabled=value;$('#key').disabled=value;$('#remove').disabled=value;$('#dev-download').disabled=value;$('#cancel').hidden=!value;$('#busy').hidden=!value;if(value)meter({total:games?.length||0});}
 let menuGroups=[],renderVersion=0;
 const reducedMotion=()=>matchMedia('(prefers-reduced-motion: reduce)').matches;
 // Behind the menu: the title screen the hovered or selected game opens with (its prologue layout at
@@ -215,19 +223,29 @@ try{
 }catch(e){status(e.message,true);$('#import').disabled=true;}
 $('#import-form').onsubmit=async e=>{
  e.preventDefault();if(worker||!build)return;
- const file=$('#iso').files[0],key=WII_COMMON_KEY;
+ const file=$('#iso').files[0];
  if(!file)return;
  if(file.size!==4699979776){status('Select the raw USA ISO (4,699,979,776 bytes).',true);return;}
  if(new TextDecoder().decode(await file.slice(0,6).arrayBuffer())!=='SOME01'){status('This disc is not Rhythm Heaven Fever USA (SOME01).',true);return;}
- if(!/^[a-f0-9]{32}$/i.test(key)){status('Enter the 32 hexadecimal digits of your Wii common key.',true);return;}
+ // The key typed in, or with the owner's dev link, the one his dev host keeps.
+ let key=$('#key').value;
+ if(!key.trim()&&devKey()&&!build.local){
+  try{status('Getting the Wii common key from the dev host…');key=await devCommonKey();}
+  catch(e){status(e.message,true);return;}
+ }
+ const problem=await checkCommonKey(key);
+ if(problem){status(problem,true);return;}
+ key=keyDigits(key).toLowerCase();
+ // A typed key is remembered; the dev host's is fetched again each time.
+ if($('#key').value.trim())rememberCommonKey(key);
  busy(true);
  try{
   const persistent=await navigator.storage?.persist?.();
   status(persistent?'Preparing games. Local storage persistence granted.':'Preparing games. Your browser may reclaim storage when space is low.');
   worker=new Worker(new URL('worker.mjs',import.meta.url),{type:'module'});
   worker.onmessage=async({data})=>{
-   if(data.type==='progress')status(data.message);
-   if(data.type==='game'){status(data.title+' is ready.');await render();}
+   if(data.type==='progress'){status(data.message);meter(data);}
+   if(data.type==='game'){status(data.title+' is ready.');meter(data);await render();}
    if(data.type==='done'||data.type==='error'){
     worker?.terminate();worker=null;busy(false);await render();
     status(data.type==='done'?'Your games are ready. Select Play above.':data.message,data.type==='error');
@@ -237,7 +255,28 @@ $('#import-form').onsubmit=async e=>{
   worker.postMessage({file,key,version:build.assetVersion||build.version,games});
  }catch(e){worker?.terminate();worker=null;busy(false);status(e.message,true);}
 };
-$('#cancel').onclick=()=>{worker?.terminate();worker=null;busy(false);status('Import canceled. Any games already prepared remain available.');render();};
+// The owner's dev link (#dev=<key>) lets this browser download his prepared files (devhost.mjs).
+let devDownload=null;
+const freshDevLink=takeDevLink();
+const showDevHost=()=>{
+ $('#dev-host').hidden=!devKey()||!!build?.local;
+ $('#key-hint').textContent=$('#dev-host').hidden?'Not included with this site. Use the common key from your own Wii (for example from a BootMii keys.bin). This browser remembers it.':'Leave this empty to use the key kept on your dev host.';
+};
+$('#key').value=readCommonKey();
+showDevHost();
+if(freshDevLink&&devKey()&&!build?.local){openImport();status('Dev key saved in this browser. Select Download from dev host.');}
+$('#dev-forget').onclick=()=>{forgetDevKey();showDevHost();status('Dev key removed from this browser. Downloaded games stay until you remove local game data.');};
+$('#dev-download').onclick=async()=>{
+ if(worker||devDownload||!build)return;
+ devDownload=new AbortController();busy(true);
+ try{
+  await navigator.storage?.persist?.();
+  await installFromDevHost({build,games,signal:devDownload.signal,progress:(message,state)=>{status(message);if(state)meter(state);},onGame:async(id,title,state)=>{status(title+' is ready.');meter(state);await render();}});
+  status('Your games are ready. Select Play above.');
+ }catch(e){status(e.message,true);}
+ finally{devDownload=null;busy(false);await render();}
+};
+$('#cancel').onclick=()=>{if(devDownload){devDownload.abort();return;}worker?.terminate();worker=null;busy(false);status('Import canceled. Any games already prepared remain available.');render();};
 $('#remove').onclick=()=>$('#confirm-remove').showModal();
 $('#confirm-remove').onclose=async()=>{
  if($('#confirm-remove').returnValue!=='remove')return;
@@ -245,7 +284,7 @@ $('#confirm-remove').onclose=async()=>{
  for(const name of await caches.keys())if(name.startsWith('rhf-assets:'+siteRoot.pathname+':'))await caches.delete(name);
  await render();status('Local game data removed.');
 };
-window.addEventListener('beforeunload',e=>{if(worker){e.preventDefault();e.returnValue='';}});
+window.addEventListener('beforeunload',e=>{if(worker||devDownload){e.preventDefault();e.returnValue='';}});
 
 // Standard gamepad navigation uses the same selection and action as the keyboard menu.
 let lastControllerDirection=0,lastControllerA=false;

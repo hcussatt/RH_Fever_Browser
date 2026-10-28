@@ -10,12 +10,14 @@ spec.loader.exec_module(clean)
 
 
 class PublicPolicy(unittest.TestCase):
-    def test_public_key_allowance_is_exact(self):
-        module=(ROOT/'web/import/common-key.mjs').read_bytes()
-        self.assertFalse(clean.check('web/import/common-key.mjs',module,set()))
-        self.assertFalse(clean.check('import/common-key.mjs',module,set()))
-        self.assertTrue(clean.check('tools/key.mjs',module,set()))
-        self.assertTrue(clean.check('web/import/common-key.mjs',module+b'export const unrelated = true;\n',set()))
+    def test_common_key_is_blocked_everywhere(self):
+        # The site no longer bundles the key (visitors enter their own); no path is exempt.
+        # Built from the checker's digest so this test holds no key either.
+        self.assertEqual(len(clean.COMMON_KEY_SHA256), 64)
+        sample = b"export const KEY = '" + b'00'*16 + b"';\n"
+        for name in ['web/import/common-key.mjs', 'import/common-key.mjs', 'tools/key.mjs']:
+            self.assertFalse(clean.check(name, sample, set()), name)
+        self.assertNotIn('PUBLIC_KEY_MODULES', vars(clean))
 
     def test_runtime_source_allowance_is_exact(self):
         translated = b'static void ' + b'p_80000000(void) {}'

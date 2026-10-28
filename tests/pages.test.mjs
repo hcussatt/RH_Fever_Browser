@@ -77,7 +77,7 @@ test('Pages project path, local import errors, storage isolation, and offline sh
   await page.setViewportSize({width:1280,height:720});
   await page.locator('#open-import').click();
   await page.locator('#iso').setInputFiles({name:'wrong.iso',mimeType:'application/octet-stream',buffer:Buffer.from('SOME01')});
-  assert.equal(await page.locator('#key').count(),0);await page.locator('#import').click();
+  assert.equal(await page.locator('#key').count(),1);await page.locator('#import').click();
   await page.waitForFunction(()=>document.querySelector('#progress').textContent.includes('4,699,979,776'));
   // Direct game links explain how to import instead of attempting absent asset URLs.
   await page.goto(base+first+'/');await page.waitForFunction(()=>window.rhf?.error);
