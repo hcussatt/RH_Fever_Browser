@@ -39,6 +39,8 @@ export class Usage {
  async fetch(request){
   const {kind,bytes=0}=await request.json(),u=await this.load();
   if(u.month!==month())Object.assign(u,{month:month(),reads:0,writes:0});
+  // Deleting is free and gives the stored size back.
+  if(kind==='freed'){u.bytes=Math.max(0,u.bytes-bytes);await this.storage.put('usage',u);return Response.json({ok:true,usage:u});}
   if(kind==='read'&&u.reads+1>LIMITS.reads||kind==='write'&&(u.writes+1>LIMITS.writes||u.bytes+bytes>LIMITS.bytes))
    return Response.json({ok:false,usage:u});
   if(kind==='read')u.reads++;else{u.writes++;u.bytes+=bytes;}
@@ -55,6 +57,25 @@ async function allow(env,kind,bytes=0){
  return (await (await counter.fetch('https://usage/',{method:'POST',body:JSON.stringify({kind,bytes})})).json()).ok;
 }
 const LIMIT_REACHED='The dev host reached 80% of its free monthly allowance and is paused until next month, so nothing is charged.';
+// Files no manifest game lists any more (left by earlier uploads). With remove, deletes them.
+// Listing costs one write per 1000 objects; deleting is free.
+async function unused(env,remove){
+ const manifest=await env.FILES.get('manifest.json');
+ if(!manifest)return {error:'No manifest yet; nothing is cleaned up without one.'};
+ const keep=new Set(Object.values((await manifest.json()).games).flatMap(g=>Object.values(g.files)).map(d=>'files/'+d));
+ const found=[];let cursor,bytes=0;
+ do{
+  if(!await allow(env,'write'))return {error:LIMIT_REACHED};
+  const page=await env.FILES.list({prefix:'files/',cursor,limit:1000});
+  for(const o of page.objects)if(!keep.has(o.key)){found.push(o.key);bytes+=o.size;}
+  cursor=page.truncated?page.cursor:undefined;
+ }while(cursor);
+ if(remove){
+  for(let i=0;i<found.length;i+=1000)await env.FILES.delete(found.slice(i,i+1000));
+  await allow(env,'freed',bytes);
+ }
+ return {count:found.length,bytes,kept:keep.size};
+}
 const hex=buffer=>[...new Uint8Array(buffer)].map(b=>b.toString(16).padStart(2,'0')).join('');
 export default {
  async fetch(request,env){
@@ -70,6 +91,12 @@ export default {
   const upload=!origin&&await same(key,env.UPLOAD_KEY);
   if(!upload&&!await same(key,env.DEV_KEY))return reply('Wrong dev key',401);
   const parts=new URL(request.url).pathname.split('/').filter(Boolean);
+  // GET /prune previews, POST /prune deletes; only the upload tool can do either.
+  if(parts.length===1&&parts[0]==='prune'){
+   if(!upload||!['GET','POST'].includes(request.method))return reply(null,405);
+   const result=await unused(env,request.method==='POST');
+   return result.error?reply(result.error,result.error===LIMIT_REACHED?507:409):Response.json(result,{headers});
+  }
   const name=parts.length===1&&parts[0]==='manifest.json'?'manifest.json':parts.length===2&&parts[0]==='files'&&HASH.test(parts[1])?'files/'+parts[1]:null;
   if(!name)return reply('Not found',404);
   if(request.method==='GET'||request.method==='HEAD'){

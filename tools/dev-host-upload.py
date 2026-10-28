@@ -3,6 +3,7 @@
 
   python3 tools/dev-host-upload.py --new-keys   make the two keys once (kept in local/, git-ignored)
   python3 tools/dev-host-upload.py              upload dist/ (only files the host does not have yet)
+  python3 tools/dev-host-upload.py --prune      delete files the current upload no longer uses (asks first)
 
 The files are Nintendo's: they go only to the key-gated Worker, never to git or Pages.
 """
@@ -74,7 +75,7 @@ def request(url, key, method='GET', data=None, content_type=None):
         with urllib.request.urlopen(req, context=CONTEXT, timeout=300) as r:
             return r.status, r.read()
     except urllib.error.HTTPError as e:
-        if e.code in (401, 503, 507):
+        if e.code in (401, 409, 503, 507):
             raise SystemExit(f'Dev host refused the upload ({e.code}): {e.read().decode(errors="replace")}')
         return e.code, b''
 
@@ -132,9 +133,31 @@ def upload(host, key, jobs):
     print('In the browser: Load disc > Download from dev host.')
 
 
+def prune(host, key):
+    # Run it only when no upload is in progress: an upload's new files are unused until its manifest lands.
+    status, body = request(host+'prune', key)
+    if status != 200:
+        raise SystemExit(f'Could not check for unused files ({status}).')
+    found = json.loads(body)
+    if not found['count']:
+        print(f'Nothing to clean up: all {found["kept"]} stored files are in the current upload.')
+        return
+    print(f'{found["count"]} files ({found["bytes"]/1048576:.0f} MB) are no longer used by the current upload '
+          f'({found["kept"]} files are kept).')
+    if input('Delete them for good? Type yes: ').strip().lower() != 'yes':
+        print('Nothing deleted.')
+        return
+    status, body = request(host+'prune', key, 'POST', b'')
+    if status != 200:
+        raise SystemExit(f'Clean-up failed ({status}).')
+    done = json.loads(body)
+    print(f'Deleted {done["count"]} files ({done["bytes"]/1048576:.0f} MB).')
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--new-keys', action='store_true', help='create the dev and upload keys in local/dev-host.env')
+    parser.add_argument('--prune', action='store_true', help='delete stored files the current upload no longer uses (asks first)')
     parser.add_argument('--jobs', type=int, default=8, help='parallel uploads (default 8)')
     args = parser.parse_args()
     if args.new_keys:
@@ -142,4 +165,7 @@ if __name__ == '__main__':
         sys.exit()
     CONTEXT = context()
     keys = read_keys()
+    if args.prune:
+        prune(keys.get('RHF_DEV_HOST', DEFAULT_URL).rstrip('/')+'/', keys['RHF_UPLOAD_KEY'])
+        sys.exit()
     upload(keys.get('RHF_DEV_HOST', DEFAULT_URL).rstrip('/')+'/', keys['RHF_UPLOAD_KEY'], args.jobs)

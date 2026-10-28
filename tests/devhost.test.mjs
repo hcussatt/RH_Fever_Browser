@@ -6,7 +6,7 @@ import {checkCommonKey,keyDigits} from '../web/import/wii-key.mjs';
 import {readLibrary} from '../web/engine/assets.mjs';
 const sha=async data=>[...new Uint8Array(await crypto.subtle.digest('SHA-256',typeof data==='string'?new TextEncoder().encode(data):data))].map(b=>b.toString(16).padStart(2,'0')).join('');
 // In-memory stand-ins for the R2 bucket, Cache Storage and localStorage.
-function bucket(){const data=new Map();return {data,async get(k){const v=data.get(k);return v&&{body:v.body,size:v.body.byteLength,httpMetadata:v.meta};},async head(k){const v=await this.get(k);return v&&{...v,body:undefined};},async put(k,body,o){data.set(k,{body:new Uint8Array(body),meta:o.httpMetadata});},async list(){return {objects:[...data.values()].map(v=>({size:v.body.byteLength})),truncated:false};}};}
+function bucket(){const data=new Map();return {data,async get(k){const v=data.get(k);return v&&{body:v.body,size:v.body.byteLength,httpMetadata:v.meta,async json(){return JSON.parse(new TextDecoder().decode(v.body));}};},async head(k){const v=await this.get(k);return v&&{...v,body:undefined};},async put(k,body,o){data.set(k,{body:new Uint8Array(body),meta:o.httpMetadata});},async list({prefix=''}={}){return {objects:[...data].filter(([k])=>k.startsWith(prefix)).map(([key,v])=>({key,size:v.body.byteLength})),truncated:false};},async delete(keys){for(const k of [keys].flat())data.delete(k);}};}
 // The usage counter: one Durable Object with in-memory storage.
 function usage(e){let object;const data=new Map();return {data,idFromName:n=>n,get(){object??=new Usage({storage:{async get(k){return data.get(k);},async put(k,v){data.set(k,structuredClone(v));},async setAlarm(){}}},e);return {fetch:(url,init)=>object.fetch(new Request(url,init))};}};}
 const env=()=>{const e={DEV_KEY:'dev-secret',UPLOAD_KEY:'upload-secret',ALLOWED_ORIGINS:'https://hcussatt.github.io',FILES:bucket()};e.USAGE=usage(e);return e;};
@@ -100,4 +100,20 @@ test('the dev host stops at 80% of the free monthly allowance',async()=>{
   const fresh=env();fresh.FILES=e.FILES;fresh.USAGE=usage(fresh);fresh.USAGE.data.set('usage',saved2);
   assert.equal((await call(fresh,'files/'+digest,{key:'dev-secret'})).status,200);
  }finally{Object.assign(LIMITS,saved);}
+});
+test('prune previews and deletes only files the current manifest no longer lists, for the upload tool only',async()=>{
+ const e=env(),put=async body=>{const d=await sha(body);await call(e,'files/'+d,{method:'PUT',key:'upload-secret',origin:null,body});return d;};
+ const keep=await put('RIFF keep'),old=await put('RIFF old file');
+ assert.equal((await call(e,'prune',{key:'upload-secret',origin:null})).status,409,'no manifest, no clean-up');
+ await call(e,'manifest.json',{method:'PUT',key:'upload-secret',origin:null,body:JSON.stringify({games:{golf:{files:{'a.wav':keep}}}})});
+ assert.equal((await call(e,'prune',{key:'dev-secret'})).status,405,'the dev link cannot prune');
+ assert.equal((await call(e,'prune',{method:'POST',key:'upload-secret'})).status,401,'browsers cannot prune');
+ const preview=await (await call(e,'prune',{key:'upload-secret',origin:null})).json();
+ assert.deepEqual(preview,{count:1,bytes:'RIFF old file'.length,kept:1});
+ assert.ok(e.FILES.data.has('files/'+old),'a preview deletes nothing');
+ const before=e.USAGE.data.get('usage').bytes;
+ const done=await (await call(e,'prune',{method:'POST',key:'upload-secret',origin:null})).json();
+ assert.equal(done.count,1);
+ assert.ok(!e.FILES.data.has('files/'+old));assert.ok(e.FILES.data.has('files/'+keep));assert.ok(e.FILES.data.has('manifest.json'));
+ assert.equal(e.USAGE.data.get('usage').bytes,before-'RIFF old file'.length,'the cap gets the space back');
 });
