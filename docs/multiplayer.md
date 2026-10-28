@@ -48,6 +48,17 @@ fewer missed cues (misses + unanswered), then more Superbs, then more Perfects;
 otherwise it is a draw. Final results therefore also carry the original grade
 and per-category counts.
 
+## Practice before each song
+
+A game with a practice (`chart.practice`) shows **Practice** in place of Ready,
+plus **Skip practice**. Practice plays the game's original practice in the game
+frame, whatever the game select's Skip practice switch says. When it ends, or the
+player skips it (the lobby button, Enter, or the game's own Skip), the song waits
+paused and that player is marked ready. Games without one (remixes and most "2"
+games) keep Ready. A replay of an interrupted song uses Ready. Escape or a
+hidden tab during practice pauses only the practice; changing games or an
+interruption stops it.
+
 ## Look and lead bar
 
 The lobby uses the game select's theme: while a game is loaded, the selected

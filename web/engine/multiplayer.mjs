@@ -9,13 +9,13 @@ export function mountMultiplayer({games,version,openImport,showGame=()=>{}}){
  <div id="lobby-setup"><label>Your name<input id="lobby-name" maxlength="24" value="Player"></label><div class="lobby-actions"><button id="lobby-create">Create invite</button><button id="lobby-join">Generate answer</button></div>
  <label>Invite link or answer code<textarea id="lobby-incoming" rows="2" maxlength="48000" spellcheck="false"></textarea></label><button id="lobby-accept" hidden>Connect with answer</button>
  <label id="lobby-output-label" hidden><span id="lobby-output-title">Connection code</span><textarea id="lobby-output" rows="2" readonly></textarea></label><button id="lobby-copy" hidden>Copy connection details</button></div>
- <div id="lobby-connected" hidden><label>Mode<select id="lobby-mode"><option value="single">One game</option></select></label><label id="lobby-game-label">Game<select id="lobby-game"></select></label><p id="lobby-role"></p><div class="lobby-actions"><button id="lobby-start-match" hidden>Start match</button><button id="lobby-ready" disabled>Ready</button><button id="lobby-next" hidden>Next song</button><button id="lobby-rematch" hidden>New round</button><button id="lobby-import">Load your disc</button><button id="lobby-reload">Reload local game</button></div></div>
+ <div id="lobby-connected" hidden><label>Mode<select id="lobby-mode"><option value="single">One game</option></select></label><label id="lobby-game-label">Game<select id="lobby-game"></select></label><p id="lobby-role"></p><div class="lobby-actions"><button id="lobby-start-match" hidden>Start match</button><button id="lobby-ready" disabled>Ready</button><button id="lobby-skip-practice" hidden>Skip practice</button><button id="lobby-next" hidden>Next song</button><button id="lobby-rematch" hidden>New round</button><button id="lobby-import">Load your disc</button><button id="lobby-reload">Reload local game</button></div></div>
  <p id="lobby-status" role="status" aria-live="polite"></p>
  <div id="lobby-lead" hidden><div class="lead-names"><span>You</span><span id="lobby-lead-friend">Friend</span></div><div class="lead-track" role="img"><span class="lead-diamond"></span></div></div><p id="lobby-progress"></p><p id="lobby-results"></p><div id="lobby-match" hidden></div><div id="lobby-game-container"></div>`;
  document.querySelector('.cabinet').after(root);
  const $=id=>root.querySelector('#'+id),cabinet=document.querySelector('.cabinet');
  const entry=document.createElement('button');entry.id='open-multiplayer';entry.textContent='MULTIPLAYER';document.querySelector('.deck-buttons').prepend(entry);
- let peer,frame,api,loading=false,loadToken=0,task=false,autoSelected=false,localError='';
+ let peer,frame,api,practising=false,practised=null,loading=false,loadToken=0,task=false,autoSelected=false,localError='';
  for(const game of games){const option=document.createElement('option');option.value=game.id;option.textContent=game.title;$('lobby-game').append(option);}
  const available=new Set(games.map(g=>g.id)),title=id=>games.find(g=>g.id===id)?.title||id,sets=remixSets(available);
  for(const set of sets){const option=document.createElement('option');option.value='set:'+set.title;option.textContent=set.title+' set ('+set.games.length+' songs)';$('lobby-mode').append(option);}
@@ -36,8 +36,11 @@ export function mountMultiplayer({games,version,openImport,showGame=()=>{}}){
   $('lobby-role').textContent=m?`${m.title} match · song ${m.index+1} of ${m.games.length}: ${title(m.games[m.index])}. `+(p.host?(p.matchOver?'Match over. Start another match or pick a mode.':'You are the host: press Next song after each song.'):'The host moves the match on. Your browser follows automatically.')
    :p.host?'You are the host. Choose a game or a match for both players.':'The host chooses the game. Your browser follows automatically.';
   if(p.selectedGame)$('lobby-game').value=p.selectedGame;
-  $('lobby-ready').disabled=p.state!=='lobby'||!p.selectedGame||!api||loading||p.localReady||p.preparing;
-  $('lobby-ready').textContent=p.preparing?'Preparing…':p.localReady?'Ready — waiting for friend':'Ready';
+  // A game with a practice makes each player practise (or skip it) to become ready; replays just Ready.
+  const practice=!!api?.hasPractice?.()&&practised!==p.selectedGame&&!p.localReady;
+  $('lobby-ready').disabled=p.state!=='lobby'||!p.selectedGame||!api||loading||p.localReady||p.preparing||practising;
+  $('lobby-ready').textContent=p.preparing?'Preparing…':p.localReady?'Ready — waiting for friend':practising?'Practising…':practice?'Practice':'Ready';
+  $('lobby-skip-practice').hidden=!(practice||practising);$('lobby-skip-practice').disabled=p.state!=='lobby'||loading||p.preparing;
   $('lobby-rematch').hidden=!p.canRematch;$('lobby-rematch').textContent=m?'Replay this song':'New round';
   let text=localError||(loading?'Loading the host’s selected game…':p.message||'');
   if(p.state==='playing')text=performance.now()<p.began?'Starts in '+Math.ceil((p.began-performance.now())/1000)+'…':'Playing '+(games.find(g=>g.id===p.selectedGame)?.title||'')+(p.connected?'':' · Connection lost; local play continues');
@@ -76,7 +79,7 @@ export function mountMultiplayer({games,version,openImport,showGame=()=>{}}){
   const caption=table.createCaption();caption.textContent=`${m.title} match`;board.replaceChildren(table);
  }
  async function load(id){
-  const token=++loadToken;showGame(id);api?.stop();api=null;loading=true;localError='';
+  const token=++loadToken;showGame(id);practised=null;api?.stop();api=null;loading=true;localError='';
   frame=document.createElement('iframe');frame.id='lobby-player';frame.title=games.find(g=>g.id===id)?.title||'Selected game';frame.allow='autoplay';frame.src=new URL(id+'/?lobby=1',siteRoot);$('lobby-game-container').replaceChildren(frame);update(peer);
   const current=frame;
   try{
@@ -116,7 +119,14 @@ export function mountMultiplayer({games,version,openImport,showGame=()=>{}}){
  $('lobby-join').onclick=()=>run(async()=>{decodeSignal($('lobby-incoming').value,'offer');output(await create().answer($('lobby-incoming').value),'Answer code');$('lobby-create').hidden=true;$('lobby-join').hidden=true;});
  $('lobby-accept').onclick=()=>run(()=>peer.accept($('lobby-incoming').value));
  $('lobby-copy').onclick=()=>run(async()=>{await navigator.clipboard.writeText($('lobby-output').value);$('lobby-status').textContent='Copied. Send it to your friend.';});
- $('lobby-ready').onclick=()=>run(()=>peer.ready());$('lobby-rematch').onclick=()=>peer.rematch();
+ $('lobby-ready').onclick=()=>{
+  if(!api?.hasPractice?.()||practised===peer.selectedGame){run(()=>peer.ready());return;}
+  // Practise in the game frame; once it is done (or skipped) the song waits, paused, and this player is ready.
+  const active=api,game=peer.selectedGame;practising=true;update(peer);frame.contentWindow.focus();
+  active.practice().then(()=>{practising=false;if(active!==api||game!==peer.selectedGame)return update(peer);practised=game;run(()=>peer.ready());},
+   e=>{practising=false;$('lobby-status').textContent=e.message;update(peer);});
+ };
+ $('lobby-skip-practice').onclick=()=>{if(practising){api?.skipPractice();return;}practised=peer.selectedGame;run(()=>peer.ready());};$('lobby-rematch').onclick=()=>peer.rematch();
  $('lobby-game').onchange=()=>{if(!peer.selectGame($('lobby-game').value))update(peer);};
  $('lobby-mode').onchange=()=>{if($('lobby-mode').value==='single'&&peer.match&&!peer.selectGame($('lobby-game').value))$('lobby-mode').value=modeOf(peer.match);update(peer);};
  $('lobby-start-match').onclick=()=>{const mode=$('lobby-mode').value,match=mode==='shuffle'?shuffleMatch(available):sets.find(s=>'set:'+s.title===mode);if(match&&!peer.startMatch(match))update(peer);};
