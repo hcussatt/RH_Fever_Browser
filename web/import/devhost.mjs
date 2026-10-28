@@ -19,6 +19,7 @@ async function get(path,key,fetchFn){
  const r=await fetchFn(new URL(path,DEV_HOST_URL),{headers:{authorization:'Bearer '+key}});
  if(r.status===401)throw new Error('The dev host did not accept this dev key.');
  if(r.status===404&&path==='manifest.json')throw new Error('The dev host has no files yet. Run tools/dev-host-upload.py on the Mac.');
+ if(r.status===503)throw new Error(await r.text()||'The dev host is unavailable.');
  if(!r.ok)throw new Error('The dev host is unavailable ('+r.status+').');
  return r;
 }

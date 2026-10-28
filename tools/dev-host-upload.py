@@ -74,7 +74,7 @@ def request(url, key, method='GET', data=None, content_type=None):
         with urllib.request.urlopen(req, context=CONTEXT, timeout=300) as r:
             return r.status, r.read()
     except urllib.error.HTTPError as e:
-        if e.code in (401, 503):
+        if e.code in (401, 503, 507):
             raise SystemExit(f'Dev host refused the upload ({e.code}): {e.read().decode(errors="replace")}')
         return e.code, b''
 
