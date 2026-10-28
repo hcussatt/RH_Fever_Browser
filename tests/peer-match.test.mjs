@@ -1,6 +1,8 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {PROTOCOL,PeerMatch,encodeSignal,decodeSignal,compareResults,clockSample} from '../web/engine/peer-match.mjs';
+import {songScore,totals,compareTotals,remixSets,shuffleMatch} from '../web/engine/versus.mjs';
+import {SETS} from '../web/engine/menu.mjs';
 const stats=(hits=10,misses=0,through=0)=>({hits,misses,through,stray:0,perfectFailed:0});
 function pair(){
  const options={identity:'same',prepare:async()=>{},start:()=>{},stop:()=>{},snapshot:()=>stats()};
@@ -17,7 +19,7 @@ test('manual signaling roundtrip, URL fragments, malformed and wrong answers',()
  const code=encodeSignal(v);assert.deepEqual(decodeSignal('https://example.com/golf/#invite='+code,'offer'),v);
  assert.throws(()=>decodeSignal(code,'answer'));assert.throws(()=>decodeSignal('!!!','offer'));assert.throws(()=>decodeSignal('a'.repeat(48001),'offer'));
 });
-test('comparison counts throughs and permits a draw; rejects invalid counters',()=>{
+test('single-song comparison scores hit rate, counts throughs and permits a draw; rejects invalid counters',()=>{
  assert.equal(compareResults(stats(10,0,3),stats(10,1,0)),-1);
  assert.equal(compareResults(stats(),stats()),0);assert.equal(compareResults(stats(),stats(8,1,1)),1);
  assert.throws(()=>compareResults({...stats(),hits:-1},stats()));
@@ -79,5 +81,50 @@ test('host waits for both final results before changing games',async()=>{
   a.state='finished';a.localResult=stats();a.remoteResult=null;
   assert.equal(a.selectGame('tap'),false);
   a.remoteResult=stats();assert.equal(a.selectGame('tap'),true);
+ }finally{a.close();b.close();}
+});
+
+test('song score averages the original category hit rates; match totals break ties in order',()=>{
+ const cat=(total,hits)=>({total,hits,misses:total-hits,through:0});
+ // A short category counts as much as a long one.
+ assert.equal(songScore({...stats(),categories:[cat(100,100),cat(10,5)]}),75);
+ assert.equal(songScore({...stats(),categories:[cat(0,0),cat(3,2)]}),66.7);
+ assert.equal(songScore(stats(3,1,0)),75);assert.equal(songScore(stats(0,0,0)),100);
+ const r=(score,miss,grade,perfectFailed=1)=>({...stats(score,0,miss),grade,perfectFailed,categories:[cat(100,score)]});
+ assert.equal(compareTotals(totals([r(90,0,1),r(80,0,1)]),totals([r(85,0,1),r(84,0,1)])),1);
+ assert.equal(compareTotals(totals([r(90,5,1)]),totals([r(90,0,1)])),-1,'equal score: fewer missed wins');
+ assert.equal(compareTotals(totals([r(90,0,0)]),totals([r(90,0,1)])),1,'then more Superbs');
+ assert.equal(compareTotals(totals([r(90,0,1,0)]),totals([r(90,0,1)])),1,'then Perfects');
+ assert.equal(compareTotals(totals([r(90,0,1)]),totals([r(90,0,1)])),0);
+ assert.throws(()=>compareResults({...stats(),categories:[{total:-1,hits:0,misses:0,through:0}]},stats()));
+});
+test('standard sets follow the song select rows; shuffle draws 3 different minigames and a remix',()=>{
+ const all=new Set(SETS.flatMap(s=>s.games));
+ const sets=remixSets(all);assert.equal(sets.length,10);assert.deepEqual(sets[0].games,['golf','robot','seesaw','date','remix1']);
+ assert.equal(remixSets(new Set(['golf','robot'])).length,0,'a set needs its remix');
+ for(let seed=0;seed<50;seed++){let x=seed;const m=shuffleMatch(all,()=>(x=(x*9301+49297)%233280)/233280);
+  assert.equal(m.games.length,4);assert.equal(new Set(m.games).size,4);assert.ok(m.games.slice(0,3).every(id=>!id.startsWith('remix')));assert.ok(m.games[3].startsWith('remix'));}
+ assert.equal(shuffleMatch(new Set(['golf','remix1'])),null);
+});
+test('a match plays its songs in order, records both results and ends with totals',async()=>{
+ const [a,b]=pair();try{await flush();const list=['golf','robot','remix1'];a.games=b.games=['golf','robot','seesaw','remix1'];
+  const loaded=[];b.onselect=id=>loaded.push(id);
+  assert.equal(b.startMatch({title:'Remix 1',games:list}),false,'guests cannot start a match');
+  assert.equal(a.startMatch({title:'Remix 1',games:['golf','nope']}),false);
+  assert.equal(a.startMatch({title:'Remix 1',games:list}),true);await flush();
+  assert.deepEqual(loaded,['golf']);assert.equal(b.match.index,0);assert.equal(a.nextSong(),false,'not before results');
+  for(let i=0;i<list.length;i++){
+   a.state=b.state='playing';a.finish(stats(10,i));b.finish(stats(10,0));await flush();await flush();
+   assert.deepEqual(a.match.history[i],{local:stats(10,i),remote:stats(10,0)});assert.deepEqual(b.match.history[i],{local:stats(10,0),remote:stats(10,i)});
+   assert.equal(a.canRematch,false,'finished songs move on');
+   if(i<list.length-1){assert.equal(a.matchOver,false);assert.equal(a.nextSong(),true);await flush();assert.equal(b.selectedGame,list[i+1]);assert.equal(b.match.history.length,i+1);}
+  }
+  assert.ok(a.matchOver&&b.matchOver);assert.equal(a.nextSong(),false);assert.deepEqual(loaded,list);
+  // An interrupted song is replayed inside the match; picking one game ends it.
+  assert.equal(a.startMatch({title:'Remix 1',games:list}),true);await flush();assert.equal(b.match.history.length,0);
+  a.state='playing';a.interrupt('Pause');await flush();assert.ok(b.canRematch);b.rematch();await flush();await flush();assert.equal(a.state,'lobby');assert.equal(a.match.index,0);
+  a.selectGame('seesaw');await flush();assert.equal(a.match,null);assert.equal(b.match,null);
+  // A guest ignores a match whose song does not match the selection.
+  b.receive({type:'select',round:b.round+1,game:'golf',match:{title:'x',games:['robot'],index:0}});assert.equal(b.selectedGame,'seesaw');
  }finally{a.close();b.close();}
 });

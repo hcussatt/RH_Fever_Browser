@@ -16,8 +16,8 @@ same-origin iframe, so changing games does not navigate away or lose the peer.
 Ready unlocks local audio, then schedules a shared countdown. The deadline is
 translated between the parent and iframe performance-clock origins. Gameplay,
 audio, timing windows and scoring remain local. Opponent summaries and final
-comparisons are displayed above the game. Fewer original misses + unanswered cues
-wins; equal counts draw. Results are self-reported. New round requires both Ready
+comparisons are displayed above the game. The higher song score wins (see Matches and scoring);
+equal scores and missed counts draw. Results are self-reported. New round requires both Ready
 again. Pause, restart or hiding a ready/playing tab interrupts an incomplete round.
 
 There are no accounts or signaling backend. STUN is external infrastructure
@@ -25,9 +25,32 @@ There are no accounts or signaling backend. STUN is external infrastructure
 connect. HTTPS or localhost is required. Each player supplies their own disc data;
 no assets are transferred. Localhost invite links are for same-machine testing.
 
+## Matches and scoring
+
+The host's **Mode** picks one game (as before), a remix set, or Shuffle:
+
+- **Remix N set**: that song-select row's minigames in order, then the remix
+  (`SETS` in `web/engine/menu.mjs`; Remix 8 to 10 use the row's "2" games).
+- **Shuffle**: three different minigames from the remix rows, then a random
+  remix. The host draws the list and sends it, so both players get the same one.
+
+Each song is its own round: both players press Ready before every song, and the
+host presses **Next song** once both results are in. An interrupted song can be
+replayed; a finished one cannot. Picking a single game ends the match. A table
+under the status shows each song's scores and the running totals.
+
+Scoring (`web/engine/versus.mjs`, also used for single games): a song scores
+0 to 100, the original checkpoint manager's `hits*100/total` for each grading
+category, averaged over the categories, so a short category or song weighs the
+same as a long one. The match total is the sum. Higher total wins; ties go to
+fewer missed cues (misses + unanswered), then more Superbs, then more Perfects;
+otherwise it is a draw. Final results therefore also carry the original grade
+and per-category counts.
+
 ## Protocol and timing
 
-Protocol version 2 adds host-only game selection and per-selection compatibility checks. Two RTCDataChannels carry JSON:
+Protocol version 3 adds matches: a `select` may carry `match: {title, games, index}`,
+and results carry `grade` and `categories`. Version 2 added host-only game selection and per-selection compatibility checks. Two RTCDataChannels carry JSON:
 
 - `control`: reliable/ordered hello, readiness, ping/pong, proposed deadline,
   acknowledgement, commit, interruption, results/ack and new-round messages.
