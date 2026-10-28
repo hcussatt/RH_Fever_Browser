@@ -61,7 +61,12 @@ export function mountMultiplayer({games,version,openImport}){
   if(peer)throw new Error('Leave this lobby before creating another connection.');
   peer=new PeerMatch({identity:'lobby-v2:'+version,games:games.map(g=>g.id),name:$('lobby-name').value.trim()||'Player',onchange:update,onselect:id=>load(id),
    prepare:async()=>{if(!api||loading)throw new Error('Wait for the selected game to load.');const active=api;await active.prepare();if(active!==api||loading)throw new Error('The selected game changed. Ready again after it loads.');return fingerprint();},
-   start:at=>{if(!api)throw new Error('Selected game is unavailable.');api.start(at+performance.timeOrigin-frame.contentWindow.performance.timeOrigin);frame.contentWindow.focus();},stop:()=>api?.stop(),snapshot:()=>api?.snapshot()});
+   start:at=>{if(!api)throw new Error('Selected game is unavailable.');
+    // Hand the iframe its own clock reading plus the time left, both read now. Shifting by the two
+    // pages' timeOrigins broke when Chrome on macOS reported them ~990 s apart from their real
+    // clocks: the music was scheduled in the past and both players crashed.
+    const left=at-performance.now();if(left<0){peer.interrupt('The countdown was missed. Start a new round.');return;}
+    api.start(frame.contentWindow.performance.now()+left);frame.contentWindow.focus();},stop:()=>api?.stop(),snapshot:()=>api?.snapshot()});
   window.rhfLobby={peer,get frame(){return frame;},get api(){return api;}};return peer;
  }
  async function run(fn){if(task)return;task=true;try{await fn();}catch(e){$('lobby-status').textContent=e.message;}finally{task=false;}}
