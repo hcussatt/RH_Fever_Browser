@@ -209,7 +209,8 @@ try{
  if(!games.length)throw new Error('No web games are available in this deployment.');
  selected=groupGames(games)[0].games[0].id;
  $('#version').textContent=build.version;await render();
- mountMultiplayer({games:listed(),version:build.version,openImport});
+ // The lobby wears the game it is playing's title screen and colours, like the game select.
+ mountMultiplayer({games:listed(),version:build.version,openImport,showGame:id=>showTitle(id??selected)});
  if(!build.local&&'serviceWorker' in navigator)navigator.serviceWorker.register(new URL('sw.js',siteRoot),{scope:siteRoot.pathname}).catch(console.warn);
 }catch(e){status(e.message,true);$('#import').disabled=true;}
 $('#import-form').onsubmit=async e=>{
@@ -236,7 +237,7 @@ $('#import-form').onsubmit=async e=>{
   worker.postMessage({file,key,version:build.assetVersion||build.version,games});
  }catch(e){worker?.terminate();worker=null;busy(false);status(e.message,true);}
 };
-$('#cancel').onclick=()=>{worker?.terminate();worker=null;busy(false);status('Import cancelled. Any games already prepared remain available.');render();};
+$('#cancel').onclick=()=>{worker?.terminate();worker=null;busy(false);status('Import canceled. Any games already prepared remain available.');render();};
 $('#remove').onclick=()=>$('#confirm-remove').showModal();
 $('#confirm-remove').onclose=async()=>{
  if($('#confirm-remove').returnValue!=='remove')return;
