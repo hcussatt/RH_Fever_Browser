@@ -125,6 +125,7 @@ class CtrFiles:
         dirs = self.raw(level3 + u32(head, 0x0C), u32(head, 0x10))
         metas = self.raw(level3 + u32(head, 0x1C), u32(head, 0x20))
         data = level3 + u32(head, 0x24)
+        self.level3, self.level3_data = level3, u32(head, 0x24)   # the RomFS as the program reads it
         files = {}
 
         def walk(offset, prefix):
