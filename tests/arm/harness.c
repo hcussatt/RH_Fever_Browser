@@ -28,6 +28,12 @@ int main(int argc, char **argv) {
       call(0x100000);
       printf("%08x %08x %x\n", r[0], r[1], r[13]);
     }
+  } else if (!strcmp(argv[1], "thumb")) {
+    for (int n = 4; n <= 5; n++) {
+      r[13] = 0x1f0000; r[14] = 0xdead; r[0] = n;
+      call(0x100000);
+      printf("%u %x\n", r[0], r[13]);
+    }
   } else {
     uint8_t init[] = {0x44,0x33,0x22,0x11,0xef,0xbe,0x80,0,1,2,3,4,5,6,7,8};
     memcpy(mem + 0x1000, init, 16);

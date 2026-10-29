@@ -68,6 +68,12 @@ class Memory:
                 return struct.unpack_from('<I', data, address - start)[0]
         raise Unsupported(f'{address:#x} is outside the program')
 
+    def half(self, address):
+        for start, data, _ in self.segments:
+            if start <= address and address + 2 <= start + len(data):
+                return struct.unpack_from('<H', data, address - start)[0]
+        raise Unsupported(f'{address:#x} is outside the program')
+
     def constant(self, address):
         """A word the code can never change (text or rodata), or None."""
         for start, data, read_only in self.segments:
@@ -86,6 +92,8 @@ class Insn:
         self.target = None
         self.targets = []         # switch: case targets
         self.cond = None
+        self.size = 4
+        self.thumb = False
 
 
 def reg(n, pc):
@@ -97,6 +105,8 @@ class Decoder:
         self.memory = memory
 
     def decode(self, address):
+        if address & 1:
+            return self.decode_thumb(address & ~1)
         w = self.memory.word(address)
         x = Insn(address, w)
         cond = w >> 28
@@ -353,8 +363,11 @@ class Decoder:
         if rn == 15 and not bits(w, 25, 25) and load and not byte:
             value = self.memory.constant(eval(ea.replace('u', '')))
             if value is not None:
-                if rd == 15:
-                    raise Unsupported(f'{x.address:#x}: load of a constant into pc')
+                if rd == 15:   # ldr pc, =target: a long-branch veneer
+                    if x.cond is not None:
+                        raise Unsupported(f'{x.address:#x}: conditional veneer')
+                    x.flow, x.target = 'veneer', value
+                    return
                 x.c = f'r[{rd}]={value:#x}u;'
                 return
         if load and rd == 15 and rn == 15 and not byte and bits(w, 25, 25) and bits(w, 24, 23) == 3 \
@@ -621,6 +634,174 @@ class Decoder:
         else:
             raise Unsupported(f'{x.address:#x}: vfp extension {ext}')
 
+    # Thumb (ARMv6: 16-bit instructions plus the BL/BLX pair). Outside IT blocks (there are none in
+    # ARMv6) every low-register data operation sets the flags.
+    def decode_thumb(self, address):
+        h = self.memory.half(address)
+        x = Insn(address, h)
+        x.thumb = True
+        x.size = 2
+        pc = address + 4
+        lo = lambda n: f'r[{n}]'
+        top5, top6 = h >> 11, h >> 10
+        if top5 in (0, 1, 2):   # lsl, lsr, asr by an immediate
+            rd, rm, n = h & 7, (h >> 3) & 7, (h >> 6) & 31
+            m = f'r[{rm}]'
+            if top5 == 0:
+                v, c = (m, 'fc') if n == 0 else (f'({m}<<{n})', f'(({m}>>{32-n})&1)')
+            elif top5 == 1:
+                v, c = ('0u', f'({m}>>31)') if n == 0 else (f'({m}>>{n})', f'(({m}>>{n-1})&1)')
+            else:
+                n = n or 32
+                v, c = f'(uint32_t)((int32_t){m}>>{min(n, 31)})', f'(({m}>>{n-1})&1)'
+            x.c = f'{{uint32_t c={c},v={v};logic_flags(v,c);r[{rd}]=v;}}'
+        elif top5 == 3:   # add/sub register or 3-bit immediate
+            rd, rn, val = h & 7, (h >> 3) & 7, (h >> 6) & 7
+            b = f'{val}u' if h & 0x400 else f'r[{val}]'
+            x.c = f'r[{rd}]=add_flags(r[{rn}],~({b}),1);' if h & 0x200 else f'r[{rd}]=add_flags(r[{rn}],{b},0);'
+        elif top5 in (4, 5, 6, 7):   # mov, cmp, add, sub with an 8-bit immediate
+            rd, imm = (h >> 8) & 7, h & 0xff
+            x.c = {4: f'r[{rd}]={imm}u;fn=0;fz={int(imm == 0)};',
+                   5: f'add_flags(r[{rd}],~{imm}u,1);',
+                   6: f'r[{rd}]=add_flags(r[{rd}],{imm}u,0);',
+                   7: f'r[{rd}]=add_flags(r[{rd}],~{imm}u,1);'}[top5]
+        elif top6 == 0x10:   # data processing between low registers
+            op, rm, rd = (h >> 6) & 15, (h >> 3) & 7, h & 7
+            d, m = f'r[{rd}]', f'r[{rm}]'
+            x.c = {0: f'{{uint32_t v={d}&{m};logic_flags(v,fc);{d}=v;}}',
+                   1: f'{{uint32_t v={d}^{m};logic_flags(v,fc);{d}=v;}}',
+                   2: f'{{uint32_t c=fc,v=lsl_c({d},{m},&c);logic_flags(v,c);{d}=v;}}',
+                   3: f'{{uint32_t c=fc,v=lsr_c({d},{m},&c);logic_flags(v,c);{d}=v;}}',
+                   4: f'{{uint32_t c=fc,v=asr_c({d},{m},&c);logic_flags(v,c);{d}=v;}}',
+                   5: f'{d}=add_flags({d},{m},fc);',
+                   6: f'{d}=add_flags({d},~{m},fc);',
+                   7: f'{{uint32_t c=fc,v=ror_c({d},{m},&c);logic_flags(v,c);{d}=v;}}',
+                   8: f'logic_flags({d}&{m},fc);',
+                   9: f'{d}=add_flags(0,~{m},1);',
+                   10: f'add_flags({d},~{m},1);',
+                   11: f'add_flags({d},{m},0);',
+                   12: f'{{uint32_t v={d}|{m};logic_flags(v,fc);{d}=v;}}',
+                   13: f'{{uint32_t v={d}*{m};fn=v>>31;fz=v==0;{d}=v;}}',
+                   14: f'{{uint32_t v={d}&~{m};logic_flags(v,fc);{d}=v;}}',
+                   15: f'{{uint32_t v=~{m};logic_flags(v,fc);{d}=v;}}'}[op]
+        elif top6 == 0x11:   # high registers: add, cmp, mov, bx, blx
+            op = (h >> 8) & 3
+            rm = (h >> 3) & 15
+            rd = (h & 7) | ((h >> 4) & 8)
+            m = f'{pc:#x}u' if rm == 15 else f'r[{rm}]'
+            if op == 3:
+                if h & 0x80:
+                    x.c, x.flow = f'r[15]={m};', 'call'
+                else:
+                    x.flow = 'return' if rm == 14 else 'tail'
+                    x.c = '' if rm == 14 else f'r[15]={m};'
+            elif op == 1:
+                x.c = f'add_flags(r[{rd}],~{m},1);'
+            elif rd == 15:
+                if op == 2 and rm == 14:
+                    x.c, x.flow = '', 'return'
+                else:
+                    x.c, x.flow = f'r[15]=({pc:#x}u+{m})|1;' if op == 0 else f'r[15]={m}|1;', 'indirect'
+                    if op == 0:
+                        raise Unsupported(f'{address:#x}: add pc, register (Thumb jump table)')
+            else:
+                d = f'r[{rd}]'
+                x.c = f'{d}={d}+{m};' if op == 0 else f'{d}={m};'
+        elif top5 == 9:   # ldr literal
+            a = ((pc & ~3) + (h & 0xff) * 4)
+            v = self.memory.constant(a)
+            x.c = f'r[{(h >> 8) & 7}]=' + (f'{v:#x}u;' if v is not None else f'rd32({a:#x}u);')
+        elif h >> 12 == 5:   # register offset loads and stores
+            op, rm, rn, rt = (h >> 9) & 7, (h >> 6) & 7, (h >> 3) & 7, h & 7
+            ea = f'r[{rn}]+r[{rm}]'
+            x.c = {0: f'wr32({ea},r[{rt}]);', 1: f'wr16({ea},r[{rt}]);', 2: f'wr8({ea},r[{rt}]);',
+                   3: f'r[{rt}]=(uint32_t)(int8_t)rd8({ea});', 4: f'r[{rt}]=rd32({ea});',
+                   5: f'r[{rt}]=rd16({ea});', 6: f'r[{rt}]=rd8({ea});',
+                   7: f'r[{rt}]=(uint32_t)(int16_t)rd16({ea});'}[op]
+        elif h >> 13 == 3:   # word/byte with a 5-bit immediate
+            byte, load, imm, rn, rt = (h >> 12) & 1, (h >> 11) & 1, (h >> 6) & 31, (h >> 3) & 7, h & 7
+            ea = f'r[{rn}]+{imm if byte else imm * 4}u'
+            x.c = (f'r[{rt}]={"rd8" if byte else "rd32"}({ea});' if load else f'{"wr8" if byte else "wr32"}({ea},r[{rt}]);')
+        elif h >> 12 == 8:   # halfword with a 5-bit immediate
+            load, imm, rn, rt = (h >> 11) & 1, (h >> 6) & 31, (h >> 3) & 7, h & 7
+            ea = f'r[{rn}]+{imm * 2}u'
+            x.c = f'r[{rt}]=rd16({ea});' if load else f'wr16({ea},r[{rt}]);'
+        elif h >> 12 == 9:   # sp-relative
+            load, rt, imm = (h >> 11) & 1, (h >> 8) & 7, (h & 0xff) * 4
+            x.c = f'r[{rt}]=rd32(r[13]+{imm}u);' if load else f'wr32(r[13]+{imm}u,r[{rt}]);'
+        elif h >> 12 == 10:   # add rd, pc/sp, imm
+            rd, imm = (h >> 8) & 7, (h & 0xff) * 4
+            x.c = f'r[{rd}]=r[13]+{imm}u;' if h & 0x800 else f'r[{rd}]={(pc & ~3) + imm:#x}u;'
+        elif h >> 12 == 11:
+            self.thumb_misc(x, h)
+        elif h >> 12 == 12:   # stmia / ldmia rn!
+            load, rn = (h >> 11) & 1, (h >> 8) & 7
+            regs = [i for i in range(8) if h >> i & 1]
+            parts = [f'{{uint32_t ea=r[{rn}];']
+            for i, rr in enumerate(regs):
+                parts.append(f'uint32_t v{rr}=rd32(ea+{i*4});' if load else f'wr32(ea+{i*4},r[{rr}]);')
+            if not (load and rn in regs):
+                parts.append(f'r[{rn}]=ea+{len(regs) * 4}u;')
+            if load:
+                parts.extend(f'r[{rr}]=v{rr};' for rr in regs)
+            x.c = ''.join(parts) + '}'
+        elif h >> 12 == 13:
+            cond = (h >> 8) & 15
+            if cond == 15:
+                x.c = f'svc({h & 0xff:#x},{address:#x});'
+            elif cond == 14:
+                raise Unsupported(f'{address:#x}: Thumb undefined {h:04x}')
+            else:
+                x.cond, x.flow = COND[cond], 'branch'
+                x.target = pc + (sx(h & 0xff, 8) << 1)
+        elif top5 == 0x1c:   # b
+            x.flow, x.target = 'branch', pc + (sx(h & 0x7ff, 11) << 1)
+        elif top5 == 0x1e:   # bl / blx: a pair of halves
+            low = self.memory.half(address + 2)
+            offset = sx(((h & 0x7ff) << 12) | ((low & 0x7ff) << 1), 23)
+            x.size, x.flow = 4, 'call'
+            if low >> 11 == 0x1f:
+                x.target = (pc + offset) | 1
+            elif low >> 11 == 0x1d:
+                x.target = (pc + offset) & ~3   # blx to ARM
+            else:
+                raise Unsupported(f'{address:#x}: Thumb bl pair {h:04x} {low:04x}')
+        else:
+            raise Unsupported(f'{address:#x}: Thumb {h:04x}')
+        return x
+
+    def thumb_misc(self, x, h):
+        op = (h >> 8) & 15
+        if op == 0:   # add/sub sp, imm7
+            imm = (h & 0x7f) * 4
+            x.c = f'r[13]-={imm}u;' if h & 0x80 else f'r[13]+={imm}u;'
+        elif op == 2:   # sxth, sxtb, uxth, uxtb
+            rm, rd = (h >> 3) & 7, h & 7
+            x.c = f'r[{rd}]=' + ['(uint32_t)(int32_t)(int16_t)', '(uint32_t)(int32_t)(int8_t)',
+                                 '(uint32_t)(uint16_t)', '(uint32_t)(uint8_t)'][(h >> 6) & 3] + f'(r[{rm}]);'
+        elif op in (4, 5):   # push {..., lr}
+            regs = [i for i in range(8) if h >> i & 1] + ([14] if h & 0x100 else [])
+            n = len(regs) * 4
+            x.c = f'{{uint32_t ea=r[13]-{n}u;' + ''.join(f'wr32(ea+{i*4},r[{rr}]);' for i, rr in enumerate(regs)) + 'r[13]=ea;}'
+        elif op in (12, 13):   # pop {..., pc}
+            regs = [i for i in range(8) if h >> i & 1]
+            pc_ = bool(h & 0x100)
+            n = (len(regs) + pc_) * 4
+            x.c = '{uint32_t ea=r[13];' + ''.join(f'r[{rr}]=rd32(ea+{i*4});' for i, rr in enumerate(regs)) + \
+                (f'r[15]=rd32(ea+{len(regs)*4});' if pc_ else '') + f'r[13]=ea+{n}u;}}'
+            if pc_:
+                x.flow = 'return'
+        elif op == 10 and ((h >> 6) & 3) != 2:   # rev, rev16, revsh
+            rm, rd, k = (h >> 3) & 7, h & 7, (h >> 6) & 3
+            x.c = {0: f'r[{rd}]=__builtin_bswap32(r[{rm}]);',
+                   1: f'r[{rd}]=((r[{rm}]&0x00ff00ffu)<<8)|((r[{rm}]>>8)&0x00ff00ffu);',
+                   3: f'r[{rd}]=(uint32_t)(int32_t)(int16_t)((r[{rm}]<<8)|((r[{rm}]>>8)&0xff));'}[k]
+        elif h == 0xbf00 or h & 0xff0f == 0xbf00:
+            x.c = ';'   # nop and hints
+        else:
+            raise Unsupported(f'{x.address:#x}: Thumb misc {h:04x}')
+
+
 
 def find_functions(decoder, entries, stop=()):
     """Follow control flow from each entry. Returns {entry: {address: Insn}} and the targets of
@@ -644,25 +825,26 @@ def find_functions(decoder, entries, stop=()):
 
 
 def follow(decoder, entry, functions, pending, entries, stop, external, callers):
+    """One function's body: {address: Insn}, keyed by even addresses. Odd entries are Thumb."""
     def queue(target):
         callers.setdefault(target, entry)
         pending.append(target)
     if entry in functions or entry in stop:
         return None
-    if entry & 1:
-        external.add(entry)   # Thumb code: not translated yet
-        return None
-    body, work = {}, [entry]
+    thumb = entry & 1
+    mode = lambda a: a | thumb   # a branch keeps the instruction set; its function key carries it
+    body, work = {}, [entry & ~1]
     while work:
         pc = work.pop()
         while pc not in body:
-            x = decoder.decode(pc)
+            x = decoder.decode(pc | thumb)
             body[pc] = x
             if x.flow == 'branch':
-                if x.target in functions or x.target in entries or x.target in stop:
-                    x.flow = 'tailcall'
-                    if x.target not in functions and x.target not in stop:
-                        queue(x.target)
+                key = mode(x.target)
+                if key in functions or key in entries or key in stop:
+                    x.flow, x.target = 'tailcall', key
+                    if key not in functions and key not in stop:
+                        queue(key)
                 else:
                     work.append(x.target)
             elif x.flow == 'call' and x.target is not None:
@@ -673,6 +855,15 @@ def follow(decoder, entry, functions, pending, entries, stop, external, callers)
                     # the call (ldr rX, [lr], #4) and return past it.
                     x.inline = True
                     pc += 4
+            elif x.flow == 'veneer':
+                x.flow = 'tailcall'
+                if x.target not in stop:
+                    queue(x.target)
+            elif x.flow == 'tail' and not thumb and x.word == 0xe12fff1c and body.get(pc - 4) is not None \
+                    and body[pc - 4].word == 0xe28fc001:
+                # ARM-to-Thumb veneer: add ip, pc, #1; bx ip.
+                x.flow, x.target, x.c = 'tailcall', (pc + 4) | 1, ''
+                queue(x.target)
             elif x.flow == 'switch':
                 # add pc, pc, rX, lsl #2 after cmp rX, #n and a conditional bound: the table is
                 # the branch after it (the default) and n branches after that. ldr pc, [pc, rX,
@@ -684,10 +875,9 @@ def follow(decoder, entry, functions, pending, entries, stop, external, callers)
                     x.targets = [pc + 8 + 4 * i for i in range(count)]
                 work.extend(x.targets)
                 work.append(pc + 4)
-            if x.flow in ('return', 'tail', 'indirect', 'switch') or (x.flow in ('branch', 'tailcall') and x.cond is None):
-                if x.cond is None:
-                    break
-            pc += 4
+            if x.flow in ('return', 'tail', 'indirect', 'switch', 'branch', 'tailcall') and x.cond is None:
+                break
+            pc += x.size
     return body
 
 
@@ -706,18 +896,24 @@ def switch_cases(body, pc, index):
 
 
 def generate(entry, body, functions):
+    thumb = entry & 1
     lines = [f'static void p_{entry:x}(void) {{']
     targets = {x.target for x in body.values() if x.flow == 'branch'} | {t for x in body.values() for t in x.targets} | \
         {pc + 8 for pc, x in body.items() if getattr(x, 'inline', False)}
     for pc in sorted(body):
         x = body[pc]
+        after = pc + x.size
+        back = f'{after | thumb:#x}u'   # return address: the next instruction, in this instruction set
         flow = ''
         if x.flow == 'branch':
             flow = f'goto L_{x.target:x};'
         elif x.flow == 'tailcall':
             flow = f'call({x.target:#x}u);return;'
         elif x.flow == 'call':
-            flow = f'r[14]={pc+4:#x}u;' + (f'call({x.target:#x}u);' if x.target is not None else 'call(r[15]);')
+            if 'r[15]' in x.c:
+                flow = f'{{uint32_t t={x.c.split("=", 1)[1].rstrip(";")};r[14]={back};call(t);}}'
+            else:
+                flow = f'r[14]={back};call({x.target:#x}u);'
             if getattr(x, 'inline', False):
                 flow += f'goto L_{pc+8:x};'
         elif x.flow == 'return':
@@ -726,18 +922,14 @@ def generate(entry, body, functions):
             flow = 'call(r[15]);return;'
         elif x.flow == 'switch':
             flow = 'switch(r[15]){' + ''.join(f'case {t:#x}u:goto L_{t:x};' for t in x.targets) + f'default:panic({pc:#x}u,1);return;}}'
-        code = x.c + flow
-        if x.flow == 'call' and x.c:
-            code = flow.replace('call(r[15])', '{uint32_t t;' + x.c.replace('r[15]=', 't=') + 'call(t);}') if 'r[15]' in x.c else x.c + flow
-            if 'r[15]' in x.c:
-                code = f'{{uint32_t t={x.c.split("=", 1)[1].rstrip(";")};r[14]={pc+4:#x}u;call(t);}}'
+        code = flow if x.flow == 'call' and 'r[15]' in x.c else x.c + flow
         if x.cond:
             code = f'if({x.cond}){{{code}}}'
-        label = f'L_{pc:x}: ' if pc in targets or pc == entry else ''
+        label = f'L_{pc:x}: ' if pc in targets or pc == entry & ~1 else ''
         lines.append(f'{label}{code}')
-        if not getattr(x, 'inline', False) and pc + 4 not in body and x.flow not in ('return', 'tail', 'indirect', 'branch', 'tailcall', 'switch') or \
-                (pc + 4 not in body and x.cond):
-            lines.append(f'call({pc+4:#x}u);return;')   # flows into the next function
+        ends = x.flow in ('return', 'tail', 'indirect', 'branch', 'tailcall', 'switch') and not x.cond
+        if not getattr(x, 'inline', False) and after not in body and not ends:
+            lines.append(f'call({after | thumb:#x}u);return;')   # flows into the next function
     lines.append('}')
     return '\n'.join(lines)
 
@@ -777,7 +969,7 @@ def main():
     functions, external = find_functions(Decoder(memory), entries)
     write(functions, external, out)
     print(f'Translated {len(functions)} functions, {sum(len(b) for b in functions.values())} instructions; '
-          f'{len(external)} Thumb targets left to the platform')
+          f'{sum(a & 1 for a in functions)} of them Thumb')
 
 
 if __name__ == '__main__':

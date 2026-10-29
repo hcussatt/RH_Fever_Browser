@@ -14,6 +14,8 @@ EXPECTED = {
     # loads, stores, write-back, ldm/stm, register offsets, vpush/vpop, flags into adc.
     'memory': 'ff4 ffffbeef ffffff80 4111 44 0 1f0000 7.5\n'
               '44332211efbe8000010203040506070801020304efbe440044332211efbe0000efbeffff80ffffff\n',
+    # ARM calling Thumb (blx), a Thumb loop with flags, literal loads, bl between Thumb functions.
+    'thumb': '8 1f0000\n36 1f0000\n',
 }
 failed = False
 with tempfile.TemporaryDirectory() as tmp:
