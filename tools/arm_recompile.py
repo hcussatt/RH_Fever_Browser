@@ -467,6 +467,14 @@ class Decoder:
                 and op2 in (0, 1, 2, 3, 4, 7):   # parallel add/subtract
             x.c = f'r[{rd}]=parallel({bits(w, 22, 20)},{op2},r[{rn}],r[{rm}]);'
             return
+        if bits(w, 27, 20) == 0x68 and bits(w, 5, 4) == 1:   # pkhbt, pkhtb
+            sh = bits(w, 11, 7)
+            if bits(w, 6, 6):
+                m = f'(uint32_t)((int32_t)r[{rm}]>>{min(sh or 32, 31)})'
+                x.c = f'r[{rd}]=(r[{rn}]&0xffff0000u)|({m}&0xffffu);'
+            else:
+                x.c = f'r[{rd}]=(r[{rn}]&0xffffu)|((r[{rm}]<<{sh})&0xffff0000u);'
+            return
         if w & 0x0ff00ff0 == 0x06800fb0:   # sel: bytes from rn where GE is set, else rm
             x.c = f'{{uint32_t m=(ge&1?0xffu:0)|(ge&2?0xff00u:0)|(ge&4?0xff0000u:0)|(ge&8?0xff000000u:0);' \
                   f'r[{rd}]=(r[{rn}]&m)|(r[{rm}]&~m);}}'
@@ -875,29 +883,69 @@ def follow(decoder, entry, functions, pending, entries, stop, external, callers)
                     x.targets = [pc + 8 + 4 * i for i in range(count)]
                 work.extend(x.targets)
                 work.append(pc + 4)
+            target = code_pointer(decoder.memory, body, pc, x)
+            if target is not None and target not in stop:
+                queue(target)
             if x.flow in ('return', 'tail', 'indirect', 'switch', 'branch', 'tailcall') and x.cond is None:
                 break
             pc += x.size
     return body
 
 
+def code_pointer(memory, body, pc, x):
+    """A function address built position-independently: ldr rX, =offset then add rX, pc (Thumb) or
+    add rX, pc, rX (ARM), as the C library does for callbacks. The function is translated too."""
+    if x.thumb:
+        if x.word & 0xff78 != 0x4478:
+            return None
+        rd = (x.word & 7) | (x.word >> 4 & 8)
+        loads = ((at, body.get(at)) for at in range(pc - 2, pc - 18, -2))
+        literal = lambda at, y: y.thumb and y.word >> 8 == 0x48 | rd and ((at + 4) & ~3) + (y.word & 0xff) * 4
+    else:
+        if x.word & 0x0fff0ff0 != 0x008f0000 or bits(x.word, 15, 12) != bits(x.word, 3, 0) or x.cond:
+            return None
+        rd = bits(x.word, 15, 12)
+        loads = ((at, body.get(at)) for at in range(pc - 4, pc - 36, -4))
+        literal = lambda at, y: not y.thumb and y.word & 0x0fff0000 == 0x059f0000 and bits(y.word, 15, 12) == rd \
+            and at + 8 + (y.word & 0xfff)
+    for at, y in loads:
+        if y is None:
+            return None
+        address = literal(at, y)
+        if address:
+            target = (memory.word(address) + pc + (4 if x.thumb else 8)) & 0xffffffff
+            start, data, _ = memory.segments[0]
+            ok = start <= target < start + len(data) and (target & 1 or not x.thumb and not target & 3)
+            return target if ok else None
+    return None
+
+
 def switch_cases(body, pc, index):
-    """The table's size: the bound of the last cmp rX, #n before it (the jump itself is
-    conditional on rX being below n, unsigned)."""
-    for back in range(1, 9):
+    """The table's size: the bound of the cmp rX, #n that set the flags the jump tests (the jump is
+    conditional on rX being below n, unsigned). The compiler can schedule other work in between."""
+    for back in range(1, 33):
         prior = body.get(pc - 4 * back)
-        if prior is None:
+        if prior is None or prior.thumb:
             break
-        if prior.word & 0x0ff00000 == 0x03500000 and bits(prior.word, 19, 16) == index:
-            rot, imm = bits(prior.word, 11, 8) * 2, bits(prior.word, 7, 0)
+        w = prior.word
+        if w & 0x0ff00000 == 0x03500000 and bits(w, 19, 16) == index:
+            rot, imm = bits(w, 11, 8) * 2, bits(w, 7, 0)
             n = ((imm >> rot) | (imm << (32 - rot))) & 0xffffffff if rot else imm
             return n + 1 if body[pc].cond == '(!fc||fz)' else n   # ls: up to n; cc: below n
+        sets_flags = (bits(w, 27, 26) == 0 and bits(w, 20, 20) and not (bits(w, 25, 25) == 0 and bits(w, 7, 4) == 9)) \
+            or w & 0x0fffffff == 0x0ef1fa10 or prior.flow != 'next'
+        writes_index = bits(w, 15, 12) == index and (
+            (bits(w, 27, 26) == 0 and not 8 <= bits(w, 24, 21) <= 11) or (bits(w, 27, 26) == 1 and bits(w, 20, 20)))
+        if sets_flags or writes_index:
+            break
     raise Unsupported(f'{pc:#x}: jump table without a bound check')
 
 
 def generate(entry, body, functions):
     thumb = entry & 1
-    lines = [f'static void p_{entry:x}(void) {{']
+    lines = [f'static void p_{entry:x}(void) {{', 'uint32_t lr0=r[14];']   # bx to it is a return
+    if min(body) != entry & ~1:
+        lines.append(f'goto L_{entry & ~1:x};')   # shared blocks below the entry are laid out first
     targets = {x.target for x in body.values() if x.flow == 'branch'} | {t for x in body.values() for t in x.targets} | \
         {pc + 8 for pc, x in body.items() if getattr(x, 'inline', False)}
     for pc in sorted(body):
@@ -919,7 +967,7 @@ def generate(entry, body, functions):
         elif x.flow == 'return':
             flow = 'return;'
         elif x.flow in ('tail', 'indirect'):
-            flow = 'call(r[15]);return;'
+            flow = 'if(r[15]!=lr0)call(r[15]);return;'
         elif x.flow == 'switch':
             flow = 'switch(r[15]){' + ''.join(f'case {t:#x}u:goto L_{t:x};' for t in x.targets) + f'default:panic({pc:#x}u,1);return;}}'
         code = flow if x.flow == 'call' and 'r[15]' in x.c else x.c + flow
