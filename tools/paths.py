@@ -12,6 +12,7 @@ DOL = DISC/'main.dol'
 BRSAR = DISC/'rev_tengoku.brsar'
 DECOMP = ROOT/'third_party/rhf-decomp'
 GAMES = tuple(sorted(p.parent.name for p in (ROOT/'games').glob('*/game.json')))
+CTR = BUILD/'ctr'                   # files read out of the user's decrypted Megamix dump
 DOL_SHA1 = 'd96d2c7e50b0c713cb8fcb18835258351ada5576'   # USA SOME01 main.dol
 
 
