@@ -117,3 +117,47 @@ test('prune previews and deletes only files the current manifest no longer lists
  assert.ok(!e.FILES.data.has('files/'+old));assert.ok(e.FILES.data.has('files/'+keep));assert.ok(e.FILES.data.has('manifest.json'));
  assert.equal(e.USAGE.data.get('usage').bytes,before-'RIFF old file'.length,'the cap gets the space back');
 });
+// A part as tools/devhost_pack.py builds it, with the store and deflate codecs (the pcm16 audio
+// codec is checked against the real packer in devhost-pack.test.mjs).
+async function part(files){
+ const entries=[],payloads=[];let offset=0;
+ for(const [name,text] of Object.entries(files)){
+  const data=new TextEncoder().encode(text),codec=name.endsWith('.png')?'store':'deflate';
+  const payload=codec==='store'?data:new Uint8Array(await new Response(new Blob([data]).stream().pipeThrough(new CompressionStream('deflate-raw'))).arrayBuffer());
+  entries.push({name,sha256:await sha(data),size:data.length,codec,offset,length:payload.length});payloads.push(payload);offset+=payload.length;
+ }
+ const head=new TextEncoder().encode(JSON.stringify({version:1,entries}));
+ const out=new Uint8Array(8+head.length+offset);out.set(new TextEncoder().encode('RHFP'));new DataView(out.buffer).setUint32(4,head.length,true);out.set(head,8);
+ let at=8+head.length;for(const p of payloads){out.set(p,at);at+=p.length;}
+ return out;
+}
+test('a packed game downloads in a few parts, each file checked against the manifest',async()=>{
+ const e=env(),put=async body=>{const d=await sha(body);assert.equal((await call(e,'files/'+d,{method:'PUT',key:'upload-secret',origin:null,body})).status,201);return d;};
+ const golf={'menu.json':'{"description":"packed"}','icon.png':'\u0089PNG fake','data-80200000.bin':'\u0003\u0004'};
+ const parts=[await put(await part({'data-80200000.bin':golf['data-80200000.bin'],'icon.png':golf['icon.png']})),await put(await part({'menu.json':golf['menu.json']}))];
+ const old=await put('RIFF single file from an older upload');
+ const files={};for(const [n,t] of Object.entries(golf))files[n]=await sha(t);
+ const manifest={importVersion:'iv1',games:{golf:{files,parts}}};
+ await call(e,'manifest.json',{method:'PUT',key:'upload-secret',origin:null,body:JSON.stringify(manifest)});
+ const fetched=[],fetchFn=(url,init)=>{fetched.push(String(url));return worker.fetch(new Request(String(url).replace(DEV_HOST_URL,'https://devhost.example/'),{...init,headers:{...init.headers,origin:'https://hcussatt.github.io'}}),e);};
+ const games=[{id:'golf',title:'Hole in One'}];
+ await installFromDevHost({build:{assetVersion:'p1',importVersion:'iv1'},games,key:'dev-secret',fetchFn});
+ assert.equal(fetched.length,3,'the manifest and two parts');
+ const entry=(await readLibrary()).games.golf,cache=await caches.open(entry.cache);
+ for(const [name,text] of Object.entries(golf)){
+  const r=await cache.match(new URL('golf/assets/'+name,new URL('../web/',import.meta.url)).href);
+  assert.equal(await r.text(),text);
+ }
+ // A part whose file differs from the manifest, or one that leaves a file out, is refused.
+ const store=async m=>call(e,'manifest.json',{method:'PUT',key:'upload-secret',origin:null,body:JSON.stringify(m)});
+ await store({...manifest,games:{golf:{files:{...files,'menu.json':await sha('other')},parts}}});
+ await assert.rejects(installFromDevHost({build:{assetVersion:'p2',importVersion:'iv1'},games,key:'dev-secret',fetchFn}),/menu\.json arrived damaged/);
+ await store({...manifest,games:{golf:{files:{...files,'extra.json':await sha('x')},parts}}});
+ await assert.rejects(installFromDevHost({build:{assetVersion:'p2',importVersion:'iv1'},games,key:'dev-secret',fetchFn}),/1 file is missing/);
+ assert.equal((await readLibrary()).games.golf.version,'p1','the game stays as it was');
+ // Clean-up keeps a packed game's parts and lets the single files of older uploads go.
+ await store(manifest);
+ const done=await (await call(e,'prune',{method:'POST',key:'upload-secret',origin:null})).json();
+ assert.equal(done.count,1);assert.ok(!e.FILES.data.has('files/'+old));
+ for(const d of parts)assert.ok(e.FILES.data.has('files/'+d));
+});

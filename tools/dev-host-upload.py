@@ -18,8 +18,10 @@ import secrets
 import ssl
 import subprocess
 import sys
+import tempfile
 import urllib.error
 import urllib.request
+from devhost_pack import pack
 from game_registry import web_games
 from import_version import import_version
 from wii_files import common_key
@@ -30,10 +32,6 @@ DEFAULT_URL = 'https://rhf-devhost.hcussatt.workers.dev/'
 SITE = 'https://hcussatt.github.io/RH_Fever_Browser/'
 # The same files the in-browser importer keeps (web/import/worker.mjs).
 KEEP = re.compile(r'.*\.(json|png|wav)$|^(data-[0-9a-f]+|sequence-\d+)\.bin$')
-
-
-def mime(name):
-    return {'.json': 'application/json', '.png': 'image/png', '.wav': 'audio/wav'}.get(Path(name).suffix, 'application/octet-stream')
 
 
 def read_keys():
@@ -80,7 +78,7 @@ def request(url, key, method='GET', data=None, content_type=None):
         return e.code, b''
 
 
-def upload(host, key, jobs):
+def upload(host, key, jobs, parts_dir):
     games = [g['id'] for g in web_games(ROOT, validate=False, require_runtime=False)]
     missing = [g for g in games if not (ROOT/'dist'/g/'assets/original-timeline.json').is_file()]
     if missing:
@@ -91,33 +89,51 @@ def upload(host, key, jobs):
         manifest['commit'] = subprocess.run(['git', 'rev-parse', '--short', 'HEAD'], cwd=ROOT, capture_output=True, text=True, check=True).stdout.strip()
     except (OSError, subprocess.CalledProcessError):
         pass
-    paths = {}
-    for game in games:
-        files, size = {}, 0
-        for path in sorted((ROOT/'dist'/game/'assets').iterdir()):
-            if path.is_file() and KEEP.match(path.name):
-                digest = hashlib.sha256(path.read_bytes()).hexdigest()
-                files[path.name] = digest
-                paths.setdefault(digest, path)
-                size += path.stat().st_size
-        manifest['games'][game] = {'files': files, 'bytes': size}
+    # Each game goes up as a few compressed parts (tools/devhost_pack.py), so a download takes
+    # a handful of requests instead of one per file. The manifest still lists every file's hash,
+    # which the browser checks after unpacking.
+    parts, raw = {}, 0
+    print(f'Packing {len(games)} games...')
+
+    def prepare(game):
+        files = {path.name: path.read_bytes() for path in sorted((ROOT/'dist'/game/'assets').iterdir())
+                 if path.is_file() and KEEP.match(path.name)}
+        packed = {}
+        for part in pack(files):
+            digest = hashlib.sha256(part).hexdigest()
+            packed[digest] = parts_dir/digest
+            if not packed[digest].is_file():
+                packed[digest].write_bytes(part)
+        return game, {name: (hashlib.sha256(data).hexdigest(), len(data)) for name, data in files.items()}, packed
+
+    with ThreadPoolExecutor(jobs) as pool:
+        for game, files, packed in pool.map(prepare, games):
+            size = sum(n for _, n in files.values())
+            raw += size
+            parts.update(packed)
+            manifest['games'][game] = {'files': {name: digest for name, (digest, _) in files.items()},
+                                       'parts': list(packed), 'bytes': size,
+                                       'packedBytes': sum(path.stat().st_size for path in packed.values())}
     status, body = request(host+'manifest.json', key)
     known = set()
     if status == 200:
         for entry in json.loads(body)['games'].values():
-            known.update(entry['files'].values())
-    todo = [d for d in paths if d not in known]
-    total = sum(paths[d].stat().st_size for d in todo)
-    print(f'{len(games)} games, {len(paths)} distinct files; {len(todo)} to check ({total/1048576:.0f} MB at most).')
+            known.update(entry.get('parts', []))
+    todo = [d for d in parts if d not in known]
+    total = sum(parts[d].stat().st_size for d in todo)
+    packed_size = sum(path.stat().st_size for path in parts.values())
+    print(f'{len(games)} games: {raw/1048576:.0f} MB in {sum(len(g["files"]) for g in manifest["games"].values())} files, '
+          f'packed into {len(parts)} parts of {packed_size/1048576:.0f} MB ({packed_size/max(raw, 1):.0%}); '
+          f'{len(todo)} to check ({total/1048576:.0f} MB at most).')
 
     def send(digest):
         url = host+'files/'+digest
         if request(url, key, 'HEAD')[0] == 200:
             return 0
-        status, _ = request(url, key, 'PUT', paths[digest].read_bytes(), mime(paths[digest].name))
+        status, _ = request(url, key, 'PUT', parts[digest].read_bytes(), 'application/octet-stream')
         if status != 201:
-            raise RuntimeError(f'{paths[digest]}: upload failed ({status})')
-        return paths[digest].stat().st_size
+            raise RuntimeError(f'part {digest[:12]}: upload failed ({status})')
+        return parts[digest].stat().st_size
 
     sent = 0
     with ThreadPoolExecutor(jobs) as pool:
@@ -168,4 +184,6 @@ if __name__ == '__main__':
     if args.prune:
         prune(keys.get('RHF_DEV_HOST', DEFAULT_URL).rstrip('/')+'/', keys['RHF_UPLOAD_KEY'])
         sys.exit()
-    upload(keys.get('RHF_DEV_HOST', DEFAULT_URL).rstrip('/')+'/', keys['RHF_UPLOAD_KEY'], args.jobs)
+    # The packed parts wait in a temporary folder that is removed when the upload ends.
+    with tempfile.TemporaryDirectory(prefix='rhf-dev-host-') as parts:
+        upload(keys.get('RHF_DEV_HOST', DEFAULT_URL).rstrip('/')+'/', keys['RHF_UPLOAD_KEY'], args.jobs, Path(parts))
