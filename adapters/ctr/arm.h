@@ -81,3 +81,32 @@ static inline uint32_t unsigned_sat(int64_t v, int bits, uint32_t *q) {
   if (v < 0) { *q = 1; return 0; }
   return (uint32_t)v;
 }
+
+// ARMv6 parallel add and subtract (sadd8, uqsub8, shadd16, ...). kind: 1 signed (sets GE),
+// 2 signed saturating, 3 signed halving, 5 unsigned (sets GE), 6 unsigned saturating, 7 unsigned
+// halving. op: 0 add16, 1 asx, 2 sax, 3 sub16, 4 add8, 7 sub8.
+static inline uint32_t parallel(int kind, int op, uint32_t a, uint32_t b) {
+  int sign = kind < 4, mode = kind & 3; // mode 1 plain, 2 saturating, 3 halving
+  int lanes = op >= 4 ? 4 : 2, width = op >= 4 ? 8 : 16;
+  uint32_t mask = (1u << width) - 1, out = 0, g = 0;
+  for (int i = 0; i < lanes; i++) {
+    int ia = i, ib = i, sub;
+    if (op == 0 || op == 4) sub = 0;
+    else if (op == 3 || op == 7) sub = 1;
+    else if (op == 1) { ib = 1 - i; sub = i == 0; }  // asx: low = a.lo - b.hi, high = a.hi + b.lo
+    else { ib = 1 - i; sub = i == 1; }               // sax: low = a.lo + b.hi, high = a.hi - b.lo
+    int64_t x = (a >> (ia * width)) & mask, y = (b >> (ib * width)) & mask;
+    if (sign) { if (x >> (width - 1)) x -= (int64_t)1 << width; if (y >> (width - 1)) y -= (int64_t)1 << width; }
+    int64_t v = sub ? x - y : x + y;
+    if (mode == 1) {
+      int ok = sign ? v >= 0 : (sub ? v >= 0 : v >= ((int64_t)1 << width));
+      if (ok) g |= (width == 8 ? 1u : 3u) << (i * (width / 8));
+    } else if (mode == 2) {
+      int64_t hi = sign ? ((int64_t)1 << (width - 1)) - 1 : ((int64_t)1 << width) - 1, lo = sign ? -((int64_t)1 << (width - 1)) : 0;
+      v = v > hi ? hi : v < lo ? lo : v;
+    } else v >>= 1;
+    out |= ((uint32_t)v & mask) << (i * width);
+  }
+  if (mode == 1) ge = g;
+  return out;
+}

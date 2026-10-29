@@ -30,6 +30,24 @@ class Unsupported(ValueError):
     pass
 
 
+# The ARM compiler's runtime helpers that are hand-written assembly the translator can't follow
+# (they return into tables placed after the call). Each is replaced by C with the same result.
+# Addresses are the USA program's.
+RUNTIME = {
+    # __aeabi_f2lz: float to int64, toward zero, saturating; NaN gives 0.
+    0x272940: ('f2lz', '{union{uint32_t u;float f;}v={.u=r[0]};float f=v.f;int64_t x;'
+                       'if(f!=f)x=0;else if(f>=9223372036854775808.0f)x=INT64_MAX;'
+                       'else if(f<-9223372036854775808.0f)x=INT64_MIN;else x=(int64_t)f;'
+                       'r[0]=(uint32_t)x;r[1]=(uint32_t)((uint64_t)x>>32);}'),
+    # __aeabi_f2ulz: float to uint64, toward zero, saturating; NaN and negatives give 0.
+    0x20dcac: ('f2ulz', '{union{uint32_t u;float f;}v={.u=r[0]};float f=v.f;uint64_t x;'
+                        'if(!(f>0))x=0;else if(f>=18446744073709551616.0f)x=UINT64_MAX;else x=(uint64_t)f;'
+                        'r[0]=(uint32_t)x;r[1]=(uint32_t)(x>>32);}'),
+    # IEEE float remainder (ties to the even quotient), exact, so C's remainderf matches it.
+    0x14fecc: ('frem', '{union{uint32_t u;float f;}a={.u=r[0]},b={.u=r[1]},v;v.f=remainderf(a.f,b.f);r[0]=v.u;}'),
+}
+
+
 def bits(w, hi, lo):
     return (w >> lo) & ((1 << (hi - lo + 1)) - 1)
 
@@ -215,12 +233,17 @@ class Decoder:
             x.c = f'{{uint64_t v={v};r[{lo}]=(uint32_t)v;r[{hi}]=(uint32_t)(v>>32);' + \
                 ('fn=(uint32_t)(v>>63);fz=v==0;' if bits(w, 20, 20) else '') + '}'
             return
-        if w & 0x0ff00fff == 0x01900f9f:   # ldrex: one core runs the game, so a plain load that marks
-            x.c = f'r[{bits(w, 15, 12)}]=rd32(r[{bits(w, 19, 16)}]);exclusive=r[{bits(w, 19, 16)}];'
+        if w & 0x0f900fff == 0x01900f9f:   # ldrex(b/h/d): one core runs the game, so a load that marks
+            rt, rn, size = bits(w, 15, 12), bits(w, 19, 16), bits(w, 22, 21)
+            load = {0: f'r[{rt}]=rd32(a);', 1: f'r[{rt}]=rd32(a);r[{rt+1}]=rd32(a+4);', 2: f'r[{rt}]=rd8(a);',
+                    3: f'r[{rt}]=rd16(a);'}[size]
+            x.c = f'{{uint32_t a=r[{rn}];{load}exclusive=a;}}'
             return
-        if w & 0x0ff00ff0 == 0x01800f90:   # strex succeeds while the mark stands
-            rd, rn, rt = bits(w, 15, 12), bits(w, 19, 16), bits(w, 3, 0)
-            x.c = f'if(exclusive==r[{rn}]){{wr32(r[{rn}],r[{rt}]);r[{rd}]=0;}}else r[{rd}]=1;exclusive=0xffffffff;'
+        if w & 0x0f900ff0 == 0x01800f90:   # strex(b/h/d) succeeds while the mark stands
+            rd, rn, rt, size = bits(w, 15, 12), bits(w, 19, 16), bits(w, 3, 0), bits(w, 22, 21)
+            store = {0: f'wr32(a,r[{rt}]);', 1: f'wr32(a,r[{rt}]);wr32(a+4,r[{rt+1}]);', 2: f'wr8(a,r[{rt}]);',
+                     3: f'wr16(a,r[{rt}]);'}[size]
+            x.c = f'{{uint32_t a=r[{rn}];if(exclusive==a){{{store}r[{rd}]=0;}}else r[{rd}]=1;exclusive=0xffffffff;}}'
             return
         if bits(w, 7, 7) and bits(w, 4, 4):
             self.extra_load_store(x, w)
@@ -334,6 +357,12 @@ class Decoder:
                     raise Unsupported(f'{x.address:#x}: load of a constant into pc')
                 x.c = f'r[{rd}]={value:#x}u;'
                 return
+        if load and rd == 15 and rn == 15 and not byte and bits(w, 25, 25) and bits(w, 24, 23) == 3 \
+                and not bits(w, 21, 21) and bits(w, 11, 4) == 0x10:
+            # ldr pc, [pc, rX, lsl #2]: ARMCC's jump table of addresses right after the default branch.
+            x.flow, x.index, x.table = 'switch', bits(w, 3, 0), x.address + 8
+            x.c = f'r[15]=rd32({x.address+8:#x}u+(r[{bits(w, 3, 0)}]<<2));'
+            return
         size = 'rd8' if byte else 'rd32'
         if load:
             if rd == 15:
@@ -353,6 +382,8 @@ class Decoder:
     def extra_load_store(self, x, w):
         sh, load = bits(w, 6, 5), bits(w, 20, 20)
         rd, rn = bits(w, 15, 12), bits(w, 19, 16)
+        if sh == 0:
+            raise Unsupported(f'{x.address:#x}: swp or multiply form {w:08x}')
         if bits(w, 22, 22):
             offset = f'{(bits(w, 11, 8) << 4) | bits(w, 3, 0)}u'
         else:
@@ -418,6 +449,14 @@ class Decoder:
                 raise Unsupported(f'{x.address:#x}: packed extend {w:08x}')
             add = '' if rn == 15 else f'r[{rn}]+'
             x.c = f'r[{rd}]={add}{ext}({v});'
+            return
+        if bits(w, 27, 23) == 0xC and bits(w, 22, 20) in (1, 2, 3, 5, 6, 7) and bits(w, 11, 8) == 15 \
+                and op2 in (0, 1, 2, 3, 4, 7):   # parallel add/subtract
+            x.c = f'r[{rd}]=parallel({bits(w, 22, 20)},{op2},r[{rn}],r[{rm}]);'
+            return
+        if w & 0x0ff00ff0 == 0x06800fb0:   # sel: bytes from rn where GE is set, else rm
+            x.c = f'{{uint32_t m=(ge&1?0xffu:0)|(ge&2?0xff00u:0)|(ge&4?0xff0000u:0)|(ge&8?0xff000000u:0);' \
+                  f'r[{rd}]=(r[{rn}]&m)|(r[{rm}]&~m);}}'
             return
         if w & 0x0fff0ff0 == 0x06bf0f30:
             x.c = f'r[{rd}]=__builtin_bswap32(r[{rm}]);'
@@ -587,56 +626,89 @@ def find_functions(decoder, entries, stop=()):
     """Follow control flow from each entry. Returns {entry: {address: Insn}} and the targets of
     calls found (functions not translated, for the dispatcher to report)."""
     functions, pending, external = {}, list(entries), set()
-    stop = set(stop)
+    stop, callers = set(stop) | set(RUNTIME), {}
     while pending:
         entry = pending.pop()
-        if entry in functions or entry in stop:
-            continue
-        if entry & 1:
-            external.add(entry)   # Thumb code: not translated yet
-            continue
-        body, work = {}, [entry]
-        while work:
-            pc = work.pop()
-            while pc not in body:
-                x = decoder.decode(pc)
-                body[pc] = x
-                if x.flow == 'branch':
-                    if x.target in functions or x.target in entries or x.target in stop:
-                        x.flow = 'tailcall'
-                        if x.target not in functions and x.target not in stop:
-                            pending.append(x.target)
-                    else:
-                        work.append(x.target)
-                elif x.flow == 'call' and x.target is not None:
-                    if x.target not in stop:
-                        pending.append(x.target)
-                elif x.flow == 'switch':
-                    # add pc, pc, rX, lsl #2 after cmp rX, #n and a conditional bound: the table is
-                    # the branch after it (the default) and n+1 branches after that.
-                    count = switch_cases(body, pc)
-                    x.targets = [pc + 8 + 4 * i for i in range(count)]
-                    work.extend(x.targets)
-                    work.append(pc + 4)
-                if x.flow in ('return', 'tail', 'indirect', 'switch') or (x.flow in ('branch', 'tailcall') and x.cond is None):
-                    if x.cond is None:
-                        break
-                pc += 4
-        functions[entry] = body
+        try:
+            found = follow(decoder, entry, functions, pending, entries, stop, external, callers)
+        except Unsupported as e:
+            chain, at = [], entry
+            while at in callers and len(chain) < 12:
+                chain.append(f'{at:#x}')
+                at = callers[at]
+            chain.append(f'{at:#x}')
+            raise Unsupported(f'{e} (called from {" <- ".join(chain)})') from None
+        if found is not None:
+            functions[entry] = found
     return functions, external
 
 
-def switch_cases(body, pc):
-    prior = body.get(pc - 4)
-    if prior is None or not (prior.word & 0x0ff00000 == 0x03500000):   # cmp rX, #imm
-        raise Unsupported(f'{pc:#x}: jump table without a bound check')
-    rot, imm = bits(prior.word, 11, 8) * 2, bits(prior.word, 7, 0)
-    return (((imm >> rot) | (imm << (32 - rot))) & 0xffffffff if rot else imm) + 1
+def follow(decoder, entry, functions, pending, entries, stop, external, callers):
+    def queue(target):
+        callers.setdefault(target, entry)
+        pending.append(target)
+    if entry in functions or entry in stop:
+        return None
+    if entry & 1:
+        external.add(entry)   # Thumb code: not translated yet
+        return None
+    body, work = {}, [entry]
+    while work:
+        pc = work.pop()
+        while pc not in body:
+            x = decoder.decode(pc)
+            body[pc] = x
+            if x.flow == 'branch':
+                if x.target in functions or x.target in entries or x.target in stop:
+                    x.flow = 'tailcall'
+                    if x.target not in functions and x.target not in stop:
+                        queue(x.target)
+                else:
+                    work.append(x.target)
+            elif x.flow == 'call' and x.target is not None:
+                if x.target not in stop:
+                    queue(x.target)
+                if not x.target & 1 and decoder.memory.word(x.target) & 0xffff0fff == 0xe49e0004:
+                    # The ARM compiler's float helpers read an argument word placed right after
+                    # the call (ldr rX, [lr], #4) and return past it.
+                    x.inline = True
+                    pc += 4
+            elif x.flow == 'switch':
+                # add pc, pc, rX, lsl #2 after cmp rX, #n and a conditional bound: the table is
+                # the branch after it (the default) and n branches after that. ldr pc, [pc, rX,
+                # lsl #2] reads n addresses from there instead.
+                count = switch_cases(body, pc, x.index)
+                if getattr(x, 'table', None):
+                    x.targets = sorted({decoder.memory.word(x.table + 4 * i) for i in range(count)})
+                else:
+                    x.targets = [pc + 8 + 4 * i for i in range(count)]
+                work.extend(x.targets)
+                work.append(pc + 4)
+            if x.flow in ('return', 'tail', 'indirect', 'switch') or (x.flow in ('branch', 'tailcall') and x.cond is None):
+                if x.cond is None:
+                    break
+            pc += 4
+    return body
+
+
+def switch_cases(body, pc, index):
+    """The table's size: the bound of the last cmp rX, #n before it (the jump itself is
+    conditional on rX being below n, unsigned)."""
+    for back in range(1, 9):
+        prior = body.get(pc - 4 * back)
+        if prior is None:
+            break
+        if prior.word & 0x0ff00000 == 0x03500000 and bits(prior.word, 19, 16) == index:
+            rot, imm = bits(prior.word, 11, 8) * 2, bits(prior.word, 7, 0)
+            n = ((imm >> rot) | (imm << (32 - rot))) & 0xffffffff if rot else imm
+            return n + 1 if body[pc].cond == '(!fc||fz)' else n   # ls: up to n; cc: below n
+    raise Unsupported(f'{pc:#x}: jump table without a bound check')
 
 
 def generate(entry, body, functions):
     lines = [f'static void p_{entry:x}(void) {{']
-    targets = {x.target for x in body.values() if x.flow == 'branch'} | {t for x in body.values() for t in x.targets}
+    targets = {x.target for x in body.values() if x.flow == 'branch'} | {t for x in body.values() for t in x.targets} | \
+        {pc + 8 for pc, x in body.items() if getattr(x, 'inline', False)}
     for pc in sorted(body):
         x = body[pc]
         flow = ''
@@ -646,6 +718,8 @@ def generate(entry, body, functions):
             flow = f'call({x.target:#x}u);return;'
         elif x.flow == 'call':
             flow = f'r[14]={pc+4:#x}u;' + (f'call({x.target:#x}u);' if x.target is not None else 'call(r[15]);')
+            if getattr(x, 'inline', False):
+                flow += f'goto L_{pc+8:x};'
         elif x.flow == 'return':
             flow = 'return;'
         elif x.flow in ('tail', 'indirect'):
@@ -661,7 +735,7 @@ def generate(entry, body, functions):
             code = f'if({x.cond}){{{code}}}'
         label = f'L_{pc:x}: ' if pc in targets or pc == entry else ''
         lines.append(f'{label}{code}')
-        if pc + 4 not in body and x.flow not in ('return', 'tail', 'indirect', 'branch', 'tailcall', 'switch') or \
+        if not getattr(x, 'inline', False) and pc + 4 not in body and x.flow not in ('return', 'tail', 'indirect', 'branch', 'tailcall', 'switch') or \
                 (pc + 4 not in body and x.cond):
             lines.append(f'call({pc+4:#x}u);return;')   # flows into the next function
     lines.append('}')
@@ -672,8 +746,9 @@ def write(functions, external, out):
     text = ['/* Generated by tools/arm_recompile.py from the user\'s own Megamix dump. Do not commit. */']
     text.extend(f'static void p_{a:x}(void);' for a in sorted(functions))
     text.extend(generate(a, functions[a], functions) for a in sorted(functions))
+    text.extend(f'static void p_{a:x}(void) /* {name} */ {body}' for a, (name, body) in sorted(RUNTIME.items()))
     text.append('static int dispatch_original(uint32_t address) {switch(address){')
-    text.extend(f'case {a:#x}u: p_{a:x}(); return 1;' for a in sorted(functions))
+    text.extend(f'case {a:#x}u: p_{a:x}(); return 1;' for a in sorted(set(functions) | set(RUNTIME)))
     text.append('default:return 0;}}')
     pathlib.Path(out).write_text('\n'.join(text) + '\n')
 
