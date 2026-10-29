@@ -2,7 +2,7 @@
 """Read the program and file list the port needs out of the user's own decrypted
 Rhythm Heaven Megamix (USA) dump.
 
-Usage: extract-3ds.py "Rhythm Heaven Megamix (USA).cia"   (a decrypted .cia, .3ds or .cci)
+Usage: extract-3ds.py "Rhythm Heaven Megamix (USA).cia"   (a decrypted .cia, .3ds, .cci or .cxi)
 The dump is opened read-only. Output goes to build/ctr/, which is git-ignored:
 code-text.bin, code-rodata.bin, code-data.bin, code.json (load addresses and sizes) and
 romfs.json (every RomFS file's path, offset and size, so later steps read single files).

@@ -1,6 +1,6 @@
 """Read-only access to a decrypted Rhythm Heaven Megamix dump (3DS) for extraction.
 
-Takes a decrypted .cia or .3ds/.cci (GodMode9 "Decrypt file"). Encrypted dumps are refused
+Takes a decrypted .cia, .3ds/.cci or .cxi (GodMode9 "Decrypt file"). Encrypted dumps are refused
 with a pointer to that step: this repository never handles 3DS console keys.
 """
 import pathlib
@@ -52,7 +52,9 @@ class CtrFiles:
     def __init__(self, path):
         self.source = pathlib.Path(path).open('rb')
         head = self.raw(0, 0x200)
-        if head[0x100:0x104] == b'NCSD':
+        if head[0x100:0x104] == b'NCCH':
+            self.base = 0   # a bare program (.cxi)
+        elif head[0x100:0x104] == b'NCSD':
             self.base = u32(head, 0x120) * MEDIA
         elif u32(head) == 0x2020:
             self.base = self.cia_content()
