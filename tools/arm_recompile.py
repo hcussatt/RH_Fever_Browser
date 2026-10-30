@@ -756,7 +756,7 @@ class Decoder:
         elif h >> 12 == 13:
             cond = (h >> 8) & 15
             if cond == 15:
-                x.c = f'svc({h & 0xff:#x},{address:#x});'
+                x.c = f'svc({h & 0xff:#x},{address | 1:#x});'   # bit 0: a Thumb svc
             elif cond == 14:
                 raise Unsupported(f'{address:#x}: Thumb undefined {h:04x}')
             else:
@@ -988,9 +988,10 @@ def generate(entry, body, functions):
 
 
 def resume_points(body):
-    """Return addresses of the calls in a function body (where a resumed thread carries on)."""
-    return {pc + (8 if getattr(x, 'inline', False) else x.size) for pc, x in body.items()
-            if x.flow == 'call' and (pc + (8 if getattr(x, 'inline', False) else x.size)) in body}
+    """Return addresses of the calls and system calls in a function body (where a resumed thread carries on)."""
+    points = {pc + (8 if getattr(x, 'inline', False) else x.size) for pc, x in body.items()
+              if x.flow == 'call' and (pc + (8 if getattr(x, 'inline', False) else x.size)) in body}
+    return points | {pc + x.size for pc, x in body.items() if 'svc(' in x.c and pc + x.size in body}
 
 
 def write(functions, external, out):
