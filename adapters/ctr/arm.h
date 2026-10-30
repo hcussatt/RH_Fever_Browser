@@ -11,6 +11,7 @@ static uint32_t fq, ge;            // CPSR Q (saturating ops) and GE bits (SIMD 
 static union { float s[32]; double d[16]; uint32_t u[32]; uint64_t ud[16]; } vfp;
 static uint32_t fpscr = 0x03C00000; // NZCV kept in the top bits; default NaN, flush to zero, nearest
 static uint32_t exclusive = 0xffffffff;
+static uint32_t resume_at;         // set by resume_original(): the call return address to carry on from
 
 static inline uint32_t rotr(uint32_t v, uint32_t n) { n &= 31; return n ? (v >> n) | (v << (32 - n)) : v; }
 
