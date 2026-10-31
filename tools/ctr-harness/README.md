@@ -12,6 +12,7 @@ Files:
   texture formats, texture combiners, blending) plus display transfers.
 - `gen.py`: translates the program into `build/ctr/blanco.inc` (entry lists: `ents.txt`, `init.txt`,
   `extra.txt`, candidate entries `cands.txt`).
+- `split.py`: splits the translation into compile units (one 58 MB file is too big for clang).
 - `noops.txt`: functions the harness skips. `tfdump.py`: prints tickflow (chart) commands.
 
 Build and run from the repository root, after `tools/extract-3ds.py` has written `build/ctr/`:
@@ -19,8 +20,9 @@ Build and run from the repository root, after `tools/extract-3ds.py` has written
 ```sh
 python3 -c "import json;d=json.load(open('build/ctr/romfs.json'));print('\n'.join('%x %x %s'%(o-d['level3'],n,p) for p,(o,n) in d['files'].items()))" > build/ctr/romfs-index.txt
 python3 tools/ctr-harness/gen.py                      # build/ctr/blanco.inc
-gcc -O0 -w -c tools/ctr-harness/unit.c -o build/ctr/unit.o   # large; -O1 takes about 9 minutes
-gcc -O3 -ffast-math -w tools/ctr-harness/run.c build/ctr/unit.o -o build/ctr/run -lm
+python3 tools/ctr-harness/split.py 24                 # build/ctr/split/: 24 parts + tables.c
+(cd build/ctr/split && ls part*.c tables.c | xargs -P 4 -I{} sh -c 'gcc -O1 -w -c $0 -o ${0%.c}.o' {})   # ~2.5 min on 4 cores
+gcc -O3 -ffast-math -w tools/ctr-harness/run.c build/ctr/split/*.o -o build/ctr/run -lm
 INTERLEAVE=1 GSP=1 GAME=67 START=200 HWAKE=1 WORKERS=all,tramp,gsp SECS=100 FRAMES=/tmp/frames EVERY=20 build/ctr/run 0x100000
 ```
 
