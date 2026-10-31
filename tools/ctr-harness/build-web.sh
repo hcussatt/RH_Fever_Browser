@@ -11,14 +11,22 @@ mkdir -p "$out/obj" "$out/data"
 # The translated program: one object per part, rebuilt only when its part changed.
 ls build/ctr/split/part*.c build/ctr/split/tables.c | xargs -P "${JOBS:-4}" -I{} sh -c '
   o='"$out"'/obj/$(basename "$1" .c).o; [ "$o" -nt "$1" ] || emcc -O2 -w -c "$1" -o "$o"' _ {}
+# Linking takes about ten minutes (wasm-opt), so it runs only when something changed.
+if [ -n "$(find "$out"/obj tools/ctr-harness -maxdepth 1 \( -name '*.o' -o -name '*.c' \) -newer "$out/blanco.mjs" 2>/dev/null)" ] || [ ! -f "$out/blanco.mjs" ]; then
 emcc -O2 -w tools/ctr-harness/run.c "$out"/obj/*.o -o "$out/blanco.mjs" \
   -sMODULARIZE -sEXPORT_ES6 -sENVIRONMENT=worker,node -sJSPI -sSUPPORT_LONGJMP=wasm \
   -sINITIAL_MEMORY=512MB -sALLOW_MEMORY_GROWTH -sSTACK_SIZE=8MB -sINVOKE_RUN=0 -sEXIT_RUNTIME=0 \
   -sFORCE_FILESYSTEM -sEXPORTED_RUNTIME_METHODS=FS,ENV,callMain,HEAPU8,HEAP16 -lm
+fi
 # The data the game reads in this probe: a native run with ROMLOG lists the RomFS files it opens.
+# GL=1 skips the software drawing, so the run reaches the results in well under a minute. The run
+# plays without input (the "try again" ending); the other endings' sounds and the game's epilogue
+# pictures are added by name.
 if [ ! -s build/ctr/web-files.txt ]; then
-  INTERLEAVE=1 GSP=1 GAME=67 START=200 HWAKE=1 WORKERS=all,tramp,gsp SECS=100 ROMLOG=1 build/ctr/run 0x100000 2>&1 |
-    awk '/^  file /{print $2}' | sort -u > build/ctr/web-files.txt || true
+  { GL=1 INTERLEAVE=1 GSP=1 GAME=67 START=200 HWAKE=1 WORKERS=all,tramp,gsp SECS=60 ROMLOG=1 build/ctr/run 0x100000 2>&1 |
+      awk '/^  file /{print $2}'
+    awk '{print $3}' build/ctr/romfs-index.txt | grep -E '^sound/group/GROUP_(EPILOGUE|RESULT)_|^layout/epilogue_ctrBlanco'
+  } | sort -u > build/ctr/web-files.txt || true
 fi
 { printf '%s\n' build/ctr/code-text.bin build/ctr/code-rodata.bin build/ctr/code-data.bin build/ctr/romfs-meta.bin \
     build/ctr/romfs-index.txt tools/ctr-harness/noops.txt

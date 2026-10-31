@@ -161,10 +161,11 @@ static float blend_factor(int f,col4 s,col4 d,col4 k,int ch,int alpha){
     case 12:return k.a;case 13:return 1-k.a;case 14:{float m=s.a<1-d.a?s.a:1-d.a;return alpha?1:m;}}
   return 1;}
 static uint32_t cb_addr,cb_w,cb_h,cb_fmt,db_addr,db_fmt;static uint8_t*cb_host;
-static col4 cb_read(uint32_t x,uint32_t y){uint32_t i=tiled_index(x,y,cb_w);
+// Like textures, the color buffer is stored from the bottom row up: window row y is memory row h-1-y.
+static col4 cb_read(uint32_t x,uint32_t y){uint32_t i=tiled_index(x,cb_h-1-y,cb_w);
   if(cb_fmt==0){uint8_t*q=cb_host+i*4;return c4(q[3]/255.f,q[2]/255.f,q[1]/255.f,q[0]/255.f);}
   return unpack_col(tex_fetch(cb_host,cb_fmt==1?1:cb_fmt==2?2:cb_fmt==3?3:4,cb_w,cb_h,x,cb_h-1-y));}
-static void cb_write(uint32_t x,uint32_t y,col4 c,uint32_t mask){uint32_t i=tiled_index(x,y,cb_w);
+static void cb_write(uint32_t x,uint32_t y,col4 c,uint32_t mask){uint32_t i=tiled_index(x,cb_h-1-y,cb_w);
   int r=c.r*255+.5f,g=c.g*255+.5f,b=c.b*255+.5f,a=c.a*255+.5f;
   if(cb_fmt==0){uint8_t*q=cb_host+i*4;if(mask&1)q[3]=r;if(mask&2)q[2]=g;if(mask&4)q[1]=b;if(mask&8)q[0]=a;}
   else if(cb_fmt==1){uint8_t*q=cb_host+i*3;if(mask&1)q[2]=r;if(mask&2)q[1]=g;if(mask&4)q[0]=b;}
@@ -186,6 +187,7 @@ static float combine1(int fn,float a,float b,float c){
   switch(fn){case 0:return a;case 1:return a*b;case 2:return a+b;case 3:return a+b-0.5f;case 4:return a*c+b*(1-c);case 5:return a-b;
     case 8:return a*b+c;case 9:{float s=a+b;return (s>1?1:s)*c;}}
   return a;}
+#include "picagl.c"
 // A vertex at NaN or infinity (the stand-in font's empty glyphs make some) drops its triangle, as the
 // hardware clipper does; tested on the bits so that fast-math builds keep the test.
 static int finite_bits(float f){uint32_t b;memcpy(&b,&f,4);return (b>>23&255)!=255;}
@@ -197,6 +199,7 @@ static void raster_tri(vtx*a,vtx*b,vtx*c){
   for(int i=0;i<3;i++){float w=v[i]->pos.w;if(!finite_bits(v[i]->pos.x)||!finite_bits(v[i]->pos.y)||!finite_bits(w)||w<=0)return;iw[i]=1/w;sx[i]=(v[i]->pos.x*iw[i]+1)*hw+vx;sy[i]=(v[i]->pos.y*iw[i]+1)*hh+vy;sz[i]=v[i]->pos.z*iw[i];}
   float area=(sx[1]-sx[0])*(sy[2]-sy[0])-(sx[2]-sx[0])*(sy[1]-sy[0]);if(area==0)return;
   int cull=preg[0x40]&3;if(cull==1&&area<0)return;if(cull==2&&area>0)return;
+  if(pica_gl){gl_tri(a,b,c);return;}
   int x0=floorf(fminf(sx[0],fminf(sx[1],sx[2]))),x1=ceilf(fmaxf(sx[0],fmaxf(sx[1],sx[2]))),y0=floorf(fminf(sy[0],fminf(sy[1],sy[2]))),y1=ceilf(fmaxf(sy[0],fmaxf(sy[1],sy[2])));
   if(x0<0)x0=0;if(y0<0)y0=0;if(x1>(int)cb_w)x1=cb_w;if(y1>(int)cb_h)y1=cb_h;
   if(preg[0x65]&1){int sx0=preg[0x66]&0x3ff,sy0=preg[0x66]>>16&0x3ff,sx1=(preg[0x67]&0x3ff)+1,sy1=(preg[0x67]>>16&0x3ff)+1;
@@ -279,7 +282,7 @@ static void setup_target(void){
 static void pica_draw(int indexed){
   pica_draws++;setup_target();if(!cb_w||!cb_h||!cb_host)return;
   if(cb_w*cb_h==240*320&&!getenv("BOTTOM"))return; // only the top screen is shown
-  setup_textures();
+  setup_textures();if(pica_gl)gl_begin_draw();
   uint32_t n=preg[0x228],first=preg[0x22a],mode=preg[0x25e]>>8&3;uint32_t icfg=preg[0x227];
   static vtx vb[65536];if(n>65536)n=65536;
   for(uint32_t i=0;i<n;i++){uint32_t idx=first+i;
@@ -288,7 +291,8 @@ static void pica_draw(int indexed){
   if(pica_log>1)fprintf(stderr,"pica draw %u vertices mode %u target %x %ux%u fmt %u v0 %.2f %.2f %.2f %.2f\n",n,mode,cb_addr,cb_w,cb_h,cb_fmt,vb[0].pos.x,vb[0].pos.y,vb[0].pos.z,vb[0].pos.w);
   if(mode==0||mode==3)for(uint32_t i=0;i+2<n;i+=3)raster_tri(&vb[i],&vb[i+1],&vb[i+2]);
   else if(mode==1)for(uint32_t i=0;i+2<n;i++){if(i&1)raster_tri(&vb[i+1],&vb[i],&vb[i+2]);else raster_tri(&vb[i],&vb[i+1],&vb[i+2]);}
-  else for(uint32_t i=1;i+1<n;i++)raster_tri(&vb[0],&vb[i],&vb[i+1]);}
+  else for(uint32_t i=1;i+1<n;i++)raster_tri(&vb[0],&vb[i],&vb[i+1]);
+  if(pica_gl)gl_end_draw();}
 
 static void pica_write(uint32_t id,uint32_t val,uint32_t mask){
   if(id>=0x300)return;
@@ -314,6 +318,7 @@ static void pica_write(uint32_t id,uint32_t val,uint32_t mask){
   }}
 static void pica_list(uint32_t pa,uint32_t size){
   if(pica_log<0)pica_log=getenv("PICALOG")?atoi(getenv("PICALOG")):0;
+  if(pica_gl<0)pica_gl=!!getenv("GL");
   uint32_t a=pa,end=pa+size;
   while(a+8<=end){uint32_t val=*(uint32_t*)pm(a,4),hdr=*(uint32_t*)pm(a+4,4);a+=8;
     uint32_t id=hdr&0xffff,mask=hdr>>16&15,extra=hdr>>20&255,seq=hdr>>31;
@@ -325,6 +330,7 @@ static void pica_list(uint32_t pa,uint32_t size){
 static uint32_t top_fb_pa,top_fb_fmt; // the last display transfer to a 240x400 output: the top screen
 static void gx_fill(uint32_t start,uint32_t value,uint32_t end,uint32_t ctl){
   if(!start||end<=start)return;int width=(ctl>>8&3); // 0: 16-bit, 1: 24-bit, 2/3: 32-bit
+  if(pica_gl>0)gl_fill(start,end,value,width);
   uint8_t*q=pm(start,end-start);uint32_t n=end-start;
   if(width==0)for(uint32_t i=0;i+2<=n;i+=2)*(uint16_t*)(q+i)=value;
   else if(width==1)for(uint32_t i=0;i+3<=n;i+=3){q[i]=value;q[i+1]=value>>8;q[i+2]=value>>16;}
@@ -333,6 +339,8 @@ static int px_size(int f){return f==0?4:f==1?3:2;}
 static void gx_transfer(uint32_t in,uint32_t out,uint32_t indim,uint32_t outdim,uint32_t flags){
   uint32_t iw=indim&0xffff,ih=indim>>16,ow=outdim&0xffff,oh=outdim>>16,ifmt=flags>>8&7,ofmt=flags>>12&7,scale=flags>>24&3,flip=flags&1,lin2tile=flags>>1&1;
   if(!iw||!ih)return;ow/=scale?2:1;oh/=scale==2?2:1; // the output size is given before scaling
+  if(pica_gl>0&&ow==240&&oh==400&&iw==480&&ifmt==0){gl_present(in,flags);return;} // the top screen: drawn by the page
+  if(pica_gl>0&&ow==240&&oh==320)return; // the bottom screen is not shown
   int ib=px_size(ifmt),ob=px_size(ofmt),hs=scale?2:1,vsc=scale==2?2:1;
   for(uint32_t y=0;y<oh;y++)for(uint32_t x=0;x<ow;x++){
     float acc[4]={0};int cnt=0;

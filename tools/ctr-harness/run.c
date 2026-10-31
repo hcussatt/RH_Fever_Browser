@@ -122,9 +122,9 @@ static void path_of(uint32_t type,uint32_t size,uint32_t ptr,char*out){int n=0;
   else if(type==3){for(uint32_t i=0;i<size&&n<63;i++){uint32_t c=rd8(ptr+i);if(!c)break;out[n++]=c;}}
   else n=snprintf(out,64,"binary%u",size);out[n]=0;}
 static int find_save(const char*name){for(int i=0;i<save_count;i++)if(!strcmp(saves[i].name,name))return i;return -1;}
-#include "web.c"
 #include "gsp.c"
 #include "hid.c"
+#include "web.c"
 #include "dsp.c"
 static void ipc(uint32_t h){
   uint32_t cmd=rd32(0x1ff82080),id=cmd>>16,*a=0,kind=handle_kind[h&4095];
