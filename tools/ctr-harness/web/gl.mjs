@@ -17,7 +17,7 @@ function f24(v){v&=0xffffff;if(!(v&0x7fffff))return 0;const s=v>>23,e=v>>16&0x7f
 const rgba=c=>[(c&255)/255,(c>>>8&255)/255,(c>>>16&255)/255,(c>>>24)/255];
 
 // The fragment shader for one texture-combiner setup, the same steps as raster_tri in pica.c.
-function fragmentShader(reg,texcfg,alphaTest){
+function fragmentShader(reg,texcfg,alphaTest,params){
   const src=s=>['prim','prim','vec4(0.0)','t0','t1','t2','vec4(0.0,0.0,0.0,1.0)'][s]||(s===13?'buf':s===14?`uC[${'$'}]`:s===15?'prev':'vec4(0.0)');
   const opRgb=(o,c)=>({0:`${c}.rgb`,1:`1.0-${c}.rgb`,2:`vec3(${c}.a)`,3:`vec3(1.0-${c}.a)`,4:`vec3(${c}.r)`,5:`vec3(1.0-${c}.r)`,8:`vec3(${c}.g)`,9:`vec3(1.0-${c}.g)`,12:`vec3(${c}.b)`,13:`vec3(1.0-${c}.b)`})[o]||`${c}.rgb`;
   const opA=(o,c)=>[`${c}.a`,`1.0-${c}.a`,`${c}.r`,`1.0-${c}.r`,`${c}.g`,`1.0-${c}.g`,`${c}.b`,`1.0-${c}.b`][o];
@@ -36,11 +36,14 @@ function fragmentShader(reg,texcfg,alphaTest){
     body+=`o.rgb*=${1<<(scale&3)}.0;o.a*=${1<<(scale>>16&3)}.0;o=clamp(o,0.0,1.0);prev=o;buf=nextbuf;`;
     if(st<4){if(e0>>(8+st)&1)body+='nextbuf.rgb=o.rgb;';if(e0>>(12+st)&1)body+='nextbuf.a=o.a;';}
     body+='}\n';});
-  const tex=(u,t)=>texcfg>>u&1?`texture(uT${u},${t})`:'vec4(0.0,0.0,0.0,1.0)';
+  // Clamp to border (wrap mode 1) on either axis: outside 0..1 the unit's border color.
+  const tex=(u,t)=>{if(!(texcfg>>u&1))return 'vec4(0.0,0.0,0.0,1.0)';const bs=(params[u]>>12&7)===1,bt=(params[u]>>8&7)===1;
+    const out=[bs&&`${t}.x<0.0||${t}.x>1.0`,bt&&`${t}.y<0.0||${t}.y>1.0`].filter(Boolean).join('||');
+    return out?`((${out})?uBorder[${u}]:texture(uT${u},${t}))`:`texture(uT${u},${t})`;};
   let test='';
   if(alphaTest&1){const f=alphaTest>>4&7,c=['false','true','abs(prev.a-uRef)<0.5/255.0','abs(prev.a-uRef)>=0.5/255.0','prev.a<uRef-0.5/255.0','prev.a<uRef+0.5/255.0','prev.a>uRef+0.5/255.0','prev.a>uRef-0.5/255.0'][f];test=`if(!(${c}))discard;`;}
   return `#version 300 es
-precision highp float;in vec4 vCol;in vec2 vT0,vT1,vT2;uniform sampler2D uT0,uT1,uT2;uniform vec4 uC[6];uniform vec4 uBuf;uniform float uRef;out vec4 outColor;
+precision highp float;in vec4 vCol;in vec2 vT0,vT1,vT2;uniform sampler2D uT0,uT1,uT2;uniform vec4 uC[6],uBorder[3];uniform vec4 uBuf;uniform float uRef;out vec4 outColor;
 void main(){vec4 prim=clamp(vCol,0.0,1.0),t0=${tex(0,'vT0')},t1=${tex(1,'vT1')},t2=${tex(2,texcfg>>13&1?'vT1':'vT2')};
 vec4 prev=prim,buf=vec4(0.0),nextbuf=uBuf;
 ${body}${test}outColor=prev;}`;}
@@ -53,13 +56,13 @@ export function createGpu(canvas){
   const link=(fs,v=vs)=>{const p=gl.createProgram();gl.attachShader(p,v);gl.attachShader(p,compile(gl.FRAGMENT_SHADER,fs));
     ['aPos','aCol','aT0','aT1','aT2'].forEach((n,i)=>gl.bindAttribLocation(p,i,n));gl.linkProgram(p);
     if(!gl.getProgramParameter(p,gl.LINK_STATUS))throw new Error(gl.getProgramInfoLog(p));
-    const u=n=>gl.getUniformLocation(p,n);return {p,uT:[u('uT0'),u('uT1'),u('uT2')],uC:u('uC'),uBuf:u('uBuf'),uRef:u('uRef'),uFlip:u('uFlip')};};
+    const u=n=>gl.getUniformLocation(p,n);return {p,uT:[u('uT0'),u('uT1'),u('uT2')],uC:u('uC'),uBuf:u('uBuf'),uBorder:u('uBorder'),uRef:u('uRef'),uFlip:u('uFlip')};};
   const present=link(PRESENT_FS,presentVs),programs=new Map(),textures=new Map(),targets=new Map(),samplers=new Map();
   const vbo=gl.createBuffer(),vao=gl.createVertexArray();gl.bindVertexArray(vao);gl.bindBuffer(gl.ARRAY_BUFFER,vbo);
   [[3,0],[4,12],[2,28],[2,36],[2,44]].forEach(([n,o],i)=>{gl.enableVertexAttribArray(i);gl.vertexAttribPointer(i,n,gl.FLOAT,false,52,o);});
   const FACTOR=[gl.ZERO,gl.ONE,gl.SRC_COLOR,gl.ONE_MINUS_SRC_COLOR,gl.DST_COLOR,gl.ONE_MINUS_DST_COLOR,gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA,gl.DST_ALPHA,gl.ONE_MINUS_DST_ALPHA,gl.CONSTANT_COLOR,gl.ONE_MINUS_CONSTANT_COLOR,gl.CONSTANT_ALPHA,gl.ONE_MINUS_CONSTANT_ALPHA,gl.SRC_ALPHA_SATURATE];
   const EQ=[gl.FUNC_ADD,gl.FUNC_SUBTRACT,gl.FUNC_REVERSE_SUBTRACT,gl.MIN,gl.MAX];
-  const WRAP=[gl.CLAMP_TO_EDGE,gl.CLAMP_TO_EDGE,gl.REPEAT,gl.MIRRORED_REPEAT]; // clamp to border drawn as clamp to edge
+  const WRAP=[gl.CLAMP_TO_EDGE,gl.CLAMP_TO_EDGE,gl.REPEAT,gl.MIRRORED_REPEAT]; // clamp to border: edge here, border color in the shader
   function sampler(param){let s=samplers.get(param);if(s)return s;s=gl.createSampler();
     gl.samplerParameteri(s,gl.TEXTURE_MAG_FILTER,param>>1&1?gl.LINEAR:gl.NEAREST);gl.samplerParameteri(s,gl.TEXTURE_MIN_FILTER,param>>2&1?gl.LINEAR:gl.NEAREST);
     gl.samplerParameteri(s,gl.TEXTURE_WRAP_S,WRAP[param>>12&3]);gl.samplerParameteri(s,gl.TEXTURE_WRAP_T,WRAP[param>>8&3]);samplers.set(param,s);return s;}
@@ -91,14 +94,15 @@ export function createGpu(canvas){
       else break;}}
   function draw(d){
     const reg=r=>d[22+r-0xc0],texcfg=d[12],at=reg(0x104);
-    const key=[...ENV.flatMap(r=>[reg(r),reg(r+1),reg(r+2),reg(r+4)]),reg(0xe0)&0xff00,texcfg&0x2007,at&0x71].join(',');
-    let prog=programs.get(key);if(!prog){prog=link(fragmentShader(reg,texcfg,at));programs.set(key,prog);}
+    const params=[d[14],d[17],d[20]],border=params.map(p=>(p>>12&7)===1|((p>>8&7)===1)<<1);
+    const key=[...ENV.flatMap(r=>[reg(r),reg(r+1),reg(r+2),reg(r+4)]),reg(0xe0)&0xff00,texcfg&0x2007,at&0x71,...border].join(',');
+    let prog=programs.get(key);if(!prog){prog=link(fragmentShader(reg,texcfg,at,params));programs.set(key,prog);}
     const t=target(d[1],d[2],d[3]);gl.bindFramebuffer(gl.FRAMEBUFFER,t.fbo);
     const hw=f24(d[6]),hh=f24(d[7]),vx=d[8]&0x3ff,vy=d[8]>>>16&0x3ff;gl.viewport(vx,vy,Math.round(2*hw),Math.round(2*hh));
     if(d[9]&1){const x0=d[10]&0x3ff,y0=d[10]>>>16&0x3ff,x1=(d[11]&0x3ff)+1,y1=(d[11]>>>16&0x3ff)+1;gl.enable(gl.SCISSOR_TEST);gl.scissor(x0,y0,Math.max(0,x1-x0),Math.max(0,y1-y0));}else gl.disable(gl.SCISSOR_TEST);
     gl.useProgram(prog.p);
     for(let u=0;u<3;u++){gl.activeTexture(gl.TEXTURE0+u);const tex=textures.get(d[13+3*u]);gl.bindTexture(gl.TEXTURE_2D,tex?tex.tex:null);gl.bindSampler(u,sampler(d[14+3*u]));gl.uniform1i(prog.uT[u],u);}
-    gl.uniform4fv(prog.uC,ENV.flatMap(r=>rgba(reg(r+3))));gl.uniform4fv(prog.uBuf,rgba(reg(0xfd)));gl.uniform1f(prog.uRef,(at>>>8&255)/255);
+    gl.uniform4fv(prog.uC,ENV.flatMap(r=>rgba(reg(r+3))));gl.uniform4fv(prog.uBuf,rgba(reg(0xfd)));gl.uniform4fv(prog.uBorder,[d[15],d[18],d[21]].flatMap(rgba));gl.uniform1f(prog.uRef,(at>>>8&255)/255);
     const colorop=reg(0x100),blend=reg(0x101),mask=reg(0x107)>>>8&15;
     if(colorop>>8&1){gl.enable(gl.BLEND);gl.blendEquationSeparate(EQ[blend&7]??gl.FUNC_ADD,EQ[blend>>8&7]??gl.FUNC_ADD);
       gl.blendFuncSeparate(FACTOR[blend>>>16&15],FACTOR[blend>>>20&15],FACTOR[blend>>>24&15],FACTOR[blend>>>28&15]);gl.blendColor(...rgba(reg(0x103)));}

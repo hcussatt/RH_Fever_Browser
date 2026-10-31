@@ -5,7 +5,8 @@ let ctx; // the 2D fallback when the worker cannot draw with WebGL
 let worker,held=new Set();
 function pad(){worker?.postMessage({type:'pad',pad:held.size?1:0});}
 async function start(){
-  const audio=new AudioContext({latencyHint:'interactive'});
+  // At the DSP's own rate when the browser allows it, so the browser's resampler (not ours) converts.
+  let audio;try{audio=new AudioContext({latencyHint:'interactive',sampleRate:32728});}catch{audio=new AudioContext({latencyHint:'interactive'});}
   await audio.audioWorklet.addModule('audio.js');
   const node=new AudioWorkletNode(audio,'game-audio',{outputChannelCount:[2]});node.connect(audio.destination);
   const channel=new MessageChannel();node.port.postMessage(channel.port1,[channel.port1]);

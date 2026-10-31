@@ -1,5 +1,6 @@
-// Plays the game's mix (16-bit stereo at the 3DS DSP rate, 32728 Hz) at the context's rate, with
-// linear interpolation, and tells the game's worker how many game samples are still queued.
+// Plays the game's mix (16-bit stereo at the 3DS DSP rate, 32728 Hz) at the context's rate (a plain copy when
+// the page opened the context at 32728 Hz, else linear interpolation), and tells the game's worker how many
+// game samples are still queued.
 class GameAudio extends AudioWorkletProcessor{
   constructor(){super();this.chunks=[];this.at=0;this.queued=0;this.step=32728/sampleRate;this.blocks=0;
     this.port.onmessage=({data})=>{if(data instanceof MessagePort){this.game=data;this.game.onmessage=({data})=>{this.chunks.push(data);this.queued+=data.length/2;};}};}

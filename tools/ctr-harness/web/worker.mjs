@@ -3,13 +3,13 @@
 // waits while the worklet holds more than AHEAD samples, so the game runs on the audio clock.
 import createModule from './blanco.mjs';
 import {createGpu} from './gl.mjs';
-const RATE=32728,AHEAD=1600; // ~49 ms of game audio queued ahead of the speakers
+let AHEAD=1100; // game samples (32728 Hz) queued ahead of the speakers: ~34 ms, about two vblanks
 let drawnCount=0,t0=performance.now(),audio,queued=0,wake=null,pad=0,frames=0;
 const env={INTERLEAVE:'1',GSP:'1',GAME:'67',START:'200',HWAKE:'1',WORKERS:'all,tramp,gsp'};
 onmessage=async({data})=>{
   if(data.type==='pad')pad=data.pad;
   if(data.type!=='start')return;
-  audio=data.port;
+  audio=data.port;if(data.env.ahead){AHEAD=+data.env.ahead;delete data.env.ahead;}
   const gpu=data.canvas?createGpu(data.canvas):null;if(gpu)env.GL='1';
   audio.onmessage=({data})=>{queued=data.queued;if(wake&&queued<=AHEAD){const w=wake;wake=null;w();}};
   const list=(await (await fetch('files.txt')).text()).split('\n').filter(Boolean);
