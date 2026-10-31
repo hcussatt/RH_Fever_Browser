@@ -2,6 +2,7 @@
 // The application and the DSP share two copies of the audio structures in DSP RAM (0x1ff50000 and
 // 0x1ff70000); each audio frame (160 samples at 32728 Hz) the application fills one copy, raises the
 // DSP semaphore, and the DSP reads it and writes its status back.
+#include <dirent.h>
 static int dsp_log=-1;
 static uint8_t dsp_pipe[8][64];static uint32_t dsp_pipe_len[8];
 static uint32_t dsp_event, dsp_sem_mask, dsp_irq_event, dsp_frames, dsp_irq_binary;
@@ -16,14 +17,23 @@ static void aac_load(const char*path){
   for(long at=0;at+7<=n;){if(d[at]!=0xff||(d[at+1]&0xf0)!=0xf0)break;uint32_t len=((d[at+3]&3)<<11)|(d[at+4]<<3)|(d[at+5]>>5);
     if(!len||at+len>n)break;aac_frames[aac_frame_count].hash=fnv(d+at,len);aac_frames[aac_frame_count].file=file;aac_frames[aac_frame_count++].index=index++;at+=len;}
   free(d);
+#ifdef __EMSCRIPTEN__ // the page decoded the file already (path + ".pcm", 16-bit stereo)
+  char pcm_path[512];snprintf(pcm_path,512,"%s.pcm",path);FILE*p=fopen(pcm_path,"rb");if(!p)return;
+#else
   char cmd[512];snprintf(cmd,512,"ffmpeg -v quiet -i '%s' -f s16le -ac 2 -",path);FILE*p=popen(cmd,"r");
-  size_t cap=1<<20,got=0;int16_t*pcm=malloc(cap*2);size_t k;while((k=fread(pcm+got,2,cap-got,p))>0){got+=k;if(got==cap){cap*=2;pcm=realloc(pcm,cap*2);}}pclose(p);
+#endif
+  size_t cap=1<<20,got=0;int16_t*pcm=malloc(cap*2);size_t k;while((k=fread(pcm+got,2,cap-got,p))>0){got+=k;if(got==cap){cap*=2;pcm=realloc(pcm,cap*2);}}
+#ifdef __EMSCRIPTEN__
+  fclose(p);
+#else
+  pclose(p);
+#endif
   aac_files[file].pcm=pcm;aac_files[file].samples=got/2;aac_files[file].channels=2;
   if(dsp_log>0)fprintf(stderr,"aac %s: %u frames, %u samples\n",path,index,(unsigned)(got/2));}
 static void aac_load_all(void){static int done;if(done++)return;
   const char*dir="build/ctr/romfs/sound/aac/";char path[512];
-  FILE*l=popen("ls build/ctr/romfs/sound/aac/","r");char name[256];
-  while(fgets(name,256,l)){name[strcspn(name,"\n")]=0;snprintf(path,512,"%s%s",dir,name);aac_load(path);}pclose(l);}
+  DIR*l=opendir(dir);struct dirent*e;
+  while(l&&(e=readdir(l)))if(strlen(e->d_name)>4&&!strcmp(e->d_name+strlen(e->d_name)-4,".aac")){snprintf(path,512,"%s%s",dir,e->d_name);aac_load(path);}if(l)closedir(l);}
 static void dsp_binary(uint32_t ptr,uint32_t size){ // a request on pipe 3: answer on pipe 3 and raise its interrupt
   uint32_t codec=rd16(ptr),cmd=rd16(ptr+2);uint8_t out[32]={0};out[0]=codec;out[2]=cmd;
   if(codec==1&&cmd==1){ // decode one frame
@@ -169,7 +179,8 @@ static void dsp_frame(void){
   for(int k=0;k<160;k++){int32_t o[2];
     for(int c=0;c<2;c++){float v=dsp_master*(mix[0][k][c]+mix[0][k][c+2])+dsp_aux[0]*(mix[1][k][c]+mix[1][k][c+2])+dsp_aux[1]*(mix[2][k][c]+mix[2][k][c+2]);
       o[c]=v>32767?32767:v<-32768?-32768:(int32_t)v;wr16(wreg+0x1e00+4*k+2*c,o[c]);}
-    if(dsp_wav){int16_t w[2]={o[0],o[1]};fwrite(w,2,2,dsp_wav);dsp_wav_samples++;}}
+    if(dsp_wav){int16_t w[2]={o[0],o[1]};fwrite(w,2,2,dsp_wav);dsp_wav_samples++;}
+    WEB_AUDIO(o[0],o[1]);}
   {static int once;if(!once++&&getenv("DSPWAV"))dsp_wav=fopen(getenv("DSPWAV"),"wb");}
   {static double acc;if(getenv("GSP")&&(acc+=160*59.83/32728.0)>=1){acc-=1;gsp_vblank();vblanks++;}}
   if(nsig_handle<62){signaled_handle[nsig_handle++]=dsp_event;if(dsp_irq_event)signaled_handle[nsig_handle++]=dsp_irq_event;}}

@@ -12,11 +12,15 @@ src = root / 'build/ctr/blanco.inc'
 out = root / 'build/ctr/split'
 parts = int(sys.argv[1]) if len(sys.argv) > 1 else 24
 out.mkdir(parents=True, exist_ok=True)
+def write(path, text): # leave unchanged files alone, so their objects stay current
+    if not path.exists() or path.read_text() != text: path.write_text(text)
 
 lines = src.read_text().split('\n')
 first_body = next(i for i, l in enumerate(lines) if l.startswith('static void p_') and l.rstrip().endswith('{'))
 tables = next(i for i, l in enumerate(lines) if l.startswith('static int resume_original'))
-protos = [l.replace('static void p_', 'void p_') for l in lines[:first_body] if l.startswith('static void p_')]
+# Declare every function, including the hand-written helpers (like frem) that have no forward declaration.
+names = sorted({m.group(1) for l in lines[:tables] for m in [re.match(r'static void (p_[0-9a-f]+)\(void\)', l)] if m})
+protos = [f'void {n}(void);' for n in names]
 
 # arm.h keeps the CPU state in file-level statics; across units they must be one shared definition.
 arm = (root / 'adapters/ctr/arm.h').read_text()
@@ -33,7 +37,7 @@ head = ['#include <stdint.h>',
         'void wr32(uint32_t,uint32_t),wr16(uint32_t,uint32_t),wr8(uint32_t,uint32_t),wr64(uint32_t,uint64_t);',
         'void call(uint32_t);void svc(uint32_t,uint32_t);uint32_t tls(void);void panic(uint32_t,int);',
         shared] + protos
-(out / 'unit.h').write_text('\n'.join(head) + '\n')
+write(out / 'unit.h', '\n'.join(head) + '\n')
 
 # Function bodies: cut only where a new function starts.
 starts = [i for i in range(first_body, tables) if lines[i].startswith('static void p_')]
@@ -43,10 +47,22 @@ for k in range(parts):
     a, b = starts[min(k * per, len(starts) - 1)], starts[min((k + 1) * per, len(starts) - 1)]
     body = '\n'.join(lines[a:b]).replace('\nstatic void p_', '\nvoid p_')
     if body.startswith('static void p_'): body = body[len('static '):]
-    (out / f'part{k:02d}.c').write_text('#include "unit.h"\n' + body + '\n')
+    write(out / f'part{k:02d}.c', '#include "unit.h"\n' + body + '\n')
 
-tail = '\n'.join(lines[tables:]).replace('static int resume_original', 'int resume_original').replace('static int dispatch_original', 'int dispatch_original')
-(out / 'tables.c').write_text('#include "unit.h"\n' + definitions + '\n' + tail + '''
+# The two big switches become sorted tables searched by address: as switches they compile to single
+# functions over 7 MB of WebAssembly, more than browsers accept in one function.
+resumes = [(int(m.group(1), 16), m.group(2)) for l in lines[tables:] for m in [re.match(r'case 0x([0-9a-f]+)u: resume_at=0x\1u; (p_[0-9a-f]+)\(\); return 1;$', l)] if m]
+calls = [(int(m.group(1), 16), m.group(2)) for l in lines[tables:] for m in [re.match(r'case 0x([0-9a-f]+)u: (p_[0-9a-f]+)\(\); return 1;$', l)] if m]
+def table(name, rows):
+    rows = sorted(rows)
+    return (f'static const uint32_t {name}_at[{len(rows)}]={{' + ','.join(hex(a) for a, _ in rows) + '};\n'
+            f'static void (*const {name}_fn[{len(rows)}])(void)={{' + ','.join(f for _, f in rows) + '};\n')
+tail = (table('resumes', resumes) + table('calls', calls) + '''static int find(const uint32_t*at,int n,uint32_t a){int lo=0,hi=n-1;while(lo<=hi){int m=(lo+hi)/2;if(at[m]==a)return m;if(at[m]<a)lo=m+1;else hi=m-1;}return -1;}
+int resume_original(uint32_t address){int i=find(resumes_at,sizeof resumes_at/4,address);if(i<0)return 0;resume_at=address;resumes_fn[i]();return 1;}
+int dispatch_original(uint32_t address){int i=find(calls_at,sizeof calls_at/4,address);if(i<0)return 0;calls_fn[i]();return 1;}
+''')
+print(f'{len(resumes)} resume points, {len(calls)} entry points')
+write(out / 'tables.c', '#include "unit.h"\n' + definitions + '\n' + tail + '''
 uint32_t *R=r;
 int dispatch(uint32_t a){return dispatch_original(a);}
 float *VFP=vfp.s;

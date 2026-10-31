@@ -91,7 +91,10 @@ static vec4 vs_src(vs_state*s,uint32_t reg,uint32_t swz,int neg,int idx){
   vec4 o;for(int i=0;i<4;i++)*comp(&o,i)=*comp(&in,(swz>>(6-2*i))&3)*(neg?-1:1);return o;}
 static void vs_dst(vs_state*s,uint32_t reg,uint32_t mask,vec4 v){
   vec4*d=reg<0x10?&s->o[reg]:&s->r[(reg-0x10)&15];for(int i=0;i<4;i++)if(mask>>(3-i)&1)*comp(d,i)=*comp(&v,i);}
-static float mulz(float a,float b){return a==0||b==0?0:a*b;} // the PICA's 0 * inf = 0
+// The PICA's multiply: 0 * inf = 0. A NaN operand also gives 0 here: the game uploads NaN in some
+// float32 uniforms (the shader masks them off with multiplies), and that keeps them out of positions.
+static int nan_bits(float f){uint32_t b;memcpy(&b,&f,4);return (b&0x7f800000)==0x7f800000&&(b&0x7fffff);}
+static float mulz(float a,float b){return a==0||b==0||nan_bits(a)||nan_bits(b)?0:a*b;}
 static int vs_cmp(int op,float a,float b){switch(op){case 0:return a==b;case 1:return a!=b;case 2:return a<b;case 3:return a<=b;case 4:return a>b;case 5:return a>=b;}return 1;}
 static int vs_cond(vs_state*s,uint32_t ins){int rx=ins>>25&1,ry=ins>>24&1,op=ins>>22&3,x=s->cmp[0]==rx,y=s->cmp[1]==ry;
   return op==0?x||y:op==1?x&&y:op==2?x:y;}
@@ -183,12 +186,15 @@ static float combine1(int fn,float a,float b,float c){
   switch(fn){case 0:return a;case 1:return a*b;case 2:return a+b;case 3:return a+b-0.5f;case 4:return a*c+b*(1-c);case 5:return a-b;
     case 8:return a*b+c;case 9:{float s=a+b;return (s>1?1:s)*c;}}
   return a;}
+// A vertex at NaN or infinity (the stand-in font's empty glyphs make some) drops its triangle, as the
+// hardware clipper does; tested on the bits so that fast-math builds keep the test.
+static int finite_bits(float f){uint32_t b;memcpy(&b,&f,4);return (b>>23&255)!=255;}
 static void raster_tri(vtx*a,vtx*b,vtx*c){
   pica_tris++;
   // viewport transform
   float hw=f24(preg[0x41]),hh=f24(preg[0x43]);int vx=preg[0x68]&0x3ff,vy=preg[0x68]>>16&0x3ff;
   vtx*v[3]={a,b,c};float sx[3],sy[3],sz[3],iw[3];
-  for(int i=0;i<3;i++){float w=v[i]->pos.w;if(w<=0)return;iw[i]=1/w;sx[i]=(v[i]->pos.x*iw[i]+1)*hw+vx;sy[i]=(v[i]->pos.y*iw[i]+1)*hh+vy;sz[i]=v[i]->pos.z*iw[i];}
+  for(int i=0;i<3;i++){float w=v[i]->pos.w;if(!finite_bits(v[i]->pos.x)||!finite_bits(v[i]->pos.y)||!finite_bits(w)||w<=0)return;iw[i]=1/w;sx[i]=(v[i]->pos.x*iw[i]+1)*hw+vx;sy[i]=(v[i]->pos.y*iw[i]+1)*hh+vy;sz[i]=v[i]->pos.z*iw[i];}
   float area=(sx[1]-sx[0])*(sy[2]-sy[0])-(sx[2]-sx[0])*(sy[1]-sy[0]);if(area==0)return;
   int cull=preg[0x40]&3;if(cull==1&&area<0)return;if(cull==2&&area>0)return;
   int x0=floorf(fminf(sx[0],fminf(sx[1],sx[2]))),x1=ceilf(fmaxf(sx[0],fmaxf(sx[1],sx[2]))),y0=floorf(fminf(sy[0],fminf(sy[1],sy[2]))),y1=ceilf(fmaxf(sy[0],fmaxf(sy[1],sy[2])));

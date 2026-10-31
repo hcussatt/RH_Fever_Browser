@@ -33,4 +33,5 @@ static int gsp_ipc(uint32_t cmd,uint32_t*arg){
     reply(cmd,4);wr32(0x1ff82084,0x2a07);wr32(0x1ff82088,0);wr32(0x1ff8208c,0);wr32(0x1ff82090,gsp_shm_handle);return 1;}
   if(id==0x0c){gsp_commands();reply(cmd,1);return 1;}
   return 0;}
-static void gsp_vblank(void){gsp_interrupt(2);gsp_interrupt(3);}
+static void hid_vblank(void);
+static void gsp_vblank(void){gsp_interrupt(2);gsp_interrupt(3);hid_vblank();}
