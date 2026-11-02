@@ -5,17 +5,25 @@ import createModule from './blanco.mjs';
 import {createGpu} from './gl.mjs';
 let AHEAD=1100; // game samples (32728 Hz) queued ahead of the speakers: ~34 ms, about two vblanks
 let drawnCount=0,t0=performance.now(),audio,queued=0,wake=null,pad=0,frames=0;
+// Input timing: the time (ms since the epoch) of the latest button change, the page's speaker
+// latency, and an extra delay the player can set. A change reaches the game with its age as heard:
+// the audio still queued, the speaker latency and the time since the key, which the game's own
+// input queue then judges that much earlier (see input_age_ms in run.c).
+let padAt=0,outputLatency=0,extraDelay=0,ageSent=0;
 const env={INTERLEAVE:'1',GSP:'1',GAME:'67',START:'200',HWAKE:'1',WORKERS:'all,tramp,gsp'};
 onmessage=async({data})=>{
-  if(data.type==='pad')pad=data.pad;
+  if(data.type==='pad'){pad=data.pad;padAt=data.at;}
+  if(data.type==='latency')outputLatency=data.ms;
   if(data.type!=='start')return;
-  audio=data.port;if(data.env.ahead){AHEAD=+data.env.ahead;delete data.env.ahead;}
+  audio=data.port;extraDelay=+(data.delay||0);outputLatency=data.latency||0;if(data.env.ahead){AHEAD=+data.env.ahead;delete data.env.ahead;}
   const gpu=data.canvas?createGpu(data.canvas):null;if(gpu)env.GL='1';
   audio.onmessage=({data})=>{queued=data.queued;if(wake&&queued<=AHEAD){const w=wake;wake=null;w();}};
   const list=(await (await fetch('files.txt')).text()).split('\n').filter(Boolean);
   const files=await Promise.all(list.map(async f=>[f,new Uint8Array(await (await fetch('data/'+f)).arrayBuffer())]));
   const Module=await createModule({
     print:t=>console.log(t),printErr:t=>console.log(t),
+    // Each judged input's offset from its cue (ms, late is positive), shown on the page.
+    onJudge:(ms,kind)=>postMessage({type:'judge',ms,kind}),
     preRun:[m=>Object.assign(m.ENV,env,data.env)],
     async hostVblank(rgb,drawn,samples,n,cmd,ncmd,vtx){
       if(gpu&&ncmd)gpu.run(Module.HEAPU8,cmd,ncmd,vtx);
@@ -25,7 +33,8 @@ onmessage=async({data})=>{
         for(let i=0,j=0;i<px.length;i+=4,j+=3){px[i]=src[j];px[i+1]=src[j+1];px[i+2]=src[j+2];px[i+3]=255;}
         postMessage({type:'frame',px,frames},[px.buffer]);}
       if(queued>AHEAD)await new Promise(r=>wake=r);
-      return pad;
+      const now=performance.timeOrigin+performance.now(),age=padAt?Math.max(0,now-padAt+queued/32728*1000+outputLatency+extraDelay):0;
+      return pad|Math.min(Math.round(age*10),1<<22)<<8;
     }});
   for(const [f,bytes] of files){Module.FS.mkdirTree(f.slice(0,f.lastIndexOf('/')));Module.FS.writeFile(f,bytes);}
   postMessage({type:'status',text:'running'});
