@@ -61,10 +61,10 @@ export function createGpu(canvas,saved={},onNew=()=>{}){const stats={compiles:0,
   const link=(fs,v=vs)=>{const p=gl.createProgram(),f=shader(gl.FRAGMENT_SHADER,fs);gl.attachShader(p,v);gl.attachShader(p,f);
     ['aPos','aCol','aT0','aT1','aT2'].forEach((n,i)=>gl.bindAttribLocation(p,i,n));gl.linkProgram(p);return {p,f,fs,ok:false};};
   // A program is usable once linked: false while it is still compiling in the background.
-  const ready=prog=>{if(prog.ok)return true;if(parallel&&!gl.getProgramParameter(prog.p,parallel.COMPLETION_STATUS_KHR))return false;
+  const ready=(prog,wait=false)=>{if(prog.ok)return true;if(parallel&&!wait&&!gl.getProgramParameter(prog.p,parallel.COMPLETION_STATUS_KHR))return false;
     if(!gl.getProgramParameter(prog.p,gl.LINK_STATUS))throw new Error(gl.getShaderInfoLog(prog.f)+gl.getProgramInfoLog(prog.p)+'\n'+prog.fs);
     const u=n=>gl.getUniformLocation(prog.p,n);Object.assign(prog,{ok:true,uT:[u('uT0'),u('uT1'),u('uT2')],uC:u('uC'),uBuf:u('uBuf'),uBorder:u('uBorder'),uRef:u('uRef'),uFlip:u('uFlip'),uDepth:u('uDepth')});return true;};
-  const present=link(PRESENT_FS,presentVs);ready(present);
+  const present=link(PRESENT_FS,presentVs);ready(present,true); // needed at once: wait for it
   const programs=new Map(Object.entries(saved).map(([k,src])=>[k,link(src)])),textures=new Map(),targets=new Map(),samplers=new Map();
   const vbo=gl.createBuffer(),vao=gl.createVertexArray();gl.bindVertexArray(vao);gl.bindBuffer(gl.ARRAY_BUFFER,vbo);
   [[4,0],[4,16],[2,32],[2,40],[2,48]].forEach(([n,o],i)=>{gl.enableVertexAttribArray(i);gl.vertexAttribPointer(i,n,gl.FLOAT,false,56,o);});
