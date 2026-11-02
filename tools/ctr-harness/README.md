@@ -36,7 +36,7 @@ Browser build (needs `emcc` on PATH, and the native steps above done first):
 
 ```sh
 tools/ctr-harness/build-web.sh        # build/ctr/web/: blanco.wasm (~27 MB), the page, and the game data it reads
-node tools/serve.mjs                  # then open http://localhost:8080/build/ctr/web/ in Chrome
+tools/ctr-harness/play.sh             # serves on port 8090 and opens /build/ctr/web/ in the browser
 ```
 
 The game runs in a worker; each vblank it hands the page its top screen and audio and waits on the
