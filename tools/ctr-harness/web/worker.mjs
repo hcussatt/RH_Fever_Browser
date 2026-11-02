@@ -9,13 +9,13 @@ let drawnCount=0,t0=performance.now(),audio,queued=0,wake=null,pad=0,frames=0;
 // latency, and an extra delay the player can set. A change reaches the game with its age as heard:
 // the audio still queued, the speaker latency and the time since the key, which the game's own
 // input queue then judges that much earlier (see input_age_ms in run.c).
-let padAt=0,outputLatency=0,extraDelay=0,ageSent=0;
+let lastTick=0,clock=false,padAt=0,outputLatency=0,extraDelay=0,ageSent=0;
 const env={INTERLEAVE:'1',GSP:'1',GAME:'67',START:'200',HWAKE:'1',WORKERS:'all,tramp,gsp'};
 onmessage=async({data})=>{
   if(data.type==='pad'){pad=data.pad;padAt=data.at;}
   if(data.type==='latency')outputLatency=data.ms;
   if(data.type!=='start')return;
-  audio=data.port;extraDelay=+(data.delay||0);outputLatency=data.latency||0;if(data.env.ahead){AHEAD=+data.env.ahead;delete data.env.ahead;}
+  audio=data.port;extraDelay=+(data.delay||0);outputLatency=data.latency||0;clock=!!data.env.clock;delete data.env.clock;if(data.env.ahead){AHEAD=+data.env.ahead;delete data.env.ahead;}
   const gpu=data.canvas?createGpu(data.canvas):null;if(gpu)env.GL='1';
   audio.onmessage=({data})=>{queued=data.queued;if(wake&&queued<=AHEAD){const w=wake;wake=null;w();}};
   const list=(await (await fetch('files.txt')).text()).split('\n').filter(Boolean);
@@ -23,9 +23,10 @@ onmessage=async({data})=>{
   const Module=await createModule({
     print:t=>console.log(t),printErr:t=>console.log(t),
     // Each judged input's offset from its cue (ms, late is positive), shown on the page.
-    onJudge:(ms,kind)=>postMessage({type:'judge',ms,kind}),
+    onJudge:(ms,kind)=>postMessage({type:'judge',ms,kind,tick:lastTick}),
     preRun:[m=>Object.assign(m.ENV,env,data.env)],
-    async hostVblank(rgb,drawn,samples,n,cmd,ncmd,vtx){
+    hostLatency:()=>Math.round(Math.max(0,queued/32728*1000+outputLatency+extraDelay)*10),
+    async hostVblank(rgb,drawn,samples,n,cmd,ncmd,vtx,tick){tick/=1000;lastTick=tick;
       if(gpu&&ncmd)gpu.run(Module.HEAPU8,cmd,ncmd,vtx);
       frames++;if(frames%120===0)postMessage({type:'status',text:`vblank ${frames}, ${((performance.now()-t0)/1000).toFixed(1)} s, audio queued ${queued|0}, drawn ${drawnCount}`});
       if(n){const pcm=Module.HEAP16.slice(samples>>1,(samples>>1)+n*2);queued+=n;audio.postMessage(pcm,[pcm.buffer]);}
@@ -34,6 +35,8 @@ onmessage=async({data})=>{
         postMessage({type:'frame',px,frames},[px.buffer]);}
       if(queued>AHEAD)await new Promise(r=>wake=r);
       const now=performance.timeOrigin+performance.now(),age=padAt?Math.max(0,now-padAt+queued/32728*1000+outputLatency+extraDelay):0;
+      // Tests (?clock=1) get the song tick of the next game frame and when it reaches the speakers.
+      if(clock&&tick)postMessage({type:'clock',tick,at:now+queued/32728*1000+outputLatency});
       return pad|Math.min(Math.round(age*10),1<<22)<<8;
     }});
   for(const [f,bytes] of files){Module.FS.mkdirTree(f.slice(0,f.lastIndexOf('/')));Module.FS.writeFile(f,bytes);}

@@ -164,7 +164,8 @@ static void dsp_source(int i,uint32_t cfg,uint32_t coef,int32_t mix[3][160][4]){
     for(int m=0;m<3;m++)for(int k=0;k<160;k++){mix[m][k][0]+=s->gain[m][0]*out[k][0];mix[m][k][1]+=s->gain[m][1]*out[k][1];
       mix[m][k][2]+=s->gain[m][2]*out[k][0];mix[m][k][3]+=s->gain[m][3]*out[k][1];}}}
 // One audio frame: read what the application set, write back the status, raise the interrupts.
-static void dsp_frame(void){
+static uint64_t dsp_samples; // output samples so far (32728 Hz): the game's real time
+static void dsp_frame(void){dsp_samples+=160;
   if(!dsp_event)return;
   uint32_t reg=dsp_region(),wreg=reg==0x1ff50000?0x1ff70000:0x1ff50000;dsp_frames++;
   if(dsp_log>0&&dsp_frames<6){fprintf(stderr,"dsp frame %u region %x counters %x %x\n",dsp_frames,reg,rd16(0x1ff50000),rd16(0x1ff70000));}
