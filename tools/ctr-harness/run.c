@@ -6,6 +6,7 @@
 // Probe harness: flat 3DS memory regions, heap, and a trace of what the translated code calls.
 static uint32_t stack_[4096];static int sp_;
 static void dump(void){for(int i=0;i<sp_;i++)fprintf(stderr," %x",stack_[i]);fprintf(stderr,"\n");}
+extern uint32_t *R;
 static uint8_t *code; // 0x100000..0x700000
 static uint8_t *heapm; // 0x08000000..+64MB
 static uint8_t *stackm; // 0x0ff00000..0x10000000
@@ -20,7 +21,7 @@ static uint8_t *p(uint32_t a,uint32_t n){
   if(a>=0x1f000000&&a+n<=0x1f600000)return vram+a-0x1f000000;
   if(a>=0x1ff00000&&a+n<=0x1ff80000)return dspm+a-0x1ff00000;
   if(a>=0x1ff80000&&a+n<=0x1ff83000)return tlsm+a-0x1ff80000;
-  fprintf(stderr,"bad access %08x, stack:",a);dump();exit(2);}
+  fprintf(stderr,"bad access %08x, regs:",a);for(int i=0;i<16;i++)fprintf(stderr," %x",R[i]);fprintf(stderr,", stack:");dump();if(getenv("ABORT"))abort();exit(2);}
 __attribute__((noinline)) void watch_here(void*h){__asm__ volatile("");}
 uint32_t rd32(uint32_t a){uint32_t v;memcpy(&v,p(a,4),4);return v;}
 uint64_t rd64(uint32_t a){uint64_t v;memcpy(&v,p(a,8),8);return v;}

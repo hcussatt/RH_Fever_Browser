@@ -282,12 +282,18 @@ static void setup_target(void){
 static void pica_draw(int indexed){
   pica_draws++;setup_target();if(!cb_w||!cb_h||!cb_host)return;
   if(cb_w*cb_h==240*320&&!getenv("BOTTOM"))return; // only the top screen is shown
+  {static int stat=-1;static FILE*sf;if(stat<0){stat=!!getenv("REGSTAT");if(stat)sf=fopen(getenv("REGSTAT"),"w");}
+   if(stat){static const uint16_t ids[]={0x8f,0xe0,0xe1,0x100,0x101,0x102,0x103,0x104,0x105,0x106,0x107,0x110,0x111,0x112,0x113,0x114,0x115,0x116,0x80,0xa8,0x1c6,0x1c3,0x4d,0x4e,0x6d,0x2bb};
+     fprintf(sf,"%u",pica_draws);for(unsigned k=0;k<sizeof ids/2;k++)fprintf(sf," %x=%x",ids[k],preg[ids[k]]);fprintf(sf,"\n");}}
   setup_textures();if(pica_gl)gl_begin_draw();
   uint32_t n=preg[0x228],first=preg[0x22a],mode=preg[0x25e]>>8&3;uint32_t icfg=preg[0x227];
   static vtx vb[65536];if(n>65536)n=65536;
   for(uint32_t i=0;i<n;i++){uint32_t idx=first+i;
-    if(indexed){uint32_t ia=(preg[0x200]<<3)+(icfg&0x0fffffff);idx=icfg>>31?*(uint16_t*)pm(ia+2*i,2):*pm(ia+i,1);}
+    if(indexed){uint32_t ia=(preg[0x200]<<3)+(uint32_t)((int32_t)(icfg<<4)>>4);idx=icfg>>31?*(uint16_t*)pm(ia+2*i,2):*pm(ia+i,1);}
     run_vertex(idx,&vb[i]);}
+  {static int at=-2;if(at==-2)at=getenv("DRAWLOG")?atoi(getenv("DRAWLOG")):-1;
+   if(at>=0&&vblanks>=(uint32_t)at&&vblanks<(uint32_t)at+2&&n){float x0=9,x1=-9,y0=9,y1=-9;for(uint32_t i=0;i<n;i++){float x=vb[i].pos.x/vb[i].pos.w,y=vb[i].pos.y/vb[i].pos.w;if(x<x0)x0=x;if(x>x1)x1=x;if(y<y0)y0=y;if(y>y1)y1=y;}
+     fprintf(stderr,"draw v%u n%u depth %x blend %x op %x tex %x/%x/%x col %.2f %.2f %.2f %.2f z/w %.4f box %.2f..%.2f %.2f..%.2f\n",vblanks,n,preg[0x107],preg[0x101],preg[0x100],preg[0x80],tu[0].addr,tu[0].fmt,vb[0].col.r,vb[0].col.g,vb[0].col.b,vb[0].col.a,vb[0].pos.z/vb[0].pos.w,x0,x1,y0,y1);}}
   if(pica_log>1)fprintf(stderr,"pica draw %u vertices mode %u target %x %ux%u fmt %u v0 %.2f %.2f %.2f %.2f\n",n,mode,cb_addr,cb_w,cb_h,cb_fmt,vb[0].pos.x,vb[0].pos.y,vb[0].pos.z,vb[0].pos.w);
   if(mode==0||mode==3)for(uint32_t i=0;i+2<n;i+=3)raster_tri(&vb[i],&vb[i+1],&vb[i+2]);
   else if(mode==1)for(uint32_t i=0;i+2<n;i++){if(i&1)raster_tri(&vb[i+1],&vb[i],&vb[i+2]);else raster_tri(&vb[i],&vb[i+1],&vb[i+2]);}

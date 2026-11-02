@@ -4,7 +4,7 @@
 // commands. The page runs the commands each vblank (gl_cmd, gl_vtx), then they start over.
 enum{GL_FILL=1,GL_TEX,GL_DRAW,GL_PRESENT};
 static int pica_gl=-1;
-static uint32_t gl_cmd[1<<16],gl_ncmd;static float gl_vtx[13*(1<<17)];static uint32_t gl_nvtx,gl_draw_at,gl_frame;
+static uint32_t gl_cmd[1<<16],gl_ncmd;static float gl_vtx[14*(1<<17)];static uint32_t gl_nvtx,gl_draw_at,gl_frame;
 static uint8_t gl_rgba[16<<20];static uint32_t gl_rgba_used; // decoded textures for this vblank's uploads
 static struct{uint32_t addr,fmt,w,h,frame;uint64_t hash;}gl_tex[256];static int gl_ntex;
 static uint64_t gl_hash(const uint8_t*d,uint32_t n){uint64_t h=1469598103934665603ull;uint32_t i=0;
@@ -24,12 +24,12 @@ static uint32_t gl_texture(int u){
       gl_rgba_used+=t->w*t->h*4;}}
   return i+1;}
 static void gl_tri(vtx*a,vtx*b,vtx*c){
-  if(gl_nvtx+3>sizeof gl_vtx/4/13)return;vtx*v[3]={a,b,c};
-  for(int i=0;i<3;i++){float*o=gl_vtx+13*gl_nvtx++;vtx*s=v[i];
-    o[0]=s->pos.x;o[1]=s->pos.y;o[2]=s->pos.w;o[3]=s->col.r;o[4]=s->col.g;o[5]=s->col.b;o[6]=s->col.a;
-    o[7]=s->u0;o[8]=s->v0;o[9]=s->u1;o[10]=s->v1;o[11]=s->u2;o[12]=s->v2;}}
+  if(gl_nvtx+3>sizeof gl_vtx/4/14)return;vtx*v[3]={a,b,c};
+  for(int i=0;i<3;i++){float*o=gl_vtx+14*gl_nvtx++;vtx*s=v[i];
+    o[0]=s->pos.x;o[1]=s->pos.y;o[2]=s->pos.z;o[3]=s->pos.w;o[4]=s->col.r;o[5]=s->col.g;o[6]=s->col.b;o[7]=s->col.a;
+    o[8]=s->u0;o[9]=s->v0;o[10]=s->u1;o[11]=s->v1;o[12]=s->u2;o[13]=s->v2;}}
 static void gl_begin_draw(void){gl_draw_at=gl_nvtx;}
-// One draw: target, vertex range, then the registers the pixel stage reads (see gl.mjs for the layout).
+// One draw (99 words): target, vertex range, then the registers the pixel stage reads (see gl.mjs).
 static void gl_end_draw(void){
   if(gl_nvtx==gl_draw_at||gl_ncmd+128>sizeof gl_cmd/4)return;
   uint32_t ids[3];for(int u=0;u<3;u++)ids[u]=preg[0x80]>>u&1?gl_texture(u):0;
@@ -38,6 +38,7 @@ static void gl_end_draw(void){
   c[n++]=preg[0x41];c[n++]=preg[0x43];c[n++]=preg[0x68];c[n++]=preg[0x65];c[n++]=preg[0x66];c[n++]=preg[0x67];c[n++]=preg[0x80];
   for(int u=0;u<3;u++){c[n++]=ids[u];c[n++]=tu[u].param;c[n++]=tu[u].border;}
   for(int r=0xc0;r<=0x107;r++)c[n++]=preg[r];
+  c[n++]=preg[0x4d];c[n++]=preg[0x4e];c[n++]=preg[0x6d];c[n++]=preg[0x115];c[n++]=pica_virt(preg[0x11c]<<3); // depth: scale, offset, z or w, write allowed, buffer
   gl_ncmd+=n;}
 static void gl_fill(uint32_t start,uint32_t end,uint32_t value,uint32_t width){
   if(gl_ncmd+5>sizeof gl_cmd/4)return;

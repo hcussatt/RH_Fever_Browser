@@ -15,7 +15,7 @@ async function start(){
   worker.onmessage=({data})=>{
     if(data.type==='frame')(ctx??=canvas.getContext('2d')).putImageData(new ImageData(data.px,400,240),0,0);
     if(data.type==='status')status.textContent=data.text;
-    if(data.type==='clock'||data.type==='judge')dispatchEvent(new CustomEvent('probe-'+data.type,{detail:data})); // for tests
+    if(['clock','judge','perf','shader'].includes(data.type))dispatchEvent(new CustomEvent('probe-'+data.type,{detail:data})); // tests listen too
     if(data.type==='judge')judge.textContent=`last input ${data.ms>0?'+':''}${data.ms.toFixed(0)} ms (${['outside the windows','barely','just'][data.kind]})`;};
   // Harness settings from the address (?FSTAT=1&DSPLOG=1 ...) pass through to the game's environment.
   const env=Object.fromEntries(new URLSearchParams(location.search));
@@ -27,7 +27,10 @@ async function start(){
   let saved=0;try{saved=+localStorage.getItem('rhf-audio-delay-ms')||0;}catch{}
   const delay=env.delay!==undefined?+env.delay:saved;delete env.delay;
   setInterval(()=>worker.postMessage({type:'latency',ms:latency()}),1000);
-  worker.postMessage({type:'start',port:channel.port2,env,canvas:offscreen,latency:latency(),delay},offscreen?[channel.port2,offscreen]:[channel.port2]);
+  // Shaders compiled in earlier sessions are kept in this browser and compiled again before the game starts.
+  const SHADERS='rhf-ctr-shaders';let shaders={};try{shaders=JSON.parse(localStorage.getItem(SHADERS)||'{}');}catch{}
+  addEventListener('probe-shader',({detail:{key,src}})=>{shaders[key]=src;try{localStorage.setItem(SHADERS,JSON.stringify(shaders));}catch{}});
+  worker.postMessage({type:'start',port:channel.port2,env,canvas:offscreen,latency:latency(),delay,shaders},offscreen?[channel.port2,offscreen]:[channel.port2]);
   status.textContent='Loading...';
 }
 // Keys are taken from the whole page (capture phase, default actions blocked), so Space never
