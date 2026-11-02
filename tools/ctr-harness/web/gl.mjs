@@ -51,7 +51,11 @@ float z=uDepth.z>0.5?vZ/vW:vW,zf=uDepth.z>0.5?fZ/fW:fW;
 // Flat sprites must give the exact same depth as other flat sprites at that z (the game uses depth EQUAL/LEQUAL
 // masks); interpolation rounding would otherwise make patches fail the test.
 if(abs(z-zf)<=1e-5*max(1.0,abs(zf)))z=zf;
-gl_FragDepth=clamp(z*uDepth.x+uDepth.y,0.0,1.0);}`;}
+// The 3DS stores 24-bit depth: round to that grid so every GPU (some keep 32-bit floats) compares alike.
+gl_FragDepth=floor(clamp(z*uDepth.x+uDepth.y,0.0,1.0)*16777215.0+0.5)/16777215.0;}`;}
+
+// A short hash of the shader generator, so saved shaders from older code are not reused.
+const SHADER_VERSION=(s=>{let h=5381;for(let i=0;i<s.length;i++)h=(h*33^s.charCodeAt(i))>>>0;return h.toString(36);})(VS+fragmentShader.toString());
 
 // saved: shader sources from earlier sessions ({key: source}), compiled up front; onNew(key, source)
 // is told about each new one so the page can keep it. New shaders compile in the background
@@ -69,7 +73,9 @@ export function createGpu(canvas,saved={},onNew=()=>{}){const stats={compiles:0,
     if(!gl.getProgramParameter(prog.p,gl.LINK_STATUS))throw new Error(gl.getShaderInfoLog(prog.f)+gl.getProgramInfoLog(prog.p)+'\n'+prog.fs);
     const u=n=>gl.getUniformLocation(prog.p,n);Object.assign(prog,{ok:true,uT:[u('uT0'),u('uT1'),u('uT2')],uC:u('uC'),uBuf:u('uBuf'),uBorder:u('uBorder'),uRef:u('uRef'),uFlip:u('uFlip'),uDepth:u('uDepth')});return true;};
   const present=link(PRESENT_FS,presentVs);ready(present,true); // needed at once: wait for it
-  const programs=new Map(Object.entries(saved).map(([k,src])=>[k,link(src)])),textures=new Map(),targets=new Map(),samplers=new Map();
+  // Saved shaders carry the generator's version in their key ("version|key"): after any change to the
+  // shader code, older saved sources are ignored and rebuilt, so a fix always reaches the player.
+  const programs=new Map(Object.entries(saved).filter(([k])=>k.startsWith(SHADER_VERSION+'|')).map(([k,src])=>[k.slice(SHADER_VERSION.length+1),link(src)])),textures=new Map(),targets=new Map(),samplers=new Map();
   const vbo=gl.createBuffer(),vao=gl.createVertexArray();gl.bindVertexArray(vao);gl.bindBuffer(gl.ARRAY_BUFFER,vbo);
   [[4,0],[4,16],[2,32],[2,40],[2,48]].forEach(([n,o],i)=>{gl.enableVertexAttribArray(i);gl.vertexAttribPointer(i,n,gl.FLOAT,false,56,o);});
   const FACTOR=[gl.ZERO,gl.ONE,gl.SRC_COLOR,gl.ONE_MINUS_SRC_COLOR,gl.DST_COLOR,gl.ONE_MINUS_DST_COLOR,gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA,gl.DST_ALPHA,gl.ONE_MINUS_DST_ALPHA,gl.CONSTANT_COLOR,gl.ONE_MINUS_CONSTANT_COLOR,gl.CONSTANT_ALPHA,gl.ONE_MINUS_CONSTANT_ALPHA,gl.SRC_ALPHA_SATURATE];
@@ -114,7 +120,7 @@ export function createGpu(canvas,saved={},onNew=()=>{}){const stats={compiles:0,
     const reg=r=>d[22+r-0xc0],texcfg=d[12],at=reg(0x104);
     const params=[d[14],d[17],d[20]],border=params.map(p=>(p>>12&7)===1|((p>>8&7)===1)<<1);
     const key=[...ENV.flatMap(r=>[reg(r),reg(r+1),reg(r+2),reg(r+4)]),reg(0xe0)&0xff00,texcfg&0x2007,at&0x71,...border].join(',');
-    let prog=programs.get(key);if(!prog){const src=fragmentShader(reg,texcfg,at,params);prog=link(src);programs.set(key,prog);stats.compiles++;onNew(key,src);}
+    let prog=programs.get(key);if(!prog){const src=fragmentShader(reg,texcfg,at,params);prog=link(src);programs.set(key,prog);stats.compiles++;onNew(SHADER_VERSION+'|'+key,src);}
     if(!ready(prog)){stats.skipped++;return;}
     const t=target(d[1],d[2],d[3]);gl.bindFramebuffer(gl.FRAMEBUFFER,t.fbo);
     const hw=f24(d[6]),hh=f24(d[7]),vx=d[8]&0x3ff,vy=d[8]>>>16&0x3ff;gl.viewport(vx,vy,Math.round(2*hw),Math.round(2*hh));

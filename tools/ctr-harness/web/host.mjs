@@ -29,7 +29,7 @@ async function start(){
   setInterval(()=>worker.postMessage({type:'latency',ms:latency()}),1000);
   // Shaders compiled in earlier sessions are kept in this browser and compiled again before the game starts.
   const SHADERS='rhf-ctr-shaders';let shaders={};try{shaders=JSON.parse(localStorage.getItem(SHADERS)||'{}');}catch{}
-  addEventListener('probe-shader',({detail:{key,src}})=>{shaders[key]=src;try{localStorage.setItem(SHADERS,JSON.stringify(shaders));}catch{}});
+  addEventListener('probe-shader',({detail:{key,src}})=>{const v=key.split('|')[0];for(const k of Object.keys(shaders))if(k.split('|')[0]!==v)delete shaders[k];shaders[key]=src;try{localStorage.setItem(SHADERS,JSON.stringify(shaders));}catch{}});
   worker.postMessage({type:'start',port:channel.port2,env,canvas:offscreen,latency:latency(),delay,shaders},offscreen?[channel.port2,offscreen]:[channel.port2]);
   status.textContent='Loading...';
 }
