@@ -3,8 +3,8 @@
 // pixel state (texture combiners as a generated shader, alpha test, blending), PRESENT shows a target
 // on the canvas the way the display transfer does (2:1 horizontal downscale, turned upright).
 const VS=`#version 300 es
-in vec4 aPos;in vec4 aCol;in vec2 aT0,aT1,aT2;out vec4 vCol;out vec2 vT0,vT1,vT2;out float vZ,vW;
-void main(){gl_Position=vec4(aPos.x,aPos.y,0.0,aPos.w);vCol=aCol;vT0=aT0;vT1=aT1;vT2=aT2;vZ=aPos.z;vW=aPos.w;}`;
+in vec4 aPos;in vec4 aCol;in vec2 aT0,aT1,aT2;out vec4 vCol;out vec2 vT0,vT1,vT2;out float vZ,vW;flat out float fZ,fW;
+void main(){gl_Position=vec4(aPos.x,aPos.y,0.0,aPos.w);vCol=aCol;vT0=aT0;vT1=aT1;vT2=aT2;vZ=aPos.z;vW=aPos.w;fZ=aPos.z;fW=aPos.w;}`;
 const PRESENT_VS=`#version 300 es
 void main(){gl_Position=vec4(gl_VertexID==1?3.0:-1.0,gl_VertexID==2?3.0:-1.0,0.0,1.0);}`;
 const PRESENT_FS=`#version 300 es
@@ -43,11 +43,15 @@ function fragmentShader(reg,texcfg,alphaTest,params){
   let test='';
   if(alphaTest&1){const f=alphaTest>>4&7,c=['false','true','abs(prev.a-uRef)<0.5/255.0','abs(prev.a-uRef)>=0.5/255.0','prev.a<uRef-0.5/255.0','prev.a<uRef+0.5/255.0','prev.a>uRef+0.5/255.0','prev.a>uRef-0.5/255.0'][f];test=`if(!(${c}))discard;`;}
   return `#version 300 es
-precision highp float;in vec4 vCol;in vec2 vT0,vT1,vT2;in float vZ,vW;uniform sampler2D uT0,uT1,uT2;uniform vec4 uC[6],uBorder[3];uniform vec4 uBuf;uniform float uRef;uniform vec3 uDepth;out vec4 outColor;
+precision highp float;in vec4 vCol;in vec2 vT0,vT1,vT2;in float vZ,vW;flat in float fZ,fW;uniform sampler2D uT0,uT1,uT2;uniform vec4 uC[6],uBorder[3];uniform vec4 uBuf;uniform float uRef;uniform vec3 uDepth;out vec4 outColor;
 void main(){vec4 prim=clamp(vCol,0.0,1.0),t0=${tex(0,'vT0')},t1=${tex(1,'vT1')},t2=${tex(2,texcfg>>13&1?'vT1':'vT2')};
 vec4 prev=prim,buf=vec4(0.0),nextbuf=uBuf;
 ${body}${test}outColor=prev;
-gl_FragDepth=clamp((uDepth.z>0.5?vZ/vW:vW)*uDepth.x+uDepth.y,0.0,1.0);}`;}
+float z=uDepth.z>0.5?vZ/vW:vW,zf=uDepth.z>0.5?fZ/fW:fW;
+// Flat sprites must give the exact same depth as other flat sprites at that z (the game uses depth EQUAL/LEQUAL
+// masks); interpolation rounding would otherwise make patches fail the test.
+if(abs(z-zf)<=1e-5*max(1.0,abs(zf)))z=zf;
+gl_FragDepth=clamp(z*uDepth.x+uDepth.y,0.0,1.0);}`;}
 
 // saved: shader sources from earlier sessions ({key: source}), compiled up front; onNew(key, source)
 // is told about each new one so the page can keep it. New shaders compile in the background

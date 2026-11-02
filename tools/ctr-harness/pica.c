@@ -257,6 +257,7 @@ static vec4 load_attr(uint32_t addr,uint32_t fmt){int type=fmt&3,n=(fmt>>2&3)+1;
   return r;}
 static int attr_size(uint32_t fmt){static const int sz[4]={1,1,2,4};return sz[fmt&3]*((fmt>>2&3)+1);}
 static int vs_dbg;
+static float round_f24(float f){uint32_t b;memcpy(&b,&f,4);if((b&0x7f800000)==0x7f800000)return f;b=(b+0x40)&~0x7fu;memcpy(&f,&b,4);return f;}
 static void run_vertex(uint32_t index,vtx*out){
   vs_state s;memset(&s,0,sizeof s);int na=attr_count();vec4 attr[12];
   uint32_t fmt_lo=preg[0x201],fmt_hi=preg[0x202],base=preg[0x200]<<3;
@@ -271,7 +272,11 @@ static void run_vertex(uint32_t index,vtx*out){
   uint64_t perm=(uint64_t)preg[0x2bb]|((uint64_t)preg[0x2bc]<<32);
   for(int i=0;i<na&&i<12;i++)s.v[perm>>(4*i)&15]=attr[i];
   if(vs_dbg&&index==0){FILE*f=fopen("/tmp/vsdump.bin","wb");fwrite(vs_code,4,512,f);fwrite(vs_desc,4,128,f);fwrite(vs_c,16,96,f);fwrite(vs_bool,1,16,f);fwrite(vs_int,1,16,f);fclose(f);}
-  vs_trace=vs_dbg&&index==0;vs_run(&s,preg[0x2ba]&0xffff,0,0);vs_trace=0;
+  vs_trace=vs_dbg&&index==0&&!getenv("DRAWALL");vs_run(&s,preg[0x2ba]&0xffff,0,0);vs_trace=0;
+  // The PICA's shader unit works in 24-bit floats (16-bit mantissa). Rounding the outputs to that
+  // precision makes values the game means to be equal come out equal: sprites at one depth are drawn
+  // with depth EQUAL/LEQUAL against each other, and float32 last-bit differences failed those tests.
+  for(int o=0;o<16;o++)for(int k=0;k<4;k++){float*f=comp(&s.o[o],k);*f=round_f24(*f);}
   if(vs_dbg){fprintf(stderr,"   vtx %u na %d perm %llx:",index,na,(unsigned long long)perm);for(int i=0;i<na;i++)fprintf(stderr," a%d(%.3f %.3f %.3f %.3f)",i,attr[i].x,attr[i].y,attr[i].z,attr[i].w);fprintf(stderr,"\n    out mask %x:",preg[0x2bd]);for(int o=0;o<8;o++)fprintf(stderr," o%d(%.3f %.3f %.3f %.3f)",o,s.o[o].x,s.o[o].y,s.o[o].z,s.o[o].w);fprintf(stderr," map %x %x %x %x fmt %x %x loaders:",preg[0x50],preg[0x51],preg[0x52],preg[0x53],preg[0x201],preg[0x202]);for(int b=0;b<3;b++)fprintf(stderr," [%x %x %x]",preg[0x203+3*b],preg[0x204+3*b],preg[0x205+3*b]);fprintf(stderr,"\n");}
   // outputs -> semantics
   memset(out,0,sizeof*out);out->col=(col4){1,1,1,1};int n=0;uint32_t mask=preg[0x2bd];
@@ -301,7 +306,10 @@ static void pica_draw(int indexed){
      {uint32_t sum=0;if(tu[0].base)for(int k=0;k<256;k++)sum+=tu[0].base[k];fprintf(stderr,"texsum %u wh %ux%u tev0 %x %x %x at %x ",sum,tu[0].w,tu[0].h,preg[0xc0],preg[0xc1],preg[0xc2],preg[0x104]);}fprintf(stderr,"tgt %x %ux%u ",cb_addr,cb_w,cb_h);fprintf(stderr,"draw gs%x/%x mode%u v%u n%u depth %x blend %x op %x tex %x/%x/%x col %.2f %.2f %.2f %.2f z/w %.4f box %.2f..%.2f %.2f..%.2f\n",preg[0x229],preg[0x252],mode,vblanks,n,preg[0x107],preg[0x101],preg[0x100],preg[0x80],tu[0].addr,tu[0].fmt,vb[0].col.r,vb[0].col.g,vb[0].col.b,vb[0].col.a,vb[0].pos.z/vb[0].pos.w,x0,x1,y0,y1);}}
   if(pica_log>1)fprintf(stderr,"pica draw %u vertices mode %u target %x %ux%u fmt %u v0 %.2f %.2f %.2f %.2f\n",n,mode,cb_addr,cb_w,cb_h,cb_fmt,vb[0].pos.x,vb[0].pos.y,vb[0].pos.z,vb[0].pos.w);
   uint32_t tri0=tri_out,culled_dbg=preg[0x40];
-  if(getenv("DRAWLOG")&&mode==3&&vblanks>=(uint32_t)atoi(getenv("DRAWLOG"))&&vblanks<(uint32_t)atoi(getenv("DRAWLOG"))+2){vs_dbg=1;vtx tmp;for(uint32_t i=0;i<4&&i<n;i++){uint32_t idx=first+i;if(indexed){uint32_t ia=(preg[0x200]<<3)+(uint32_t)((int32_t)(icfg<<4)>>4);idx=icfg>>31?*(uint16_t*)pm(ia+2*i,2):*pm(ia+i,1);}run_vertex(idx,&tmp);}vs_dbg=0;}
+  {static int pl=-2;if(pl==-2)pl=getenv("PARTLOG")?atoi(getenv("PARTLOG")):-1;
+   if(pl>=0&&mode==3&&vblanks>=(uint32_t)pl&&vblanks<(uint32_t)pl+300){float a0=9,a1=-9,x0=9,x1=-9,y0=9,y1=-9;for(uint32_t i=0;i<n;i++){float a=vb[i].col.a,x=vb[i].pos.x/vb[i].pos.w,y=vb[i].pos.y/vb[i].pos.w;if(a<a0)a0=a;if(a>a1)a1=a;if(x<x0)x0=x;if(x>x1)x1=x;if(y<y0)y0=y;if(y>y1)y1=y;}
+     fprintf(stderr,"part %u n %u tex %x alpha %.2f..%.2f box %.2f..%.2f %.2f..%.2f col %.2f %.2f %.2f\n",vblanks,n,preg[0x85],a0,a1,x0,x1,y0,y1,vb[0].col.r,vb[0].col.g,vb[0].col.b);}}
+  if(getenv("DRAWLOG")&&mode==3&&vblanks>=(uint32_t)atoi(getenv("DRAWLOG"))&&vblanks<(uint32_t)atoi(getenv("DRAWLOG"))+2){vs_dbg=1;vtx tmp;for(uint32_t i=0;i<(getenv("DRAWALL")?n:4)&&i<n;i++){uint32_t idx=first+i;if(indexed){uint32_t ia=(preg[0x200]<<3)+(uint32_t)((int32_t)(icfg<<4)>>4);idx=icfg>>31?*(uint16_t*)pm(ia+2*i,2):*pm(ia+i,1);}run_vertex(idx,&tmp);}vs_dbg=0;}
   if(mode==0||mode==3)for(uint32_t i=0;i+2<n;i+=3)raster_tri(&vb[i],&vb[i+1],&vb[i+2]);
   else if(mode==1)for(uint32_t i=0;i+2<n;i++){if(i&1)raster_tri(&vb[i+1],&vb[i],&vb[i+2]);else raster_tri(&vb[i],&vb[i+1],&vb[i+2]);}
   else for(uint32_t i=1;i+1<n;i++)raster_tri(&vb[0],&vb[i],&vb[i+1]);
