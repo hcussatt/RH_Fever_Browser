@@ -89,7 +89,9 @@ static vec4 vs_src(vs_state*s,uint32_t reg,uint32_t swz,int neg,int idx){
   vec4 in;if(reg<0x10)in=s->v[reg];else if(reg<0x20)in=s->r[reg-0x10];else{int u=reg-0x20;
     if(idx==1)u+=s->a0x;else if(idx==2)u+=s->a0y;else if(idx==3)u+=s->aL;in=u>=0&&u<96?vs_c[u]:(vec4){1,1,1,1};}
   vec4 o;for(int i=0;i<4;i++)*comp(&o,i)=*comp(&in,(swz>>(6-2*i))&3)*(neg?-1:1);return o;}
+static int vs_trace,vs_tpc;
 static void vs_dst(vs_state*s,uint32_t reg,uint32_t mask,vec4 v){
+  if(vs_trace)fprintf(stderr,"     pc %03x ins %08x desc %08x -> %s%u.%x = %.3f %.3f %.3f %.3f\n",vs_tpc,vs_code[vs_tpc],vs_desc[vs_code[vs_tpc]&127],reg<0x10?"o":"r",reg&15,mask,v.x,v.y,v.z,v.w);
   vec4*d=reg<0x10?&s->o[reg]:&s->r[(reg-0x10)&15];for(int i=0;i<4;i++)if(mask>>(3-i)&1)*comp(d,i)=*comp(&v,i);}
 // The PICA's multiply: 0 * inf = 0. A NaN operand also gives 0 here: the game uploads NaN in some
 // float32 uniforms (the shader masks them off with multiplies), and that keeps them out of positions.
@@ -101,10 +103,10 @@ static int vs_cond(vs_state*s,uint32_t ins){int rx=ins>>25&1,ry=ins>>24&1,op=ins
 static void vs_run(vs_state*s,uint32_t pc,uint32_t end,int depth){
   for(int guard=0;pc<512&&guard<100000;guard++){
     if(s->done||s->brk||(end&&pc==end))return;
-    uint32_t ins=vs_code[pc],op=ins>>26;
+    uint32_t ins=vs_code[pc],op=ins>>26;vs_tpc=pc;
     if(op>=0x38||(op&0x38)==0x30){ // MAD / MADI
       int inv=(op&0x38)==0x30;uint32_t desc=vs_desc[ins&31],dst=ins>>24&31,s1=ins>>17&31,s2,s3,idx=ins>>22&3;
-      if(inv){s2=ins>>10&31;s3=ins>>5&31;}else{s2=ins>>10&127;s3=ins>>5&31;}
+      if(inv){s2=ins>>12&31;s3=ins>>5&127;}else{s2=ins>>10&127;s3=ins>>5&31;}
       vec4 a=vs_src(s,s1,desc>>5&255,desc>>4&1,0),b=vs_src(s,s2,desc>>14&255,desc>>13&1,inv?0:idx),c=vs_src(s,s3,desc>>23&255,desc>>22&1,inv?idx:0),r;
       for(int i=0;i<4;i++)*comp(&r,i)=mulz(*comp(&a,i),*comp(&b,i))+*comp(&c,i);vs_dst(s,dst,desc&15,r);pc++;continue;}
     if(op<0x20||op==0x2e||op==0x2f){
@@ -130,7 +132,7 @@ static void vs_run(vs_state*s,uint32_t pc,uint32_t end,int depth){
       case 0x0f:{float d=1/sqrtf(a.x);r=(vec4){d,d,d,d};break;}
       case 0x12:if(desc>>3&1)s->a0x=(int)a.x;if(desc>>2&1)s->a0y=(int)a.y;pc++;continue;
       case 0x13:r=a;break;
-      case 0x2e:case 0x2f:{int cy=(ins>>24)&7,cx=(ins>>21)&7;s->cmp[0]=vs_cmp(cx,a.x,b.x);s->cmp[1]=vs_cmp(cy,a.y,b.y);pc++;continue;}
+      case 0x2e:case 0x2f:{int cx=(ins>>24)&7,cy=(ins>>21)&7;s->cmp[0]=vs_cmp(cx,a.x,b.x);s->cmp[1]=vs_cmp(cy,a.y,b.y);pc++;continue;}
       default:pc++;continue;}
       vs_dst(s,dst,desc&15,r);pc++;continue;}
     uint32_t off=ins>>10&0xfff,num=ins&255;
@@ -151,7 +153,7 @@ static void vs_run(vs_state*s,uint32_t pc,uint32_t end,int depth){
 
 // ---- rasterizer ----
 typedef struct{vec4 pos;col4 col;float u0,v0,u1,v1,u2,v2,w0;}vtx;
-static uint32_t pica_draws,pica_tris;static uint64_t pica_px,pica_box;
+static uint32_t pica_draws,pica_tris,tri_out;static uint64_t pica_px,pica_box;
 static col4 c4(float r,float g,float b,float a){return (col4){r,g,b,a};}
 static col4 cclamp(col4 c){c.r=c.r<0?0:c.r>1?1:c.r;c.g=c.g<0?0:c.g>1?1:c.g;c.b=c.b<0?0:c.b>1?1:c.b;c.a=c.a<0?0:c.a>1?1:c.a;return c;}
 static float blend_factor(int f,col4 s,col4 d,col4 k,int ch,int alpha){
@@ -199,7 +201,7 @@ static void raster_tri(vtx*a,vtx*b,vtx*c){
   for(int i=0;i<3;i++){float w=v[i]->pos.w;if(!finite_bits(v[i]->pos.x)||!finite_bits(v[i]->pos.y)||!finite_bits(w)||w<=0)return;iw[i]=1/w;sx[i]=(v[i]->pos.x*iw[i]+1)*hw+vx;sy[i]=(v[i]->pos.y*iw[i]+1)*hh+vy;sz[i]=v[i]->pos.z*iw[i];}
   float area=(sx[1]-sx[0])*(sy[2]-sy[0])-(sx[2]-sx[0])*(sy[1]-sy[0]);if(area==0)return;
   int cull=preg[0x40]&3;if(cull==1&&area<0)return;if(cull==2&&area>0)return;
-  if(pica_gl){gl_tri(a,b,c);return;}
+  tri_out++;if(pica_gl){gl_tri(a,b,c);return;}
   int x0=floorf(fminf(sx[0],fminf(sx[1],sx[2]))),x1=ceilf(fmaxf(sx[0],fmaxf(sx[1],sx[2]))),y0=floorf(fminf(sy[0],fminf(sy[1],sy[2]))),y1=ceilf(fmaxf(sy[0],fmaxf(sy[1],sy[2])));
   if(x0<0)x0=0;if(y0<0)y0=0;if(x1>(int)cb_w)x1=cb_w;if(y1>(int)cb_h)y1=cb_h;
   if(preg[0x65]&1){int sx0=preg[0x66]&0x3ff,sy0=preg[0x66]>>16&0x3ff,sx1=(preg[0x67]&0x3ff)+1,sy1=(preg[0x67]>>16&0x3ff)+1;
@@ -254,6 +256,7 @@ static vec4 load_attr(uint32_t addr,uint32_t fmt){int type=fmt&3,n=(fmt>>2&3)+1;
     *comp(&r,i)=f;}
   return r;}
 static int attr_size(uint32_t fmt){static const int sz[4]={1,1,2,4};return sz[fmt&3]*((fmt>>2&3)+1);}
+static int vs_dbg;
 static void run_vertex(uint32_t index,vtx*out){
   vs_state s;memset(&s,0,sizeof s);int na=attr_count();vec4 attr[12];
   uint32_t fmt_lo=preg[0x201],fmt_hi=preg[0x202],base=preg[0x200]<<3;
@@ -267,7 +270,9 @@ static void run_vertex(uint32_t index,vtx*out){
       int sz=attr_size(f),al=(f&3)==3?4:(f&3)==2?2:1;at=(at+al-1)&~(uint32_t)(al-1);at+=sz;}}
   uint64_t perm=(uint64_t)preg[0x2bb]|((uint64_t)preg[0x2bc]<<32);
   for(int i=0;i<na&&i<12;i++)s.v[perm>>(4*i)&15]=attr[i];
-  vs_run(&s,preg[0x2ba]&0xffff,0,0);
+  if(vs_dbg&&index==0){FILE*f=fopen("/tmp/vsdump.bin","wb");fwrite(vs_code,4,512,f);fwrite(vs_desc,4,128,f);fwrite(vs_c,16,96,f);fwrite(vs_bool,1,16,f);fwrite(vs_int,1,16,f);fclose(f);}
+  vs_trace=vs_dbg&&index==0;vs_run(&s,preg[0x2ba]&0xffff,0,0);vs_trace=0;
+  if(vs_dbg){fprintf(stderr,"   vtx %u na %d perm %llx:",index,na,(unsigned long long)perm);for(int i=0;i<na;i++)fprintf(stderr," a%d(%.3f %.3f %.3f %.3f)",i,attr[i].x,attr[i].y,attr[i].z,attr[i].w);fprintf(stderr,"\n    out mask %x:",preg[0x2bd]);for(int o=0;o<8;o++)fprintf(stderr," o%d(%.3f %.3f %.3f %.3f)",o,s.o[o].x,s.o[o].y,s.o[o].z,s.o[o].w);fprintf(stderr," map %x %x %x %x fmt %x %x loaders:",preg[0x50],preg[0x51],preg[0x52],preg[0x53],preg[0x201],preg[0x202]);for(int b=0;b<3;b++)fprintf(stderr," [%x %x %x]",preg[0x203+3*b],preg[0x204+3*b],preg[0x205+3*b]);fprintf(stderr,"\n");}
   // outputs -> semantics
   memset(out,0,sizeof*out);out->col=(col4){1,1,1,1};int n=0;uint32_t mask=preg[0x2bd];
   for(int o=0;o<16;o++){if(!(mask>>o&1))continue;if(n>=7)break;uint32_t map=preg[0x50+n++];
@@ -293,11 +298,14 @@ static void pica_draw(int indexed){
     run_vertex(idx,&vb[i]);}
   {static int at=-2;if(at==-2)at=getenv("DRAWLOG")?atoi(getenv("DRAWLOG")):-1;
    if(at>=0&&vblanks>=(uint32_t)at&&vblanks<(uint32_t)at+2&&n){float x0=9,x1=-9,y0=9,y1=-9;for(uint32_t i=0;i<n;i++){float x=vb[i].pos.x/vb[i].pos.w,y=vb[i].pos.y/vb[i].pos.w;if(x<x0)x0=x;if(x>x1)x1=x;if(y<y0)y0=y;if(y>y1)y1=y;}
-     fprintf(stderr,"draw v%u n%u depth %x blend %x op %x tex %x/%x/%x col %.2f %.2f %.2f %.2f z/w %.4f box %.2f..%.2f %.2f..%.2f\n",vblanks,n,preg[0x107],preg[0x101],preg[0x100],preg[0x80],tu[0].addr,tu[0].fmt,vb[0].col.r,vb[0].col.g,vb[0].col.b,vb[0].col.a,vb[0].pos.z/vb[0].pos.w,x0,x1,y0,y1);}}
+     {uint32_t sum=0;if(tu[0].base)for(int k=0;k<256;k++)sum+=tu[0].base[k];fprintf(stderr,"texsum %u wh %ux%u tev0 %x %x %x at %x ",sum,tu[0].w,tu[0].h,preg[0xc0],preg[0xc1],preg[0xc2],preg[0x104]);}fprintf(stderr,"tgt %x %ux%u ",cb_addr,cb_w,cb_h);fprintf(stderr,"draw gs%x/%x mode%u v%u n%u depth %x blend %x op %x tex %x/%x/%x col %.2f %.2f %.2f %.2f z/w %.4f box %.2f..%.2f %.2f..%.2f\n",preg[0x229],preg[0x252],mode,vblanks,n,preg[0x107],preg[0x101],preg[0x100],preg[0x80],tu[0].addr,tu[0].fmt,vb[0].col.r,vb[0].col.g,vb[0].col.b,vb[0].col.a,vb[0].pos.z/vb[0].pos.w,x0,x1,y0,y1);}}
   if(pica_log>1)fprintf(stderr,"pica draw %u vertices mode %u target %x %ux%u fmt %u v0 %.2f %.2f %.2f %.2f\n",n,mode,cb_addr,cb_w,cb_h,cb_fmt,vb[0].pos.x,vb[0].pos.y,vb[0].pos.z,vb[0].pos.w);
+  uint32_t tri0=tri_out,culled_dbg=preg[0x40];
+  if(getenv("DRAWLOG")&&mode==3&&vblanks>=(uint32_t)atoi(getenv("DRAWLOG"))&&vblanks<(uint32_t)atoi(getenv("DRAWLOG"))+2){vs_dbg=1;vtx tmp;for(uint32_t i=0;i<4&&i<n;i++){uint32_t idx=first+i;if(indexed){uint32_t ia=(preg[0x200]<<3)+(uint32_t)((int32_t)(icfg<<4)>>4);idx=icfg>>31?*(uint16_t*)pm(ia+2*i,2):*pm(ia+i,1);}run_vertex(idx,&tmp);}vs_dbg=0;}
   if(mode==0||mode==3)for(uint32_t i=0;i+2<n;i+=3)raster_tri(&vb[i],&vb[i+1],&vb[i+2]);
   else if(mode==1)for(uint32_t i=0;i+2<n;i++){if(i&1)raster_tri(&vb[i+1],&vb[i],&vb[i+2]);else raster_tri(&vb[i],&vb[i+1],&vb[i+2]);}
   else for(uint32_t i=1;i+1<n;i++)raster_tri(&vb[0],&vb[i],&vb[i+1]);
+  if(getenv("DRAWLOG")&&mode==3&&vblanks>=(uint32_t)atoi(getenv("DRAWLOG"))&&vblanks<(uint32_t)atoi(getenv("DRAWLOG"))+2){fprintf(stderr,"  -> %u of %u triangles kept (cull %x) uv %.3f,%.3f %.3f,%.3f %.3f,%.3f tex0 param %x e0 %x fd %x\n  tev:",tri_out-tri0,n/3,culled_dbg,vb[0].u0,vb[0].v0,vb[1].u0,vb[1].v0,vb[2].u0,vb[2].v0,tu[0].param,preg[0xe0],preg[0xfd]);for(int st=0;st<6;st++){int b=(int[]){0xc0,0xc8,0xd0,0xd8,0xf0,0xf8}[st];fprintf(stderr," [%x %x %x %x %x]",preg[b],preg[b+1],preg[b+2],preg[b+3],preg[b+4]);}fprintf(stderr,"\n");}
   if(pica_gl)gl_end_draw();}
 
 static void pica_write(uint32_t id,uint32_t val,uint32_t mask){

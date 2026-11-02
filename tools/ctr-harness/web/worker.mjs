@@ -9,13 +9,13 @@ let drawnCount=0,t0=performance.now(),audio,queued=0,wake=null,pad=0,frames=0;
 // latency, and an extra delay the player can set. A change reaches the game with its age as heard:
 // the audio still queued, the speaker latency and the time since the key, which the game's own
 // input queue then judges that much earlier (see input_age_ms in run.c).
-let perf=false,lastEnd=0,lastTick=0,clock=false,padAt=0,outputLatency=0,extraDelay=0,ageSent=0;
+let snapRange=null,perf=false,lastEnd=0,lastTick=0,clock=false,padAt=0,outputLatency=0,extraDelay=0,ageSent=0;
 const env={INTERLEAVE:'1',GSP:'1',GAME:'67',START:'200',HWAKE:'1',WORKERS:'all,tramp,gsp'};
 onmessage=async({data})=>{
   if(data.type==='pad'){pad=data.pad;padAt=data.at;}
   if(data.type==='latency')outputLatency=data.ms;
   if(data.type!=='start')return;
-  audio=data.port;extraDelay=+(data.delay||0);outputLatency=data.latency||0;clock=!!data.env.clock;delete data.env.clock;perf=!!data.env.perf;delete data.env.perf;if(data.env.ahead){AHEAD=+data.env.ahead;delete data.env.ahead;}
+  audio=data.port;extraDelay=+(data.delay||0);outputLatency=data.latency||0;clock=!!data.env.clock;delete data.env.clock;perf=!!data.env.perf;delete data.env.perf;if(data.env.snap){snapRange=data.env.snap.split('-').map(Number);delete data.env.snap;}if(data.env.ahead){AHEAD=+data.env.ahead;delete data.env.ahead;}
   const gpu=data.canvas?createGpu(data.canvas,data.shaders||{},(key,src)=>postMessage({type:'shader',key,src})):null;if(gpu)env.GL='1';
   audio.onmessage=({data})=>{queued=data.queued;if(wake&&queued<=AHEAD){const w=wake;wake=null;w();}};
   const list=(await (await fetch('files.txt')).text()).split('\n').filter(Boolean);
@@ -27,6 +27,8 @@ onmessage=async({data})=>{
     preRun:[m=>Object.assign(m.ENV,env,data.env)],
     hostLatency:()=>Math.round(Math.max(0,queued/32728*1000+outputLatency+extraDelay)*10),
     async hostVblank(rgb,drawn,samples,n,cmd,ncmd,vtx,tick){tick/=1000;lastTick=tick;
+      // ?snap=from-to: the presented picture of every 3rd vblank in that tick range goes to the page (tests)
+      if(gpu&&snapRange){gpu.snap.want=tick>=snapRange[0]&&tick<=snapRange[1]&&frames%3===0;gpu.snap.got=px=>postMessage({type:'snap',tick,px},[px.buffer]);}
       const tA=performance.now();if(gpu&&ncmd)gpu.run(Module.HEAPU8,cmd,ncmd,vtx);
       // ?perf=1: report slow vblanks (game time since the last one, GPU time, new shaders and textures)
       if(perf){const tB=performance.now(),game=tA-lastEnd;if(game+tB-tA>20)postMessage({type:'perf',at:tB,tick:lastTick,game,gpu:tB-tA,compiles:gpu?.stats.compiles,uploads:gpu?.stats.uploads,skipped:gpu?.stats.skipped});}

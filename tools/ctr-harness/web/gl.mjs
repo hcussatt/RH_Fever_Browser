@@ -52,7 +52,7 @@ gl_FragDepth=clamp((uDepth.z>0.5?vZ/vW:vW)*uDepth.x+uDepth.y,0.0,1.0);}`;}
 // saved: shader sources from earlier sessions ({key: source}), compiled up front; onNew(key, source)
 // is told about each new one so the page can keep it. New shaders compile in the background
 // (KHR_parallel_shader_compile) and their draws wait for them, so a first-time effect never stalls the game.
-export function createGpu(canvas,saved={},onNew=()=>{}){const stats={compiles:0,uploads:0,skipped:0};
+export function createGpu(canvas,saved={},onNew=()=>{}){const stats={compiles:0,uploads:0,skipped:0},snap={want:false,got:()=>{}};
   const gl=canvas.getContext('webgl2',{alpha:false,antialias:false,depth:false,stencil:false,preserveDrawingBuffer:false});
   if(!gl)return null;
   const parallel=gl.getExtension('KHR_parallel_shader_compile');
@@ -104,7 +104,7 @@ export function createGpu(canvas,saved={},onNew=()=>{}){const stats={compiles:0,
       else if(k===4){const t=[...targets.values()].find(t=>t.addr===c[i+1]&&t.w===480&&t.h===400),flip=c[i+2]&1;i+=3;
         if(!t)continue;gl.bindFramebuffer(gl.FRAMEBUFFER,null);gl.viewport(0,0,400,240);gl.disable(gl.SCISSOR_TEST);gl.disable(gl.BLEND);gl.disable(gl.DEPTH_TEST);gl.colorMask(true,true,true,true);
         gl.useProgram(present.p);gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,t.tex);gl.bindSampler(0,null);gl.uniform1i(present.uT[0],0);gl.uniform1i(present.uFlip,flip);
-        gl.drawArrays(gl.TRIANGLES,0,3);} // one triangle covering the canvas
+        gl.drawArrays(gl.TRIANGLES,0,3);if(snap.want){const px=new Uint8Array(400*240*4);gl.readPixels(0,0,400,240,gl.RGBA,gl.UNSIGNED_BYTE,px);snap.got(px);}} // one triangle covering the canvas
       else break;}}
   function draw(d){
     const reg=r=>d[22+r-0xc0],texcfg=d[12],at=reg(0x104);
@@ -129,5 +129,5 @@ export function createGpu(canvas,saved={},onNew=()=>{}){const stats={compiles:0,
     const dc=reg(0x107),write=!!(dc>>12&1)&&!!(d[97]&2);t.depthAddr=d[98];gl.uniform3f(prog.uDepth,f24(d[94]),f24(d[95]),d[96]&1);
     if(dc&1||write){gl.enable(gl.DEPTH_TEST);gl.depthFunc(dc&1?DEPTHF[dc>>4&7]:gl.ALWAYS);gl.depthMask(write);}else gl.disable(gl.DEPTH_TEST);
     gl.drawArrays(gl.TRIANGLES,d[4],d[5]);}
-  return {run,stats};
+  return {run,stats,snap};
 }

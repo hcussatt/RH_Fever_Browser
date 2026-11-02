@@ -15,7 +15,7 @@ async function start(){
   worker.onmessage=({data})=>{
     if(data.type==='frame')(ctx??=canvas.getContext('2d')).putImageData(new ImageData(data.px,400,240),0,0);
     if(data.type==='status')status.textContent=data.text;
-    if(['clock','judge','perf','shader'].includes(data.type))dispatchEvent(new CustomEvent('probe-'+data.type,{detail:data})); // tests listen too
+    if(['clock','judge','perf','shader','snap'].includes(data.type))dispatchEvent(new CustomEvent('probe-'+data.type,{detail:data})); // tests listen too
     if(data.type==='judge')judge.textContent=`last input ${data.ms>0?'+':''}${data.ms.toFixed(0)} ms (${['outside the windows','barely','just'][data.kind]})`;};
   // Harness settings from the address (?FSTAT=1&DSPLOG=1 ...) pass through to the game's environment.
   const env=Object.fromEntries(new URLSearchParams(location.search));
