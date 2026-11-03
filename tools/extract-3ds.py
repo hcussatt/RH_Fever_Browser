@@ -7,7 +7,9 @@ Usage: extract-3ds.py "Rhythm Heaven Megamix (USA).cia" [RomFS path pattern ...]
 which is git-ignored: code-text.bin, code-rodata.bin, code-data.bin, code.json (load addresses and
 sizes), romfs.json (every RomFS file's path, offset and size, so later steps read single files),
 romfs-meta.bin (the RomFS header and directory tables the program reads before any file) and,
-for each pattern given (fnmatch, such as 'cellanim/ctrBlanco*'), the matching files under romfs/.
+for each pattern given (fnmatch, such as 'cellanim/ctrBlanco*'; '*' is all of RomFS, and a pattern
+starting with ! leaves its matches out), the matching files under romfs/. Files already extracted
+with the right size are kept.
 """
 import fnmatch
 import json
@@ -28,9 +30,14 @@ for name, (address, data) in segments.items():
 (CTR/'romfs-meta.bin').write_bytes(dump.raw(dump.level3, dump.level3_data))
 (CTR/'romfs.json').write_text(json.dumps({'dump': str(sys.argv[1]), 'level3': dump.level3,
                                           'level3_data': dump.level3_data, 'files': dump.files}, indent=0))
-wanted = [name for name in dump.files if any(fnmatch.fnmatch(name, p) for p in sys.argv[2:])]
+include = [p for p in sys.argv[2:] if not p.startswith('!')]
+exclude = [p[1:] for p in sys.argv[2:] if p.startswith('!')]
+wanted = [name for name in dump.files if any(fnmatch.fnmatch(name, p) for p in include)
+          and not any(fnmatch.fnmatch(name, p) for p in exclude)]
 for name in wanted:
     out = CTR/'romfs'/name
+    if out.is_file() and out.stat().st_size == dump.files[name][1]:
+        continue  # extracted by an earlier run
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_bytes(dump.read(name))
 print(f'code: text {info["text"]["size"]:#x} at {info["text"]["address"]:#x}, rodata {info["rodata"]["size"]:#x}, '

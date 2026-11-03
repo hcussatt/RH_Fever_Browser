@@ -2,7 +2,6 @@
 // The application and the DSP share two copies of the audio structures in DSP RAM (0x1ff50000 and
 // 0x1ff70000); each audio frame (160 samples at 32728 Hz) the application fills one copy, raises the
 // DSP semaphore, and the DSP reads it and writes its status back.
-#include <dirent.h>
 static int dsp_log=-1;
 static uint8_t dsp_pipe[8][64];static uint32_t dsp_pipe_len[8];
 static uint32_t dsp_event, dsp_sem_mask, dsp_irq_event, dsp_frames, dsp_irq_binary;
@@ -12,33 +11,39 @@ static struct{uint64_t hash;uint32_t file,index;}aac_frames[1<<16];static int aa
 static struct{int16_t*pcm;uint32_t samples,channels;}aac_files[8];static int aac_file_count;
 static uint64_t fnv(const uint8_t*d,uint32_t n){uint64_t h=1469598103934665603ull;for(uint32_t i=0;i<n;i++){h^=d[i];h*=1099511628211ull;}return h;}
 static void aac_load(const char*path){
+  if(aac_file_count>=8){fprintf(stderr,"aac: more than 8 music files, %s skipped\n",path);return;}
   FILE*f=fopen(path,"rb");if(!f)return;fseek(f,0,2);long n=ftell(f);fseek(f,0,0);uint8_t*d=malloc(n);fread(d,1,n,f);fclose(f);
   int file=aac_file_count++;uint32_t index=0;
-  for(long at=0;at+7<=n;){if(d[at]!=0xff||(d[at+1]&0xf0)!=0xf0)break;uint32_t len=((d[at+3]&3)<<11)|(d[at+4]<<3)|(d[at+5]>>5);
+  for(long at=0;at+7<=n&&aac_frame_count<(1<<16);){if(d[at]!=0xff||(d[at+1]&0xf0)!=0xf0)break;uint32_t len=((d[at+3]&3)<<11)|(d[at+4]<<3)|(d[at+5]>>5);
     if(!len||at+len>n)break;aac_frames[aac_frame_count].hash=fnv(d+at,len);aac_frames[aac_frame_count].file=file;aac_frames[aac_frame_count++].index=index++;at+=len;}
   free(d);
-#ifdef __EMSCRIPTEN__ // the page decoded the file already (path + ".pcm", 16-bit stereo)
-  char pcm_path[512];snprintf(pcm_path,512,"%s.pcm",path);FILE*p=fopen(pcm_path,"rb");if(!p)return;
+  // Decoded by the build already (path + ".pcm", 16-bit stereo, one 1024-sample block per ADTS frame);
+  // native runs without it decode through ffmpeg.
+  char pcm_path[512];snprintf(pcm_path,512,"%s.pcm",path);FILE*p=fopen(pcm_path,"rb");int piped=0;
+#ifdef __EMSCRIPTEN__
+  if(!p)return;
 #else
-  char cmd[512];snprintf(cmd,512,"ffmpeg -v quiet -i '%s' -f s16le -ac 2 -",path);FILE*p=popen(cmd,"r");
+  if(!p){char cmd[512];snprintf(cmd,512,"ffmpeg -v quiet -i '%s' -f s16le -ac 2 -",path);p=popen(cmd,"r");piped=1;}
+  if(!p)return;
 #endif
   size_t cap=1<<20,got=0;int16_t*pcm=malloc(cap*2);size_t k;while((k=fread(pcm+got,2,cap-got,p))>0){got+=k;if(got==cap){cap*=2;pcm=realloc(pcm,cap*2);}}
-#ifdef __EMSCRIPTEN__
-  fclose(p);
-#else
-  pclose(p);
+#ifndef __EMSCRIPTEN__
+  if(piped)pclose(p);else
 #endif
+  fclose(p);
   aac_files[file].pcm=pcm;aac_files[file].samples=got/2;aac_files[file].channels=2;
   if(dsp_log>0)fprintf(stderr,"aac %s: %u frames, %u samples\n",path,index,(unsigned)(got/2));}
-static void aac_load_all(void){static int done;if(done++)return;
-  const char*dir="build/ctr/romfs/sound/aac/";char path[512];
-  DIR*l=opendir(dir);struct dirent*e;
-  while(l&&(e=readdir(l)))if(strlen(e->d_name)>4&&!strcmp(e->d_name+strlen(e->d_name)-4,".aac")){snprintf(path,512,"%s%s",dir,e->d_name);aac_load(path);}if(l)closedir(l);}
+// The music files the game has read so far (each is loaded once, when a frame is not found yet).
+static void aac_load_opened(void){static char loaded[1200];
+  for(int i=0;i<rfile_count;i++){const char*f=rfiles[i].path;size_t n=strlen(f);
+    if(!rfiles[i].opened||loaded[i]||strncmp(f,"sound/aac/",10)||n<4||strcmp(f+n-4,".aac"))continue;
+    loaded[i]=1;char path[160];snprintf(path,160,"build/ctr/romfs/%s",f);aac_load(path);}}
 static void dsp_binary(uint32_t ptr,uint32_t size){ // a request on pipe 3: answer on pipe 3 and raise its interrupt
   uint32_t codec=rd16(ptr),cmd=rd16(ptr+2);uint8_t out[32]={0};out[0]=codec;out[2]=cmd;
   if(codec==1&&cmd==1){ // decode one frame
     uint32_t src=rd32(ptr+8),n=rd32(ptr+12),dst0=rd32(ptr+16),dst1=rd32(ptr+20);
-    aac_load_all();uint64_t h=fnv(p(src,n),n);int i;for(i=0;i<aac_frame_count;i++)if(aac_frames[i].hash==h)break;
+    uint64_t h=fnv(p(src,n),n);int i;for(int pass=0;pass<2;pass++){for(i=0;i<aac_frame_count;i++)if(aac_frames[i].hash==h)break;
+      if(i<aac_frame_count||pass)break;aac_load_opened();}
     uint32_t samples=1024;if(dsp_log>0&&i<aac_frame_count)fprintf(stderr,"aac decode file %u frame %u\n",aac_frames[i].file,aac_frames[i].index);
     if(i<aac_frame_count){int16_t*pcm=aac_files[aac_frames[i].file].pcm;uint32_t total=aac_files[aac_frames[i].file].samples,at=aac_frames[i].index*1024;
       for(uint32_t s=0;s<samples;s++){int16_t l=at+s<total?pcm[2*(at+s)]:0,r=at+s<total?pcm[2*(at+s)+1]:0;

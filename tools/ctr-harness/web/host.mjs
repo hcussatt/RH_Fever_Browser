@@ -3,6 +3,12 @@
 const canvas=document.querySelector('canvas'),status=document.getElementById('status'),judge=document.getElementById('judge');
 let ctx; // the 2D fallback when the worker cannot draw with WebGL
 let worker,held=new Set();
+// The games in this build (games.json, written by build-web.sh); ?GAME=index picks one, else the first.
+const games=await (await fetch('games.json')).json(),params=new URLSearchParams(location.search);
+const game=games.find(g=>String(g.game)===params.get('GAME'))??games[0];
+document.title=game.title;
+status.textContent=`Click to start ${game.title} (A: Space, Left Shift or left click).`;
+document.getElementById('games').innerHTML=games.length>1?games.map(g=>g===game?`<b>${g.title}</b>`:`<a href="?GAME=${g.game}">${g.title}</a>`).join(' · '):'';
 // Each change carries its event time, so the game can judge it from when it happened.
 function pad(e){worker?.postMessage({type:'pad',pad:held.size?1:0,at:performance.timeOrigin+(e?.timeStamp??performance.now())});}
 async function start(){
@@ -18,7 +24,7 @@ async function start(){
     if(['clock','judge','perf','shader','snap'].includes(data.type))dispatchEvent(new CustomEvent('probe-'+data.type,{detail:data})); // tests listen too
     if(data.type==='judge')judge.textContent=`last input ${data.ms>0?'+':''}${data.ms.toFixed(0)} ms (${['outside the windows','barely','just'][data.kind]})`;};
   // Harness settings from the address (?FSTAT=1&DSPLOG=1 ...) pass through to the game's environment.
-  const env=Object.fromEntries(new URLSearchParams(location.search));
+  const env=Object.fromEntries(params);env.GAME=String(game.game);
   // WebGL drawing in the worker (OffscreenCanvas) unless ?soft=1 asks for the software picture.
   const offscreen=!env.soft&&canvas.transferControlToOffscreen?canvas.transferControlToOffscreen():null;delete env.soft;
   // Speaker latency as the browser reports it, kept current; ?delay=ms (or the site's saved audio

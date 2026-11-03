@@ -13,7 +13,7 @@ static void hid_vblank(void){
   if(!hid_shm)return;
   // Native runs press A from the environment: PRESS=frame,frame,... holds it for 4 vblanks each.
   // PRESS=frame:len holds it len vblanks instead.
-  {static uint32_t presses[1024],lens[1024];static int np=-1;if(np<0){np=0;char*e=getenv("PRESS");while(e&&*e&&np<1024){lens[np]=4;presses[np]=strtoul(e,&e,10);if(*e==':')lens[np]=strtoul(e+1,&e,10);np++;if(*e==',')e++;}}
+  {static uint32_t presses[4096],lens[4096];static int np=-1;if(np<0){np=0;char*e=getenv("PRESS");while(e&&*e&&np<4096){lens[np]=4;presses[np]=strtoul(e,&e,10);if(*e==':')lens[np]=strtoul(e+1,&e,10);np++;if(*e==',')e++;}}
    if(np){pad_held=0;for(int k=0;k<np;k++)if(vblanks>=presses[k]&&vblanks<presses[k]+lens[k])pad_held|=1;}}
   uint32_t index=(rd32(hid_shm+0x10)+1)%8,e=hid_shm+0x28+index*0x10;
   wr32(e,pad_held);wr32(e+4,pad_held&~pad_last);wr32(e+8,pad_last&~pad_held);wr32(e+12,0);

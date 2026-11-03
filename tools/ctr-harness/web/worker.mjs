@@ -10,7 +10,7 @@ let drawnCount=0,t0=performance.now(),audio,queued=0,wake=null,pad=0,frames=0;
 // the audio still queued, the speaker latency and the time since the key, which the game's own
 // input queue then judges that much earlier (see input_age_ms in run.c).
 let snapRange=null,perf=false,lastEnd=0,lastTick=0,clock=false,padAt=0,outputLatency=0,extraDelay=0,ageSent=0;
-const env={INTERLEAVE:'1',GSP:'1',GAME:'67',START:'200',HWAKE:'1',WORKERS:'all,tramp,gsp'};
+const env={INTERLEAVE:'1',GSP:'1',START:'200',HWAKE:'1',WORKERS:'all,tramp,gsp'};
 onmessage=async({data})=>{
   if(data.type==='pad'){pad=data.pad;padAt=data.at;}
   if(data.type==='latency')outputLatency=data.ms;
@@ -18,7 +18,7 @@ onmessage=async({data})=>{
   audio=data.port;extraDelay=+(data.delay||0);outputLatency=data.latency||0;clock=!!data.env.clock;delete data.env.clock;perf=!!data.env.perf;delete data.env.perf;if(data.env.snap){snapRange=data.env.snap.split('-').map(Number);delete data.env.snap;}if(data.env.ahead){AHEAD=+data.env.ahead;delete data.env.ahead;}
   const gpu=data.canvas?createGpu(data.canvas,data.shaders||{},(key,src)=>postMessage({type:'shader',key,src})):null;if(gpu)env.GL='1';
   audio.onmessage=({data})=>{queued=data.queued;if(wake&&queued<=AHEAD){const w=wake;wake=null;w();}};
-  const list=(await (await fetch('files.txt')).text()).split('\n').filter(Boolean);
+  const list=(await (await fetch(`files-${data.env.GAME}.txt`)).text()).split('\n').filter(Boolean);
   const files=await Promise.all(list.map(async f=>[f,new Uint8Array(await (await fetch('data/'+f)).arrayBuffer())]));
   const Module=await createModule({
     print:t=>console.log(t),printErr:t=>console.log(t),

@@ -93,7 +93,7 @@ static void reply(uint32_t cmd,int words){wr32(0x1ff82080,(cmd&0xffff0000)|(word
 // The RomFS as the program reads it (level 3): the header and tables from romfs-meta.bin, file
 // data from the files extract-3ds.py wrote under build/ctr/romfs/ (romfs-index.txt: offset size path).
 static uint8_t*romfs_meta;static long romfs_meta_size,romfs_size;
-static struct{uint64_t at,size;char path[96];int warned;}rfiles[1200];static int rfile_count;
+static struct{uint64_t at,size;char path[96];int warned,opened;}rfiles[1200];static int rfile_count;
 static void rom_open(void){
   FILE*f=fopen("build/ctr/romfs-meta.bin","rb");
   if(f){fseek(f,0,2);romfs_meta_size=ftell(f);fseek(f,0,0);romfs_meta=malloc(romfs_meta_size);fread(romfs_meta,1,romfs_meta_size,f);fclose(f);}
@@ -110,6 +110,7 @@ static void rom_read(uint64_t off,uint32_t size,uint32_t ptr){
     if(i==rfile_count){fprintf(stderr,"romfs read outside any file: %llx\n",(unsigned long long)off);return;}
     uint32_t n=rfiles[i].at+rfiles[i].size-off<size?rfiles[i].at+rfiles[i].size-off:size;
     char path[160];snprintf(path,160,"build/ctr/romfs/%s",rfiles[i].path);if(getenv("ROMLOG"))fprintf(stderr,"  file %s +%llx frame %u\n",rfiles[i].path,(unsigned long long)(off-rfiles[i].at),vblanks);
+    rfiles[i].opened=1;
     FILE*f=fopen(path,"rb");
     if(f){fseek(f,off-rfiles[i].at,0);fread(d,1,n,f);fclose(f);}
     else if(!rfiles[i].warned++)fprintf(stderr,"romfs file not extracted: %s\n",rfiles[i].path);
