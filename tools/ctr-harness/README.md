@@ -17,7 +17,18 @@ Files:
 - `web.c`, `web/`, `build-web.sh`: the browser build (see below). `web-smoke.mjs` runs it in Node.
 - `noops.txt`: functions the harness skips. `tfdump.py`: prints tickflow (chart) commands.
 
-Build and run from the repository root, after `tools/extract-3ds.py` has written `build/ctr/`:
+The quickest way, on a Mac or Linux, is one command from the repository root. It reads your decrypted dump
+(the first `.cxi`/`.cia`/`.3ds`/`.cci` next to the repository folder, or the path you give), downloads
+Emscripten 6.0.13 once into `.toolchain/emsdk-ctr`, runs every step below, then serves the page:
+
+```sh
+tools/ctr-harness/build-local.sh                  # all games in games.txt; or e.g. build-local.sh 77
+```
+
+The games are listed in `games.txt` (index in the game table, internal name, title); the page links them
+and `?GAME=index` picks one. Music is decoded with ffmpeg, or on a Mac without it with `afconvert`.
+
+The steps by hand, from the repository root, after `tools/extract-3ds.py "<dump>" '*'` has written `build/ctr/`:
 
 ```sh
 python3 -c "import json;d=json.load(open('build/ctr/romfs.json'));print('\n'.join('%x %x %s'%(o-d['level3'],n,p) for p,(o,n) in d['files'].items()))" > build/ctr/romfs-index.txt
@@ -28,9 +39,12 @@ gcc -O3 -w tools/ctr-harness/run.c build/ctr/split/part[0-9][0-9].o build/ctr/sp
 INTERLEAVE=1 GSP=1 GAME=67 START=200 HWAKE=1 WORKERS=all,tramp,gsp SECS=100 FRAMES=/tmp/frames EVERY=20 build/ctr/run 0x100000
 ```
 
-`GAME=67` starts Animal Acrobat through the game's own start sequence. `FRAMES`/`EVERY` write top-screen
+`GAME=67` starts Animal Acrobat through the game's own start sequence (77 LumBEARjack, 14 its short version). `FRAMES`/`EVERY` write top-screen
 frames as PPM, `DSPWAV=file` writes the audio (32728 Hz stereo s16). Logging: `DSPLOG`, `GSPLOG`, `PICALOG`,
-`TF` (chart commands), `ROMLOG`, `WAKELOG`, `COUNT=addr,...`. Notes: /mnt/project-files/notes/megamix-re.md.
+`TF` (chart commands), `ROMLOG`, `WAKELOG`, `COUNT=addr,...`, `JLOG` (judged inputs), `CKLOG` (input
+checkers), `POLLLOG` (input polls), `NANLOG` (NaN shader constants or vertex outputs). `PRESS=vblank[:len],...`
+presses A; `INPUTAGE=ms` and `LATENCY=ms` act like the browser's audio delay; `GLUNTIL=vblank` skips the
+software drawing until then. Notes: /mnt/project-files/notes/megamix-re.md.
 
 Browser build (needs `emcc` on PATH, and the native steps above done first):
 

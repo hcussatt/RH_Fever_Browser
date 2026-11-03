@@ -277,6 +277,7 @@ static void run_vertex(uint32_t index,vtx*out){
   // precision makes values the game means to be equal come out equal: sprites at one depth are drawn
   // with depth EQUAL/LEQUAL against each other, and float32 last-bit differences failed those tests.
   for(int o=0;o<16;o++)for(int k=0;k<4;k++){float*f=comp(&s.o[o],k);*f=round_f24(*f);}
+  if(getenv("NANLOG")){static int told;for(int o=0;o<16;o++)for(int k=0;k<4;k++){float f=*comp(&s.o[o],k);if(f!=f&&told++<10)fprintf(stderr,"NaN vertex output o%d.%d at vblank %u\n",o,k,vblanks);}}
   if(vs_dbg){fprintf(stderr,"   vtx %u na %d perm %llx:",index,na,(unsigned long long)perm);for(int i=0;i<na;i++)fprintf(stderr," a%d(%.3f %.3f %.3f %.3f)",i,attr[i].x,attr[i].y,attr[i].z,attr[i].w);fprintf(stderr,"\n    out mask %x:",preg[0x2bd]);for(int o=0;o<8;o++)fprintf(stderr," o%d(%.3f %.3f %.3f %.3f)",o,s.o[o].x,s.o[o].y,s.o[o].z,s.o[o].w);fprintf(stderr," map %x %x %x %x fmt %x %x loaders:",preg[0x50],preg[0x51],preg[0x52],preg[0x53],preg[0x201],preg[0x202]);for(int b=0;b<3;b++)fprintf(stderr," [%x %x %x]",preg[0x203+3*b],preg[0x204+3*b],preg[0x205+3*b]);fprintf(stderr,"\n");}
   // outputs -> semantics
   memset(out,0,sizeof*out);out->col=(col4){1,1,1,1};int n=0;uint32_t mask=preg[0x2bd];
@@ -332,6 +333,9 @@ static void pica_write(uint32_t id,uint32_t val,uint32_t mask){
     int is32=preg[0x2c0]>>31;vs_c_buf[vs_c_n++]=val;
     if(is32&&vs_c_n==4){float f[4];memcpy(f,vs_c_buf,16);if(vs_c_at<96)vs_c[vs_c_at]=(vec4){f[3],f[2],f[1],f[0]};vs_c_at++;vs_c_n=0;}
     else if(!is32&&vs_c_n==3){if(vs_c_at<96)vs_c[vs_c_at]=unpack24(vs_c_buf[0],vs_c_buf[1],vs_c_buf[2]);vs_c_at++;vs_c_n=0;}
+    // NANLOG=1: a NaN uploaded as a shader constant means a CPU or system stand-in bug (see the CFG camera)
+    if(!vs_c_n&&vs_c_at&&vs_c_at<=96&&getenv("NANLOG")){vec4 c=vs_c[vs_c_at-1];static int told;
+      if((c.x!=c.x||c.y!=c.y||c.z!=c.z||c.w!=c.w)&&told++<20)fprintf(stderr,"NaN uniform c%d at vblank %u (%s %08x %08x %08x %08x) %g %g %g %g\n",vs_c_at-1,vblanks,is32?"f32":"f24",vs_c_buf[0],vs_c_buf[1],vs_c_buf[2],vs_c_buf[3],c.x,c.y,c.z,c.w);}
     break;}
   case 0x2cb:vs_code_at=val&0x1ff;break;
   case 0x2cc:case 0x2cd:case 0x2ce:case 0x2cf:case 0x2d0:case 0x2d1:case 0x2d2:case 0x2d3:vs_code[vs_code_at++&511]=val;break;
