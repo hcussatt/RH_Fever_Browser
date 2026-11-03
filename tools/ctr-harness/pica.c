@@ -307,7 +307,7 @@ static void pica_draw(int indexed){
   if(pica_log>1)fprintf(stderr,"pica draw %u vertices mode %u target %x %ux%u fmt %u v0 %.2f %.2f %.2f %.2f\n",n,mode,cb_addr,cb_w,cb_h,cb_fmt,vb[0].pos.x,vb[0].pos.y,vb[0].pos.z,vb[0].pos.w);
   uint32_t tri0=tri_out,culled_dbg=preg[0x40];
   {static int pl=-2;if(pl==-2)pl=getenv("PARTLOG")?atoi(getenv("PARTLOG")):-1;
-   if(pl>=0&&mode==3&&vblanks>=(uint32_t)pl&&vblanks<(uint32_t)pl+300){float a0=9,a1=-9,x0=9,x1=-9,y0=9,y1=-9;for(uint32_t i=0;i<n;i++){float a=vb[i].col.a,x=vb[i].pos.x/vb[i].pos.w,y=vb[i].pos.y/vb[i].pos.w;if(a<a0)a0=a;if(a>a1)a1=a;if(x<x0)x0=x;if(x>x1)x1=x;if(y<y0)y0=y;if(y>y1)y1=y;}
+   if(pl>=0&&mode==3&&vblanks>=(uint32_t)pl&&vblanks<(uint32_t)pl+20000){float a0=9,a1=-9,x0=9,x1=-9,y0=9,y1=-9;for(uint32_t i=0;i<n;i++){float a=vb[i].col.a,x=vb[i].pos.x/vb[i].pos.w,y=vb[i].pos.y/vb[i].pos.w;if(a<a0)a0=a;if(a>a1)a1=a;if(x<x0)x0=x;if(x>x1)x1=x;if(y<y0)y0=y;if(y>y1)y1=y;}
      fprintf(stderr,"part %u n %u tex %x alpha %.2f..%.2f box %.2f..%.2f %.2f..%.2f col %.2f %.2f %.2f\n",vblanks,n,preg[0x85],a0,a1,x0,x1,y0,y1,vb[0].col.r,vb[0].col.g,vb[0].col.b);}}
   if(getenv("DRAWLOG")&&mode==3&&vblanks>=(uint32_t)atoi(getenv("DRAWLOG"))&&vblanks<(uint32_t)atoi(getenv("DRAWLOG"))+2){vs_dbg=1;vtx tmp;for(uint32_t i=0;i<(getenv("DRAWALL")?n:4)&&i<n;i++){uint32_t idx=first+i;if(indexed){uint32_t ia=(preg[0x200]<<3)+(uint32_t)((int32_t)(icfg<<4)>>4);idx=icfg>>31?*(uint16_t*)pm(ia+2*i,2):*pm(ia+i,1);}run_vertex(idx,&tmp);}vs_dbg=0;}
   if(mode==0||mode==3)for(uint32_t i=0;i+2<n;i+=3)raster_tri(&vb[i],&vb[i+1],&vb[i+2]);

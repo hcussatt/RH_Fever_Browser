@@ -146,6 +146,10 @@ static void ipc(uint32_t h){
       if(blk==0xa0002)wr8(ptr,1);           // language: English
       if(blk==0x70001)wr8(ptr,1);           // sound output: stereo
       if(blk==0xb0000&&size>=4)wr8(ptr+3,49); // country: United States
+      // Stereo camera settings: the console's factory defaults (the same as Citra's). The game divides by
+      // the screen height here when it sets up its 3D camera, so zeros made the camera NaN.
+      if(blk==0x50005){static const float st[8]={62.0f,289.0f,76.80000305175781f,46.08000183105469f,10.0f,5.0f,55.58000183105469f,21.56999969482422f};
+        for(uint32_t i=0;i<8&&4*i+4<=size;i++){uint32_t w;memcpy(&w,&st[i],4);wr32(ptr+4*i,w);}}
       reply(cmd,1);return;}
     reply(cmd,3);wr32(0x1ff82088,0);wr32(0x1ff8208c,0);return;}
   if(kind==H_FS){
