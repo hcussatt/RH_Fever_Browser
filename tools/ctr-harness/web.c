@@ -15,7 +15,9 @@ static int song_tick_milli(void){uint32_t F=rd32(0x54ef2c),t;float f;if(!F)retur
 EM_JS(int, host_latency, (), {return Module.hostLatency();});
 static void WEB_VBLANK(void){static uint8_t rgb[400*240*3];int drawn=pica_gl>0?0:pica_top_rgb(rgb);
   int r=host_vblank((int)rgb,drawn,(int)web_audio,web_audio_n,(int)gl_cmd,pica_gl>0?gl_ncmd:0,(int)gl_vtx,song_tick_milli());
-  pad_held=r&255;input_age_ms=(r>>8)/10.0f;latency_ms=host_latency()/10.0f;if(pad_held!=pad_last)hid_vblank(); /* the next game frame reads the change */
+  uint32_t want=r&255;input_age_ms=(r>>8)/10.0f;latency_ms=host_latency()/10.0f;
+  if(want&~pad_held){pad_unread|=want&~pad_held;press_heard=dsp_samples-input_age_ms*32.728;}
+  pad_held=want|pad_unread;if(pad_held!=pad_last)hid_vblank(); /* the next game frame reads the change */
   web_audio_n=0;if(pica_gl>0)gl_reset();}
 EM_JS(void, WEB_JUDGE, (float ms, int kind), {Module.onJudge?.(ms, kind);});
 #else

@@ -341,6 +341,7 @@ static void pica_write(uint32_t id,uint32_t val,uint32_t mask){
 static void pica_list(uint32_t pa,uint32_t size){
   if(pica_log<0)pica_log=getenv("PICALOG")?atoi(getenv("PICALOG")):0;
   if(pica_gl<0)pica_gl=!!getenv("GL");
+  {static int until=-1;if(until<0)until=getenv("GLUNTIL")?atoi(getenv("GLUNTIL")):0;if(until)pica_gl=vblanks<(uint32_t)until;} // GLUNTIL=vblank: skip drawing until then (frames late in a song)
   uint32_t a=pa,end=pa+size;
   while(a+8<=end){uint32_t val=*(uint32_t*)pm(a,4),hdr=*(uint32_t*)pm(a+4,4);a+=8;
     uint32_t id=hdr&0xffff,mask=hdr>>16&15,extra=hdr>>20&255,seq=hdr>>31;

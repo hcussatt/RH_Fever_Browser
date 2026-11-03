@@ -4,7 +4,7 @@
 import createModule from './blanco.mjs';
 import {createGpu} from './gl.mjs';
 let AHEAD=1100; // game samples (32728 Hz) queued ahead of the speakers: ~34 ms, about two vblanks
-let drawnCount=0,t0=performance.now(),audio,queued=0,wake=null,pad=0,frames=0;
+let drawnCount=0,t0=performance.now(),audio,queued=0,wake=null,pad=0,frames=0,tap=0,tapAt=0;
 // Input timing: the time (ms since the epoch) of the latest button change, the page's speaker
 // latency, and an extra delay the player can set. A change reaches the game with its age as heard:
 // the audio still queued, the speaker latency and the time since the key, which the game's own
@@ -12,7 +12,9 @@ let drawnCount=0,t0=performance.now(),audio,queued=0,wake=null,pad=0,frames=0;
 let snapRange=null,perf=false,lastEnd=0,lastTick=0,clock=false,padAt=0,outputLatency=0,extraDelay=0,ageSent=0;
 const env={INTERLEAVE:'1',GSP:'1',START:'200',HWAKE:'1',WORKERS:'all,tramp,gsp'};
 onmessage=async({data})=>{
-  if(data.type==='pad'){pad=data.pad;padAt=data.at;}
+  // A press is passed on even if its release comes before the game's next vblank (a quick tap): that
+  // vblank sees it held, aged from the press; the harness keeps it held until the game reads it.
+  if(data.type==='pad'){if(data.pad&~pad){tap=data.pad&~pad;tapAt=data.at;}pad=data.pad;padAt=data.at;}
   if(data.type==='latency')outputLatency=data.ms;
   if(data.type!=='start')return;
   audio=data.port;extraDelay=+(data.delay||0);outputLatency=data.latency||0;clock=!!data.env.clock;delete data.env.clock;perf=!!data.env.perf;delete data.env.perf;if(data.env.snap){snapRange=data.env.snap.split('-').map(Number);delete data.env.snap;}if(data.env.ahead){AHEAD=+data.env.ahead;delete data.env.ahead;}
@@ -38,10 +40,11 @@ onmessage=async({data})=>{
         for(let i=0,j=0;i<px.length;i+=4,j+=3){px[i]=src[j];px[i+1]=src[j+1];px[i+2]=src[j+2];px[i+3]=255;}
         postMessage({type:'frame',px,frames},[px.buffer]);}
       if(queued>AHEAD)await new Promise(r=>wake=r);
-      const now=performance.timeOrigin+performance.now(),age=padAt?Math.max(0,now-padAt+queued/32728*1000+outputLatency+extraDelay):0;
+      const now=performance.timeOrigin+performance.now(),at=tap&&!(pad&tap)?tapAt:padAt,age=at?Math.max(0,now-at+queued/32728*1000+outputLatency+extraDelay):0;
       // Tests (?clock=1) get the song tick of the next game frame and when it reaches the speakers.
       lastEnd=performance.now();if(clock&&tick)postMessage({type:'clock',tick,at:now+queued/32728*1000+outputLatency});
-      return pad|Math.min(Math.round(age*10),1<<22)<<8;
+      const held=pad|tap;tap=0;
+      return held|Math.min(Math.round(age*10),1<<22)<<8;
     }});
   for(const [f,bytes] of files){Module.FS.mkdirTree(f.slice(0,f.lastIndexOf('/')));Module.FS.writeFile(f,bytes);}
   postMessage({type:'status',text:'running'});

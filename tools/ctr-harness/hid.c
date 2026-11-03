@@ -3,6 +3,11 @@
 // +0x28 eight entries of 0x10 bytes (held, newly pressed, newly released, circle pad x/y).
 // The host sets pad_held (bit 0 = A); each vblank writes one new entry, as the HID module does.
 static uint32_t hid_shm_handle,hid_shm,pad_held,pad_last;static uint64_t hid_tick;
+// A press the game has not read yet stays held until its next input poll (0x120698), as a press on
+// the console always spans a poll: the game reads only the newest state, so a tap that starts and
+// ends between two polls (one game frame, ~33 ms) would be lost. press_heard is when the player
+// heard the press, in output samples, so the press keeps its own age if the release comes first.
+static uint32_t pad_unread;static uint64_t dsp_samples;static double press_heard;
 static void hid_mapped(uint32_t h,uint32_t at){if(h&&h==hid_shm_handle)hid_shm=at;}
 static int hid_ipc(uint32_t cmd,uint32_t*arg){
   if(cmd>>16!=0x0a)return 0; // GetIPCHandles: shared memory and five events

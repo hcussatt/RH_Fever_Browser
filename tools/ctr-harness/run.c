@@ -41,7 +41,7 @@ extern uint32_t *R;int dispatch(uint32_t);
 #define r R
 #define dispatch_original dispatch
 static uint32_t heap_top=0x0a000000,linear_top; // probe-only allocations above the game heap
-uint32_t main_calls;static int depth;static uint32_t vblanks;static float input_age_ms=-1,latency_ms=0,frame_ms=1000/29.915f;
+uint32_t main_calls;static int depth;static uint32_t vblanks;static float input_age_ms=-1,latency_ms=0,frame_ms=1000/29.915f,aged_ticks;static uint32_t aged_frame,started_checker;
 // Threads run cooperatively on the main thread, one step at each main-thread sleep or wait. A thread
 // that would block jumps back here; next time the innermost function it was in is called again with
 // the same registers (waits re-check their condition), then each caller carries on after its call
@@ -237,11 +237,15 @@ void call(uint32_t a){
   // Its windows: just +0x60..+0x64, barely +0x5c..+0x68 (ticks).
   if(a==0x1a574c){uint32_t c=r[0],F=rd32(0x54ef2c),t[7]={rd32(c+0x54),rd32(c+0x58),rd32(F+0x10c),rd32(c+0x60),rd32(c+0x64),rd32(c+0x5c),rd32(c+0x68)};float f[7];memcpy(f,t,28);
     float off=f[0]-f[1]-VFP[0];if(off>-40&&off<40&&f[2]>0)WEB_JUDGE(off/(f[2]/frame_ms),off>=f[3]&&off<=f[4]?2:off>=f[5]&&off<=f[6]?1:0);}
+  if(a==0x1a5928&&getenv("CKLOG")){static uint8_t last[2][0x90];static uint32_t who[2];uint32_t c=r[0];int k=who[0]==c?0:who[1]==c?1:!who[0]?0:1;who[k]=c;
+    if(memcmp(last[k]+0x70,p(c+0x70,16),16)||memcmp(last[k]+0x58,p(c+0x58,4),4)){memcpy(last[k],p(c,0x90),0x90);fprintf(stderr,"ck %x frame %u:",c,vblanks);for(int i=0x40;i<0x90;i+=4)fprintf(stderr," %08x",rd32(c+i));fprintf(stderr,"\n");}}
   if(a==0x1a574c&&getenv("JLOG")){uint32_t c=r[0];float f[8];for(int i=0;i<8;i++){uint32_t t=rd32(c+0x54+4*i);memcpy(&f[i],&t,4);}uint32_t F=rd32(0x54ef2c),t=rd32(F+0x110);float g;memcpy(&g,&t,4);fprintf(stderr,"song %.2f judge frame %u c %x r1 %x b72 %d b7f %d now %.2f cue %.2f age %.2f win %.2f %.2f %.2f %.2f\n",g,vblanks,c,r[1],rd8(c+0x72),rd8(c+0x7f),f[0],f[1],VFP[0],f[2],f[3],f[4],f[5]);}
   if(a==0x124ff4&&getenv("FDUMP")&&vblanks%40<2&&rd32(0x54ef2c)){uint32_t F=rd32(0x54ef2c);fprintf(stderr,"F %u:",vblanks);for(int i=0;i<0x140;i+=4){uint32_t t=rd32(F+i);float f;memcpy(&f,&t,4);fprintf(stderr," %x=%g",i,f);}fprintf(stderr,"\n");}
   if(a==0x27b490&&getenv("JLOG"))fprintf(stderr,"event frame %u r0 %x r1 %x r2 %x r3 %x s0 %.2f\n",vblanks,r[0],r[1],r[2],r[3],VFP[0]);
   // Game frames are measured in output audio between input polls (0x120698): the game runs its logic
   // every second vblank here (~33 ms), and F+0x10c is ticks per game frame.
+  if(a==0x120698&&getenv("POLLLOG")){uint32_t F_=rd32(0x54ef2c),t_=F_?rd32(F_+0x10c):0;float f_;memcpy(&f_,&t_,4);fprintf(stderr,"poll frame %u samples %llu tpf %.3f\n",vblanks,(unsigned long long)dsp_samples,f_);}
+  if(a==0x120698)pad_unread=0; // the game reads the buttons this frame (see hid.c)
   if(a==0x120698){static uint64_t last;if(last&&dsp_samples>last){float ms=(dsp_samples-last)/32.728f;if(ms<100)frame_ms+=(ms-frame_ms)*0.05f;}last=dsp_samples;}
   // A checker's frame (0x1a5928): it moves its clock (+0x54) on by a frame and, while waiting (+0x72 == 3),
   // misses once the clock passes cue + late window (+0x58 + +0x68). Inputs reach the game as late as the
@@ -251,7 +255,16 @@ void call(uint32_t a){
   if(a==0x1a5928&&latency_ms>0&&rd8(r[0]+0x72)==3&&!rd8(r[0]+0x7c)){uint32_t c=r[0],F=rd32(0x54ef2c),t[4]={rd32(F+0x10c),rd32(c+0x54),rd32(c+0x58),rd32(c+0x68)};float f[4];memcpy(f,t,16);
     float now=f[1]+f[0],grace=(latency_ms+2*frame_ms+40)/frame_ms*f[0];
     if(f[2]+f[3]<now&&f[2]+f[3]+grace>=now){memcpy(&t[1],&now,4);wr32(c+0x54,t[1]);r[0]=c;call(rd32(rd32(c)+24));return;}}
-  if(a==0x27b490&&input_age_ms>0){uint32_t F=rd32(0x54ef2c),t=rd32(F+0x10c);float per_frame;memcpy(&per_frame,&t,4);VFP[0]+=input_age_ms/frame_ms*per_frame;}
+  if(a==0x27b490&&input_age_ms>0){uint32_t F=rd32(0x54ef2c),t=rd32(F+0x10c);float per_frame;memcpy(&per_frame,&t,4);
+    // a press is aged from when it was heard, even if its release already arrived (hid.c)
+    float age=r[1]==0x100&&press_heard>0?(float)((dsp_samples-press_heard)/32.728):input_age_ms;
+    VFP[0]+=age/frame_ms*per_frame;aged_ticks=age/frame_ms*per_frame;aged_frame=vblanks;}
+  // Follow-up cues (a log that takes several chops): the chart waits for the hit and schedules the next
+  // cue from the game frame that handled it. On the console that frame is the press's own; here the press
+  // reaches the game as late as the player hears the song (its age above), so a checker started (0x1a5704)
+  // in the frame that judged an aged press has its cue (+0x58) moved back by that age (at its first frame).
+  if(a==0x1a5704&&aged_frame&&vblanks-aged_frame<4&&!getenv("NOCHAIN"))started_checker=r[0];
+  if(a==0x1a5928&&started_checker==r[0]){uint32_t t=rd32(r[0]+0x58);float cue;memcpy(&cue,&t,4);cue-=aged_ticks;memcpy(&t,&cue,4);wr32(r[0]+0x58,t);started_checker=0;}
   if(a==0x124ff4&&getenv("FRAMES")&&!in_worker){static uint32_t n;int every=getenv("EVERY")?atoi(getenv("EVERY")):60;if(n++%every==0&&(!getenv("FROM")||(vblanks>=(uint32_t)atoi(getenv("FROM"))&&vblanks<(uint32_t)atoi(getenv("FROM"))+80))){static uint8_t rgb[400*240*3];if(pica_top_rgb(rgb)){char f[256];if(getenv("FROM"))snprintf(f,256,"%s/f%05u_%07d.ppm",getenv("FRAMES"),vblanks,({uint32_t F_=rd32(0x54ef2c),t_=F_?rd32(F_+0x110):0;float f_;memcpy(&f_,&t_,4);(int)(f_*1000);}));else snprintf(f,256,"%s/f%05u.ppm",getenv("FRAMES"),n/every);FILE*o=fopen(f,"wb");if(o){fprintf(o,"P6 400 240 255\n");fwrite(rgb,1,sizeof rgb,o);fclose(o);}}}}
   if(a==0x124ff4){wr8(0x5abed0+17,0);wr32(0x5abed0+0x154,rd32(0x5abed0+0x154)+1);wr32(0x5abed0+0x158,rd32(0x5abed0+0x158)+1);vblanks++;{static double acc;for(acc+=32728.0/160/59.83;acc>=1;acc--){dsp_frame();if(getenv("INTERLEAVE")&&!in_worker)run_workers();}}{static uint32_t last;extern uint32_t main_calls;if(getenv("FSTAT"))if(rd32(0x54eee4)&&rd32(rd32(0x54eee4)+4)){uint32_t S=rd32(rd32(0x54eee4)+4),A=rd32(0x54eef0);fprintf(stderr,"frame %u main calls %u scene %x state %d snd %d vt %x\n",vblanks,main_calls-last,rd32(rd32(0x54eee4)+12),rd32(rd32(S+4)+4),A?rd8(rd32(A+0x48)+0x51):-1,rd32(rd32(0x54eee4)+20)?rd32(rd32(rd32(0x54eee4)+20)):0);}last=main_calls;}if(!in_worker){run_jobs();run_workers();WEB_VBLANK();}return;} // waiting for the GPU interrupt: every GPU job is done at once
   if(a==0x28b4ec){if(getenv("WORKERS")&&strstr(getenv("WORKERS"),"all")&&r[2]!=0x113980&&(r[2]!=0x1192fc||strstr(getenv("WORKERS"),"tramp"))&&(r[2]!=0x1255e4||strstr(getenv("WORKERS"),"apt"))&&(r[2]!=0x138798||strstr(getenv("WORKERS"),"gsp"))&&!(r[2]==0x1192fc&&rd32(r[3])==0x11a828)){workers[worker_count].run=r[2];workers[worker_count].obj=rd32(r[3]);workers[worker_count].stack=0x0ff80000-worker_count*0x10000;worker_count++;fprintf(stderr,"worker %x arg %x\n",r[2],rd32(r[3]));r[0]=0;return;}
