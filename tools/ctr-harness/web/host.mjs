@@ -1,8 +1,8 @@
 // The probe page: starts audio on the first click, runs the game in a worker, draws its top screen
-// and passes the A button (Space, Left Shift or left click).
+// and passes the A button (Space, Left Shift or left click) and B (Right Shift or right click).
 const canvas=document.querySelector('canvas'),status=document.getElementById('status'),judge=document.getElementById('judge');
 let ctx; // the 2D fallback when the worker cannot draw with WebGL
-let worker,held=new Set();
+let worker,held=new Map(); // held key or mouse button -> its 3DS button bit (1 = A, 2 = B)
 // The games in this build (games.json, written by build-web.sh). Without ?GAME= the page lists them all;
 // ?GAME=index plays that one.
 const games=await (await fetch('games.json')).json(),params=new URLSearchParams(location.search);
@@ -13,11 +13,11 @@ if(!game){
   list.innerHTML=games.map(g=>`<a href="?GAME=${g.game}">${g.title}</a>`).join('');
 }else{
   document.title=game.title;
-  status.textContent=`Click to start ${game.title} (A: Space, Left Shift or left click).`;
+  status.textContent=`Click to start ${game.title} (A: Space, Left Shift or left click; B: Right Shift or right click).`;
   document.getElementById('games').innerHTML='<a href="./">All games</a>';
 }
 // Each change carries its event time, so the game can judge it from when it happened.
-function pad(e){worker?.postMessage({type:'pad',pad:held.size?1:0,at:performance.timeOrigin+(e?.timeStamp??performance.now())});}
+function pad(e){worker?.postMessage({type:'pad',pad:[...held.values()].reduce((a,b)=>a|b,0),at:performance.timeOrigin+(e?.timeStamp??performance.now())});}
 async function start(){
   // At the DSP's own rate when the browser allows it, so the browser's resampler (not ours) converts.
   let audio;try{audio=new AudioContext({latencyHint:'interactive',sampleRate:32728});}catch{audio=new AudioContext({latencyHint:'interactive'});}
@@ -51,11 +51,11 @@ async function start(){
 }
 // Keys are taken from the whole page (capture phase, default actions blocked), so Space never
 // scrolls or presses a focused control; losing focus releases everything held.
-const A_KEYS=new Set(['Space','ShiftLeft']);
-canvas.addEventListener('pointerdown',e=>{e.preventDefault();if(!worker){if(game)start();return;}if(e.button===0){canvas.setPointerCapture(e.pointerId);held.add('mouse');pad(e);}});
-canvas.addEventListener('pointerup',e=>{if(e.button===0&&held.delete('mouse'))pad(e);});
-canvas.addEventListener('pointercancel',()=>{if(held.delete('mouse'))pad();});
-addEventListener('keydown',e=>{if(!A_KEYS.has(e.code))return;e.preventDefault();if(e.repeat)return;if(!worker){if(game)start();return;}held.add(e.code);pad(e);},true);
-addEventListener('keyup',e=>{if(!A_KEYS.has(e.code))return;e.preventDefault();if(held.delete(e.code))pad(e);},true);
+const KEYS={Space:1,ShiftLeft:1,ShiftRight:2},MOUSE={0:1,2:2};
+canvas.addEventListener('pointerdown',e=>{e.preventDefault();if(!worker){if(game)start();return;}if(MOUSE[e.button]){canvas.setPointerCapture(e.pointerId);held.set('mouse'+e.button,MOUSE[e.button]);pad(e);}});
+canvas.addEventListener('pointerup',e=>{if(held.delete('mouse'+e.button))pad(e);});
+canvas.addEventListener('pointercancel',e=>{if(held.delete('mouse'+e.button)|held.delete('mouse0')|held.delete('mouse2'))pad();});
+addEventListener('keydown',e=>{if(!KEYS[e.code])return;e.preventDefault();if(e.repeat)return;if(!worker){if(game)start();return;}held.set(e.code,KEYS[e.code]);pad(e);},true);
+addEventListener('keyup',e=>{if(!KEYS[e.code])return;e.preventDefault();if(held.delete(e.code))pad(e);},true);
 addEventListener('blur',()=>{if(held.size){held.clear();pad();}});
 document.addEventListener('contextmenu',e=>e.preventDefault());

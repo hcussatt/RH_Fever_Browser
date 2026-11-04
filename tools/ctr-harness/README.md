@@ -42,8 +42,8 @@ INTERLEAVE=1 GSP=1 GAME=67 START=200 HWAKE=1 WORKERS=all,tramp,gsp SECS=100 FRAM
 `GAME=67` starts Animal Acrobat through the game's own start sequence (77 LumBEARjack, 14 its short version). `FRAMES`/`EVERY` write top-screen
 frames as PPM, `DSPWAV=file` writes the audio (32728 Hz stereo s16). Logging: `DSPLOG`, `GSPLOG`, `PICALOG`,
 `TF` (chart commands), `ROMLOG`, `WAKELOG`, `COUNT=addr,...`, `JLOG` (judged inputs), `CKLOG` (input
-checkers), `POLLLOG` (input polls), `NANLOG` (NaN shader constants or vertex outputs). `PRESS=vblank[:len],...`
-presses A; `INPUTAGE=ms` and `LATENCY=ms` act like the browser's audio delay; `GLUNTIL=vblank` skips the
+checkers), `POLLLOG` (input polls), `NANLOG` (NaN shader constants or vertex outputs). `PRESS=vblank[:len[:mask]],...`
+presses A (or the buttons in the hex mask, 2 = B); `INPUTAGE=ms` and `LATENCY=ms` act like the browser's audio delay; `GLUNTIL=vblank` skips the
 software drawing until then. Notes: /mnt/project-files/notes/megamix-re.md.
 
 Browser build (needs `emcc` on PATH, and the native steps above done first):
@@ -54,7 +54,7 @@ tools/ctr-harness/play.sh             # serves on port 8090 and opens /build/ctr
 ```
 
 The game runs in a worker; each vblank it hands the page its top screen and audio and waits on the
-audio clock (JSPI stack switching, Chrome 137 or later). Space, Left Shift or a left click press A.
+audio clock (JSPI stack switching, Chrome 137 or later). Space, Left Shift or a left click press A; Right Shift or a right click press B.
 Debug switches pass through the address, e.g. `/build/ctr/web/?TF=1`.
 
 Checks for every new game (each one is a bug found in Animal Acrobat or LumBEARjack):

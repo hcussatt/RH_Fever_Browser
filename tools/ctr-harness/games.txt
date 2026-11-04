@@ -2,3 +2,4 @@
 67 ctrBlanco Animal Acrobat
 77 ctrWoodCat LumBEARjack
 14 ctrWoodCat LumBEARjack (short)
+69 ctrDotSamurai Super Samurai Slice
