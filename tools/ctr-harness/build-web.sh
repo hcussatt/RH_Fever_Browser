@@ -47,10 +47,13 @@ for game in $games; do
   done
   while read -r f; do
     [ "$out/data/$f" -nt "$f" ] && continue
-    mkdir -p "$out/data/$(dirname "$f")"; cp "$f" "$out/data/$f"
+    # the dump's files can be read-only (and so their earlier copies): make the copy writable
+    mkdir -p "$out/data/$(dirname "$f")"; [ ! -e "$out/data/$f" ] || chmod u+w "$out/data/$f"
+    cp "$f" "$out/data/$f"; chmod u+w "$out/data/$f"
   done < "$out/files-$game.txt"
   printf '%s{"game":%s,"title":"%s"}' "$sep" "$game" "$title" >> "$out/games.json"; sep=,
 done
 echo ']' >> "$out/games.json"
+chmod -R u+w "$out"/*.* 2>/dev/null || true
 cp tools/ctr-harness/web/* "$out/"
 du -sh "$out/blanco.wasm" "$out/data"
