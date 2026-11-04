@@ -13,8 +13,8 @@ import os
 import shutil
 import subprocess
 import sys
+import struct
 import tempfile
-import wave
 
 
 def adts_frames(data):
@@ -28,6 +28,24 @@ def adts_frames(data):
     return count
 
 
+def wav_pcm16_stereo(data, path):
+    """The samples of a 16-bit stereo WAV, plain or WAVE_FORMAT_EXTENSIBLE (afconvert writes the latter)."""
+    if data[:4] != b'RIFF' or data[8:12] != b'WAVE':
+        raise SystemExit(f'{path}: afconvert did not write a WAV file')
+    at, fmt = 12, None
+    while at + 8 <= len(data):
+        kind, size = data[at:at + 4], struct.unpack('<I', data[at + 4:at + 8])[0]
+        body = data[at + 8:at + 8 + size]
+        if kind == b'fmt ':
+            fmt = struct.unpack('<HHIIHH', body[:16])
+        elif kind == b'data':
+            if not fmt or fmt[1] != 2 or fmt[5] != 16 or fmt[0] not in (1, 0xfffe):
+                raise SystemExit(f'{path}: afconvert gave format {fmt}, expected 16-bit stereo PCM')
+            return body
+        at += 8 + size + (size & 1)
+    raise SystemExit(f'{path}: no audio in the WAV afconvert wrote')
+
+
 def decode(path):
     frames = adts_frames(open(path, 'rb').read())
     want = frames * 1024 * 4
@@ -39,10 +57,7 @@ def decode(path):
         with tempfile.TemporaryDirectory() as tmp:
             out = os.path.join(tmp, 'out.wav')
             subprocess.run(['afconvert', '-f', 'WAVE', '-d', 'LEI16', '-c', '2', path, out], check=True)
-            with wave.open(out) as w:
-                if w.getnchannels() != 2 or w.getsampwidth() != 2:
-                    raise SystemExit(f'{path}: afconvert gave {w.getnchannels()} channels, {8 * w.getsampwidth()}-bit')
-                pcm = w.readframes(w.getnframes())
+            pcm = wav_pcm16_stereo(open(out, 'rb').read(), path)
         how = 'afconvert'
         short = want - len(pcm)
         if 0 < short <= 2112 * 4:  # the encoder delay Apple's decoder skips: put it back at the start
