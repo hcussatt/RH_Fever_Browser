@@ -7,6 +7,7 @@ static uint8_t dsp_pipe[8][64];static uint32_t dsp_pipe_len[8];
 static uint32_t dsp_event, dsp_sem_mask, dsp_irq_event, dsp_frames, dsp_irq_binary;
 // The DSP's AAC decoder: the game sends one ADTS frame at a time (pipe 3). The stand-in decodes each music
 // file once, whole, and answers a request with the PCM of the frame whose bytes it was sent.
+static uint32_t aac_last_frame;
 static struct{uint64_t hash;uint32_t file,index;}aac_frames[1<<16];static int aac_frame_count;
 static struct{int16_t*pcm;uint32_t samples,channels;}aac_files[8];static int aac_file_count;
 static uint64_t fnv(const uint8_t*d,uint32_t n){uint64_t h=1469598103934665603ull;for(uint32_t i=0;i<n;i++){h^=d[i];h*=1099511628211ull;}return h;}
@@ -44,7 +45,7 @@ static void dsp_binary(uint32_t ptr,uint32_t size){ // a request on pipe 3: answ
     uint32_t src=rd32(ptr+8),n=rd32(ptr+12),dst0=rd32(ptr+16),dst1=rd32(ptr+20);
     uint64_t h=fnv(p(src,n),n);int i;for(int pass=0;pass<2;pass++){for(i=0;i<aac_frame_count;i++)if(aac_frames[i].hash==h)break;
       if(i<aac_frame_count||pass)break;aac_load_opened();}
-    uint32_t samples=1024;if(dsp_log>0&&i<aac_frame_count)fprintf(stderr,"aac decode file %u frame %u\n",aac_frames[i].file,aac_frames[i].index);
+    uint32_t samples=1024;if(i<aac_frame_count)aac_last_frame=aac_frames[i].index;if(dsp_log>0&&i<aac_frame_count)fprintf(stderr,"aac decode file %u frame %u\n",aac_frames[i].file,aac_frames[i].index);
     if(i<aac_frame_count){int16_t*pcm=aac_files[aac_frames[i].file].pcm;uint32_t total=aac_files[aac_frames[i].file].samples,at=aac_frames[i].index*1024;
       for(uint32_t s=0;s<samples;s++){int16_t l=at+s<total?pcm[2*(at+s)]:0,r=at+s<total?pcm[2*(at+s)+1]:0;
         if(dst0)wr16(dst0+2*s,l);if(dst1)wr16(dst1+2*s,r);}}

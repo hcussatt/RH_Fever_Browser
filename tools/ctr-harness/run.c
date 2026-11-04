@@ -41,7 +41,7 @@ extern uint32_t *R;int dispatch(uint32_t);
 #define r R
 #define dispatch_original dispatch
 static uint32_t heap_top=0x0a000000,linear_top; // probe-only allocations above the game heap
-uint32_t main_calls;static int depth;static uint32_t vblanks;static float input_age_ms=-1,latency_ms=0,frame_ms=1000/29.915f,aged_ticks;static uint32_t aged_frame,started_checker;
+uint32_t main_calls;static int depth;static uint32_t vblanks;static float input_age_ms=-1,latency_ms=0,frame_ms=1000/59.83f,aged_ticks;static uint32_t aged_frame,started_checker;
 // Threads run cooperatively on the main thread, one step at each main-thread sleep or wait. A thread
 // that would block jumps back here; next time the innermost function it was in is called again with
 // the same registers (waits re-check their condition), then each caller carries on after its call
@@ -243,8 +243,8 @@ void call(uint32_t a){
   if(a==0x124ff4&&getenv("FDUMP")&&vblanks%40<2&&rd32(0x54ef2c)){uint32_t F=rd32(0x54ef2c);fprintf(stderr,"F %u:",vblanks);for(int i=0;i<0x140;i+=4){uint32_t t=rd32(F+i);float f;memcpy(&f,&t,4);fprintf(stderr," %x=%g",i,f);}fprintf(stderr,"\n");}
   if(a==0x27b490&&getenv("JLOG"))fprintf(stderr,"event frame %u r0 %x r1 %x r2 %x r3 %x s0 %.2f\n",vblanks,r[0],r[1],r[2],r[3],VFP[0]);
   // Game frames are measured in output audio between input polls (0x120698): the game runs its logic
-  // every second vblank here (~33 ms), and F+0x10c is ticks per game frame.
-  if(a==0x120698&&getenv("POLLLOG")){uint32_t F_=rd32(0x54ef2c),t_=F_?rd32(F_+0x10c):0;float f_;memcpy(&f_,&t_,4);fprintf(stderr,"poll frame %u samples %llu tpf %.3f\n",vblanks,(unsigned long long)dsp_samples,f_);}
+  // every vblank (~16.7 ms), and F+0x10c is ticks per game frame.
+  if(a==0x120698&&getenv("POLLLOG")){uint32_t F_=rd32(0x54ef2c),t_=F_?rd32(F_+0x10c):0;float f_;memcpy(&f_,&t_,4);uint32_t s_=F_?rd32(F_+0x110):0;float g_;memcpy(&g_,&s_,4);fprintf(stderr,"poll frame %u samples %llu tpf %.3f song %.1f aac %u\n",vblanks,(unsigned long long)dsp_samples,f_,g_,aac_last_frame);}
   if(a==0x120698)pad_unread=0; // the game reads the buttons this frame (see hid.c)
   if(a==0x120698){static uint64_t last;if(last&&dsp_samples>last){float ms=(dsp_samples-last)/32.728f;if(ms<100)frame_ms+=(ms-frame_ms)*0.05f;}last=dsp_samples;}
   // A checker's frame (0x1a5928): it moves its clock (+0x54) on by a frame and, while waiting (+0x72 == 3),
@@ -266,6 +266,12 @@ void call(uint32_t a){
   if(a==0x1a5704&&aged_frame&&vblanks-aged_frame<4&&!getenv("NOCHAIN"))started_checker=r[0];
   if(a==0x1a5928&&started_checker==r[0]){uint32_t t=rd32(r[0]+0x58);float cue;memcpy(&cue,&t,4);cue-=aged_ticks;memcpy(&t,&cue,4);wr32(r[0]+0x58,t);started_checker=0;}
   if(a==0x124ff4&&getenv("FRAMES")&&!in_worker){static uint32_t n;int every=getenv("EVERY")?atoi(getenv("EVERY")):60;if(n++%every==0&&(!getenv("FROM")||(vblanks>=(uint32_t)atoi(getenv("FROM"))&&vblanks<(uint32_t)atoi(getenv("FROM"))+80))){static uint8_t rgb[400*240*3];if(pica_top_rgb(rgb)){char f[256];if(getenv("FROM"))snprintf(f,256,"%s/f%05u_%07d.ppm",getenv("FRAMES"),vblanks,({uint32_t F_=rd32(0x54ef2c),t_=F_?rd32(F_+0x110):0;float f_;memcpy(&f_,&t_,4);(int)(f_*1000);}));else snprintf(f,256,"%s/f%05u.ppm",getenv("FRAMES"),n/every);FILE*o=fopen(f,"wb");if(o){fprintf(o,"P6 400 240 255\n");fwrite(rgb,1,sizeof rgb,o);fclose(o);}}}}
+  // The wait for the GPU to finish its command list (0x2668e8 polls +17): the work is already done, so the
+  // frame goes on at once, as on the console (a few ms); only the vsync wait below lets a vblank pass.
+  // Letting a vblank pass here too made every game frame two vblanks long (30 instead of 60 per second),
+  // and the frame pacer (0x17ca08) counted three, so the chart ran 1.5x faster than the music and
+  // frame-counted animations ran at half speed.
+  if(a==0x124ff4&&r[14]==0x266970&&!getenv("SLOWGPU")){wr8(0x5abed0+17,0);if(!in_worker){run_jobs();run_workers();}return;}
   if(a==0x124ff4){wr8(0x5abed0+17,0);wr32(0x5abed0+0x154,rd32(0x5abed0+0x154)+1);wr32(0x5abed0+0x158,rd32(0x5abed0+0x158)+1);vblanks++;{static double acc;for(acc+=32728.0/160/59.83;acc>=1;acc--){dsp_frame();if(getenv("INTERLEAVE")&&!in_worker)run_workers();}}{static uint32_t last;extern uint32_t main_calls;if(getenv("FSTAT"))if(rd32(0x54eee4)&&rd32(rd32(0x54eee4)+4)){uint32_t S=rd32(rd32(0x54eee4)+4),A=rd32(0x54eef0);fprintf(stderr,"frame %u main calls %u scene %x state %d snd %d vt %x\n",vblanks,main_calls-last,rd32(rd32(0x54eee4)+12),rd32(rd32(S+4)+4),A?rd8(rd32(A+0x48)+0x51):-1,rd32(rd32(0x54eee4)+20)?rd32(rd32(rd32(0x54eee4)+20)):0);}last=main_calls;}if(!in_worker){run_jobs();run_workers();WEB_VBLANK();}return;} // waiting for the GPU interrupt: every GPU job is done at once
   if(a==0x28b4ec){if(getenv("WORKERS")&&strstr(getenv("WORKERS"),"all")&&r[2]!=0x113980&&(r[2]!=0x1192fc||strstr(getenv("WORKERS"),"tramp"))&&(r[2]!=0x1255e4||strstr(getenv("WORKERS"),"apt"))&&(r[2]!=0x138798||strstr(getenv("WORKERS"),"gsp"))&&!(r[2]==0x1192fc&&rd32(r[3])==0x11a828)){workers[worker_count].run=r[2];workers[worker_count].obj=rd32(r[3]);workers[worker_count].stack=0x0ff80000-worker_count*0x10000;worker_count++;fprintf(stderr,"worker %x arg %x\n",r[2],rd32(r[3]));r[0]=0;return;}
   if(r[2]==0x113980){uint32_t o=rd32(r[3]);workers[worker_count].run=rd32(rd32(o)+8);workers[worker_count].obj=o;workers[worker_count].stack=0x0ff80000-worker_count*0x10000;worker_count++;fprintf(stderr,"worker %x on %x\n",rd32(rd32(o)+8),o);r[0]=0;return;}fprintf(stderr,"thread %x not started (arg %x)\n",r[2],rd32(r[3]));r[0]=0;return;} // other threads: their work is replaced at function level
