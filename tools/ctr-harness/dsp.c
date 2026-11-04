@@ -107,17 +107,23 @@ static void wr32d(uint32_t a,uint32_t v){wr16(a,v>>16);wr16(a+2,v&0xffff);}
 typedef struct{uint32_t addr,length,id,from_queue,play_position,format,stereo,looping,adpcm_dirty,ps,yn1,yn2;}dsp_buffer;
 static struct{int enabled,format,stereo,interp,update;uint32_t sync;float rate,gain[3][4];
   dsp_buffer queue[16];int queued;
-  int playing;dsp_buffer cur;double pos;int16_t*pcm;uint32_t pcm_len; // the current buffer, decoded
+  int playing;dsp_buffer cur;double pos;int16_t*pcm;uint32_t pcm_len,decoded; // the current buffer, decoded up to decoded
   uint32_t current_id,last_id;int16_t yn1,yn2;int16_t coef[16];float last[2];}dsp_src[24];
 static float dsp_master=1,dsp_aux[2]={1,1};
 static FILE*dsp_wav;static uint32_t dsp_wav_samples;
 static uint32_t dsp_virt(uint32_t pa){pa&=~3u;if(pa>=0x20000000&&pa<0x28000000)return pa-0x20000000+0x14000000;return pa;} // linear heap
-static void dsp_decode(int i){ // turn the current buffer into 16-bit PCM
+// The current buffer is turned into 16-bit PCM as it plays (dsp_fill), not all at once when it starts:
+// a long sound (a hit, several thousand samples) decoded whole made that game frame much slower.
+static void dsp_decode(int i){
   typeof(dsp_src[0])*s=&dsp_src[i];dsp_buffer*b=&s->cur;uint32_t ch=b->stereo?2:1,n=b->length,at=dsp_virt(b->addr);
-  free(s->pcm);s->pcm=calloc(n*2+2,2);s->pcm_len=n;
+  free(s->pcm);s->pcm=calloc(n*2+2,2);s->pcm_len=n;s->decoded=0;
   if(b->adpcm_dirty){s->yn1=b->yn1;s->yn2=b->yn2;}
   if(dsp_log>1&&b->format==2){int bad=0;for(uint32_t f=0;f<(n+13)/14&&f<4000;f++){uint8_t h=rd8(at+f*8);if((h&15)>12||(h>>4)>7)bad++;}fprintf(stderr,"adpcm src %d addr %x (%x) len %u first %02x %02x bad headers %d coef %d %d %d %d\n",i,b->addr,at,n,rd8(at),rd8(at+8),bad,s->coef[0],s->coef[1],s->coef[2],s->coef[3]);}
-  for(uint32_t k=0;k<n;k++){int16_t l=0,r=0;
+  (void)ch;}
+static void dsp_fill(int i,uint32_t upto){ // decode the current buffer up to sample upto
+  typeof(dsp_src[0])*s=&dsp_src[i];dsp_buffer*b=&s->cur;uint32_t ch=b->stereo?2:1,n=b->length,at=dsp_virt(b->addr);
+  if(upto>n)upto=n;
+  for(uint32_t k=s->decoded;k<upto;k++){int16_t l=0,r=0;
     if(b->format==1){l=rd16(at+k*2*ch);r=ch==2?rd16(at+k*2*ch+2):l;}
     else if(b->format==0){l=(int8_t)rd8(at+k*ch)<<8;r=ch==2?(int8_t)rd8(at+k*ch+1)<<8:l;}
     else{ // DSP-ADPCM: 8-byte frames, a header byte then 14 four-bit samples
@@ -125,7 +131,8 @@ static void dsp_decode(int i){ // turn the current buffer into 16-bit PCM
       int nib=rd8(f+1+j/2);nib=j&1?nib&15:nib>>4;if(nib>=8)nib-=16;
       int v=((nib*scale)<<11)+1024+s->coef[pred*2]*s->yn1+s->coef[pred*2+1]*s->yn2;v>>=11;
       if(v>32767)v=32767;if(v<-32768)v=-32768;s->yn2=s->yn1;s->yn1=v;l=r=v;}
-    s->pcm[2*k]=l;s->pcm[2*k+1]=r;}}
+    s->pcm[2*k]=l;s->pcm[2*k+1]=r;}
+  if(upto>s->decoded)s->decoded=upto;}
 static int dsp_dequeue(int i){
   typeof(dsp_src[0])*s=&dsp_src[i];if(!s->queued)return 0;
   int best=0;for(int k=1;k<s->queued;k++)if(s->queue[k].id<s->queue[best].id)best=k; // lowest buffer id first
@@ -167,10 +174,11 @@ static void dsp_source(int i,uint32_t cfg,uint32_t coef,int32_t mix[3][160][4]){
         if(!dsp_dequeue(i)){if(!k){s->enabled=0;s->update=1;s->last_id=s->current_id;s->current_id=0;}break;}
         s->pos+=over;continue;}
       uint32_t at=(uint32_t)s->pos;double t=s->pos-at;
+      if(at+2>s->decoded)dsp_fill(i,at+2+(uint32_t)((160-k)*s->rate)+2);
       for(int c=0;c<2;c++){float a=s->pcm[2*at+c],b=at+1<s->pcm_len?s->pcm[2*at+2+c]:a;out[k][c]=s->interp==2?a:a+(b-a)*t;}
       s->pos+=s->rate;k++;}
     {static int64_t solo=-2;if(solo==-2){solo=getenv("DSPSOLO")?strtoll(getenv("DSPSOLO"),0,16):-1;}if(solo!=-1&&!(solo>>i&1))return;}
-    for(int m=0;m<3;m++)for(int k=0;k<160;k++){mix[m][k][0]+=s->gain[m][0]*out[k][0];mix[m][k][1]+=s->gain[m][1]*out[k][1];
+    for(int m=0;m<3;m++)if(s->gain[m][0]!=0||s->gain[m][1]!=0||s->gain[m][2]!=0||s->gain[m][3]!=0)for(int k=0;k<160;k++){mix[m][k][0]+=s->gain[m][0]*out[k][0];mix[m][k][1]+=s->gain[m][1]*out[k][1];
       mix[m][k][2]+=s->gain[m][2]*out[k][0];mix[m][k][3]+=s->gain[m][3]*out[k][1];}}}
 // One audio frame: read what the application set, write back the status, raise the interrupts.
 static uint64_t dsp_samples; // output samples so far (32728 Hz): the game's real time
