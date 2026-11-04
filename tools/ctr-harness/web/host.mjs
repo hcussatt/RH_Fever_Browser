@@ -3,12 +3,19 @@
 const canvas=document.querySelector('canvas'),status=document.getElementById('status'),judge=document.getElementById('judge');
 let ctx; // the 2D fallback when the worker cannot draw with WebGL
 let worker,held=new Set();
-// The games in this build (games.json, written by build-web.sh); ?GAME=index picks one, else the first.
+// The games in this build (games.json, written by build-web.sh). Without ?GAME= the page lists them all;
+// ?GAME=index plays that one.
 const games=await (await fetch('games.json')).json(),params=new URLSearchParams(location.search);
-const game=games.find(g=>String(g.game)===params.get('GAME'))??games[0];
-document.title=game.title;
-status.textContent=`Click to start ${game.title} (A: Space, Left Shift or left click).`;
-document.getElementById('games').innerHTML=games.length>1?games.map(g=>g===game?`<b>${g.title}</b>`:`<a href="?GAME=${g.game}">${g.title}</a>`).join(' · '):'';
+const game=games.find(g=>String(g.game)===params.get('GAME'));
+if(!game){
+  document.title='Megamix games';canvas.hidden=true;judge.hidden=true;status.textContent='Pick a game:';
+  const list=document.getElementById('games');list.className='list';
+  list.innerHTML=games.map(g=>`<a href="?GAME=${g.game}">${g.title}</a>`).join('');
+}else{
+  document.title=game.title;
+  status.textContent=`Click to start ${game.title} (A: Space, Left Shift or left click).`;
+  document.getElementById('games').innerHTML='<a href="./">All games</a>';
+}
 // Each change carries its event time, so the game can judge it from when it happened.
 function pad(e){worker?.postMessage({type:'pad',pad:held.size?1:0,at:performance.timeOrigin+(e?.timeStamp??performance.now())});}
 async function start(){
@@ -45,10 +52,10 @@ async function start(){
 // Keys are taken from the whole page (capture phase, default actions blocked), so Space never
 // scrolls or presses a focused control; losing focus releases everything held.
 const A_KEYS=new Set(['Space','ShiftLeft']);
-canvas.addEventListener('pointerdown',e=>{e.preventDefault();if(!worker){start();return;}if(e.button===0){canvas.setPointerCapture(e.pointerId);held.add('mouse');pad(e);}});
+canvas.addEventListener('pointerdown',e=>{e.preventDefault();if(!worker){if(game)start();return;}if(e.button===0){canvas.setPointerCapture(e.pointerId);held.add('mouse');pad(e);}});
 canvas.addEventListener('pointerup',e=>{if(e.button===0&&held.delete('mouse'))pad(e);});
 canvas.addEventListener('pointercancel',()=>{if(held.delete('mouse'))pad();});
-addEventListener('keydown',e=>{if(!A_KEYS.has(e.code))return;e.preventDefault();if(e.repeat)return;if(!worker){start();return;}held.add(e.code);pad(e);},true);
+addEventListener('keydown',e=>{if(!A_KEYS.has(e.code))return;e.preventDefault();if(e.repeat)return;if(!worker){if(game)start();return;}held.add(e.code);pad(e);},true);
 addEventListener('keyup',e=>{if(!A_KEYS.has(e.code))return;e.preventDefault();if(held.delete(e.code))pad(e);},true);
 addEventListener('blur',()=>{if(held.size){held.clear();pad();}});
 document.addEventListener('contextmenu',e=>e.preventDefault());

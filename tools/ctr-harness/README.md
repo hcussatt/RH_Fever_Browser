@@ -26,7 +26,7 @@ tools/ctr-harness/build-local.sh                  # all games in games.txt; or e
 ```
 
 The games are listed in `games.txt` (index in the game table, internal name, title); the page links them
-and `?GAME=index` picks one. Music is decoded with ffmpeg, or on a Mac without it with `afconvert`.
+and the page lists every game (`?GAME=index` opens one directly). Music is decoded with ffmpeg, or on a Mac without it with `afconvert`.
 
 The steps by hand, from the repository root, after `tools/extract-3ds.py "<dump>" '*'` has written `build/ctr/`:
 
@@ -56,3 +56,16 @@ tools/ctr-harness/play.sh             # serves on port 8090 and opens /build/ctr
 The game runs in a worker; each vblank it hands the page its top screen and audio and waits on the
 audio clock (JSPI stack switching, Chrome 137 or later). Space, Left Shift or a left click press A.
 Debug switches pass through the address, e.g. `/build/ctr/web/?TF=1`.
+
+Checks for every new game (each one is a bug found in Animal Acrobat or LumBEARjack):
+- The game runs at 60 frames a second: `POLLLOG=1` shows a poll every two harness vblanks, and
+  ticks per frame (tpf) × 59.83 equals the song's BPM × 48 / 60.
+- A perfect run (cues followed with `CKLOG=1`, chained cues included) judges every input within the
+  just window (`JLOG=1`).
+- The music does not drift: a `DSPWAV=` recording lines up with the decoded music file at the same
+  offset from start to end, and every cue lands on the music's beat.
+- Frames with a hit cost no more than others (`FSTAT=1` timings natively, `?perf=1` in the browser):
+  nothing is done all at once when a hit starts sounds or effects.
+- In Chrome, real key presses on the heard beat judge within a few ms (`?clock=1` gives each tick and
+  when it is heard), and presses shifted early or late judge as shifted.
+- Every moving part updates every frame, and no draws are skipped once shaders are compiled.
