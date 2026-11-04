@@ -244,7 +244,7 @@ void call(uint32_t a){
   if(a==0x27b490&&getenv("JLOG"))fprintf(stderr,"event frame %u r0 %x r1 %x r2 %x r3 %x s0 %.2f\n",vblanks,r[0],r[1],r[2],r[3],VFP[0]);
   // Game frames are measured in output audio between input polls (0x120698): the game runs its logic
   // every vblank (~16.7 ms), and F+0x10c is ticks per game frame.
-  if(a==0x120698&&getenv("POLLLOG")){uint32_t F_=rd32(0x54ef2c),t_=F_?rd32(F_+0x10c):0;float f_;memcpy(&f_,&t_,4);uint32_t s_=F_?rd32(F_+0x110):0;float g_;memcpy(&g_,&s_,4);fprintf(stderr,"poll frame %u samples %llu tpf %.3f song %.1f aac %u\n",vblanks,(unsigned long long)dsp_samples,f_,g_,aac_last_frame);}
+  if(a==0x120698&&getenv("POLLLOG")){uint32_t F_=rd32(0x54ef2c),t_=F_?rd32(F_+0x10c):0;float f_;memcpy(&f_,&t_,4);uint32_t s_=F_?rd32(F_+0x110):0;float g_;memcpy(&g_,&s_,4);fprintf(stderr,"poll frame %u samples %llu tpf %.3f song %.1f aac %u wav %u\n",vblanks,(unsigned long long)dsp_samples,f_,g_,aac_last_frame,dsp_wav_samples);}
   if(a==0x120698)pad_unread=0; // the game reads the buttons this frame (see hid.c)
   if(a==0x120698){static uint64_t last;if(last&&dsp_samples>last){float ms=(dsp_samples-last)/32.728f;if(ms<100)frame_ms+=(ms-frame_ms)*0.05f;}last=dsp_samples;}
   // A checker's frame (0x1a5928): it moves its clock (+0x54) on by a frame and, while waiting (+0x72 == 3),

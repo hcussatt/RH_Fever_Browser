@@ -33,6 +33,9 @@ async function start(){
   let saved=0;try{saved=+localStorage.getItem('rhf-audio-delay-ms')||0;}catch{}
   const delay=env.delay!==undefined?+env.delay:saved;delete env.delay;
   setInterval(()=>worker.postMessage({type:'latency',ms:latency()}),1000);
+  // When each moment of the context's audio reaches the speakers (getOutputTimestamp), kept current:
+  // with the worklet's sample positions it tells the worker exactly which game sample is heard when.
+  setInterval(()=>{const o=audio.getOutputTimestamp?.();if(o?.contextTime>0&&o.performanceTime>0)worker.postMessage({type:'heard',ctx:o.contextTime,perf:performance.timeOrigin+o.performanceTime});},100);
   // Shaders compiled in earlier sessions are kept in this browser and compiled again before the game starts.
   const SHADERS='rhf-ctr-shaders';let shaders={};try{shaders=JSON.parse(localStorage.getItem(SHADERS)||'{}');}catch{}
   addEventListener('probe-shader',({detail:{key,src}})=>{const v=key.split('|')[0];for(const k of Object.keys(shaders))if(k.split('|')[0]!==v)delete shaders[k];shaders[key]=src;try{localStorage.setItem(SHADERS,JSON.stringify(shaders));}catch{}});

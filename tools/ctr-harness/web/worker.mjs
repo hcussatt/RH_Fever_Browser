@@ -10,16 +10,24 @@ let drawnCount=0,t0=performance.now(),audio,queued=0,wake=null,pad=0,frames=0,ta
 // the audio still queued, the speaker latency and the time since the key, which the game's own
 // input queue then judges that much earlier (see input_age_ms in run.c).
 let snapRange=null,perf=false,lastEnd=0,lastTick=0,clock=false,padAt=0,outputLatency=0,extraDelay=0,ageSent=0;
+// Which game sample is heard when: the worklet reports the sample (pos) it plays at context time t, the
+// page when context time ctx reaches the speakers (perf, ms since the epoch); posted counts the samples
+// sent. Without these (an old browser) the queued count and the reported speaker latency stand in.
+let posted=0,block=null,heardMap=null;
+const heard=P=>block&&heardMap?block.pos+(heardMap.ctx+(P-heardMap.perf)/1000-block.t)*32728:null; // sample heard at time P
+const heardAt=s=>heardMap.perf+(block.t+(s-block.pos)/32728-heardMap.ctx)*1000; // when sample s is heard
+const behind=P=>{const h=heard(P);return h===null?null:(posted-h)/32.728;}; // ms from the newest sample to the one heard at P
 const env={INTERLEAVE:'1',GSP:'1',START:'200',HWAKE:'1',WORKERS:'all,tramp,gsp'};
 onmessage=async({data})=>{
   // A press is passed on even if its release comes before the game's next vblank (a quick tap): that
   // vblank sees it held, aged from the press; the harness keeps it held until the game reads it.
   if(data.type==='pad'){if(data.pad&~pad){tap=data.pad&~pad;tapAt=data.at;}pad=data.pad;padAt=data.at;}
   if(data.type==='latency')outputLatency=data.ms;
+  if(data.type==='heard')heardMap=data;
   if(data.type!=='start')return;
   audio=data.port;extraDelay=+(data.delay||0);outputLatency=data.latency||0;clock=!!data.env.clock;delete data.env.clock;perf=!!data.env.perf;delete data.env.perf;if(data.env.snap){snapRange=data.env.snap.split('-').map(Number);delete data.env.snap;}if(data.env.ahead){AHEAD=+data.env.ahead;delete data.env.ahead;}
   const gpu=data.canvas?createGpu(data.canvas,data.shaders||{},(key,src)=>postMessage({type:'shader',key,src})):null;if(gpu)env.GL='1';
-  audio.onmessage=({data})=>{queued=data.queued;if(wake&&queued<=AHEAD){const w=wake;wake=null;w();}};
+  audio.onmessage=({data})=>{queued=data.queued;if(data.t!==undefined)block=data;if(wake&&queued<=AHEAD){const w=wake;wake=null;w();}};
   const list=(await (await fetch(`files-${data.env.GAME}.txt`)).text()).split('\n').filter(Boolean);
   const files=await Promise.all(list.map(async f=>[f,new Uint8Array(await (await fetch('data/'+f)).arrayBuffer())]));
   const Module=await createModule({
@@ -27,7 +35,7 @@ onmessage=async({data})=>{
     // Each judged input's offset from its cue (ms, late is positive), shown on the page.
     onJudge:(ms,kind)=>postMessage({type:'judge',ms,kind,tick:lastTick}),
     preRun:[m=>Object.assign(m.ENV,env,data.env)],
-    hostLatency:()=>Math.round(Math.max(0,queued/32728*1000+outputLatency+extraDelay)*10),
+    hostLatency:()=>{const b=behind(performance.timeOrigin+performance.now());return Math.round(Math.max(0,(b??queued/32728*1000+outputLatency)+extraDelay)*10);},
     async hostVblank(rgb,drawn,samples,n,cmd,ncmd,vtx,tick){tick/=1000;lastTick=tick;
       // ?snap=from-to: the presented picture of every 3rd vblank in that tick range goes to the page (tests)
       if(gpu&&snapRange){gpu.snap.want=tick>=snapRange[0]&&tick<=snapRange[1]&&frames%3===0;gpu.snap.got=px=>postMessage({type:'snap',tick,px},[px.buffer]);}
@@ -35,14 +43,15 @@ onmessage=async({data})=>{
       // ?perf=1: report slow vblanks (game time since the last one, GPU time, new shaders and textures)
       if(perf){const tB=performance.now(),game=tA-lastEnd;if(game+tB-tA>20)postMessage({type:'perf',at:tB,tick:lastTick,game,gpu:tB-tA,compiles:gpu?.stats.compiles,uploads:gpu?.stats.uploads,skipped:gpu?.stats.skipped});}
       frames++;if(frames%120===0)postMessage({type:'status',text:`vblank ${frames}, ${((performance.now()-t0)/1000).toFixed(1)} s, audio queued ${queued|0}, drawn ${drawnCount}`});
-      if(n){const pcm=Module.HEAP16.slice(samples>>1,(samples>>1)+n*2);queued+=n;audio.postMessage(pcm,[pcm.buffer]);}
+      if(n){const pcm=Module.HEAP16.slice(samples>>1,(samples>>1)+n*2);queued+=n;posted+=n;audio.postMessage(pcm,[pcm.buffer]);}
       if(drawn){drawnCount++;const src=Module.HEAPU8.subarray(rgb,rgb+400*240*3),px=new Uint8ClampedArray(400*240*4);
         for(let i=0,j=0;i<px.length;i+=4,j+=3){px[i]=src[j];px[i+1]=src[j+1];px[i+2]=src[j+2];px[i+3]=255;}
         postMessage({type:'frame',px,frames},[px.buffer]);}
       if(queued>AHEAD)await new Promise(r=>wake=r);
-      const now=performance.timeOrigin+performance.now(),at=tap&&!(pad&tap)?tapAt:padAt,age=at?Math.max(0,now-at+queued/32728*1000+outputLatency+extraDelay):0;
-      // Tests (?clock=1) get the song tick of the next game frame and when it reaches the speakers.
-      lastEnd=performance.now();if(clock&&tick)postMessage({type:'clock',tick,at:now+queued/32728*1000+outputLatency});
+      const now=performance.timeOrigin+performance.now(),at=tap&&!(pad&tap)?tapAt:padAt,b=at?behind(at):null,age=at?Math.max(0,(b??now-at+queued/32728*1000+outputLatency)+extraDelay):0;
+      // Tests (?clock=1) get the song tick of the frame just run and when it is heard: the start of the
+      // audio that frame made (the last n samples queued), as the game's judging counts it.
+      lastEnd=performance.now();if(clock&&tick)postMessage({type:'clock',tick,at:block&&heardMap?heardAt(posted-n):now+(queued-n)/32728*1000+outputLatency});
       const held=pad|tap;tap=0;
       return held|Math.min(Math.round(age*10),1<<22)<<8;
     }});
