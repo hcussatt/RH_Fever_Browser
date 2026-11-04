@@ -159,10 +159,13 @@ static void dsp_source(int i,uint32_t cfg,uint32_t coef,int32_t mix[3][160][4]){
     wr32(cfg,0);}
   if(s->enabled){
     float out[160][2]={{0}};
-    if(!s->playing||s->pos>=s->pcm_len){s->playing=0;
-      if(!dsp_dequeue(i)){s->enabled=0;s->update=1;s->last_id=s->current_id;s->current_id=0;}}
-    else for(int k=0;k<160;){
-      if(s->pos>=s->pcm_len){s->playing=0;if(!dsp_dequeue(i))break;continue;}
+    // A buffer that runs out hands over to the next queued one at once, carrying the fraction of a
+    // sample it ran past, even at the start of a frame: streamed music (one 1024-sample buffer per AAC
+    // frame) otherwise lost a frame of samples now and then and drifted behind the chart (~0.8%).
+    for(int k=0;k<160;){
+      if(!s->playing||s->pos>=s->pcm_len){double over=s->playing?s->pos-s->pcm_len:0;s->playing=0;
+        if(!dsp_dequeue(i)){if(!k){s->enabled=0;s->update=1;s->last_id=s->current_id;s->current_id=0;}break;}
+        s->pos+=over;continue;}
       uint32_t at=(uint32_t)s->pos;double t=s->pos-at;
       for(int c=0;c<2;c++){float a=s->pcm[2*at+c],b=at+1<s->pcm_len?s->pcm[2*at+2+c]:a;out[k][c]=s->interp==2?a:a+(b-a)*t;}
       s->pos+=s->rate;k++;}
