@@ -56,7 +56,7 @@ function run(shaders,practice){
     if(data.type==='frame')(ctx??=canvas.getContext('2d')).putImageData(new ImageData(data.px,400,240),0,0);
     if(data.type==='status')status.textContent=data.text;
     if(data.type==='practice')skip.hidden=true;
-    if(['clock','judge','perf','shader','snap'].includes(data.type))dispatchEvent(new CustomEvent('probe-'+data.type,{detail:data})); // tests listen too
+    if(['clock','judge','perf','shader','snap','rec'].includes(data.type))dispatchEvent(new CustomEvent('probe-'+data.type,{detail:data})); // tests listen too
     if(data.type==='judge')judge.textContent=`last input ${data.ms>0?'+':''}${data.ms.toFixed(0)} ms (${['outside the windows','barely','just'][data.kind]})`;};
   // Harness settings from the address (?FSTAT=1&DSPLOG=1 ...) pass through to the game's environment;
   // ?PRACTICE=0 or 1 overrides the Skip practice switch; ?PRACTICE=retry starts as on a retry (no title card
