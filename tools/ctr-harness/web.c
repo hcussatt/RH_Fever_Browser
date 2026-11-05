@@ -20,7 +20,9 @@ static void WEB_VBLANK(void){static uint8_t rgb[400*240*3];int drawn=pica_gl>0?0
   pad_held=want|pad_unread;if(pad_held!=pad_last)hid_vblank(); /* the next game frame reads the change */
   web_audio_n=0;if(pica_gl>0)gl_reset();}
 EM_JS(void, WEB_JUDGE, (float ms, int kind), {Module.onJudge?.(ms, kind);});
+EM_JS(void, WEB_PRACTICE_DONE, (), {Module.onPracticeDone?.();});
 #else
+#define WEB_PRACTICE_DONE() ((void)0)
 #define WEB_JUDGE(ms,kind) ((void)0)
 #define WEB_AUDIO(l,r) ((void)0)
 #define WEB_VBLANK() ((void)0)

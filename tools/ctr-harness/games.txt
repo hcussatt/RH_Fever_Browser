@@ -1,5 +1,5 @@
 # Megamix games the browser build knows: index in the game table (GAME=), internal name, title.
 67 ctrBlanco Animal Acrobat
-77 ctrWoodCat LumBEARjack
-14 ctrWoodCat LumBEARjack (short)
+77 ctrWoodCat LumBEARjack 2
+14 ctrWoodCat LumBEARjack
 69 ctrDotSamurai Super Samurai Slice

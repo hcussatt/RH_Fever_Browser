@@ -22,6 +22,7 @@ emcc -O2 -w tools/ctr-harness/run.c "$out"/obj/*.o -o "$out/blanco.mjs" \
   -sINITIAL_MEMORY=512MB -sALLOW_MEMORY_GROWTH -sSTACK_SIZE=8MB -sINVOKE_RUN=0 -sEXIT_RUNTIME=0 \
   -sFORCE_FILESYSTEM -sEXPORTED_RUNTIME_METHODS=FS,ENV,callMain,HEAPU8,HEAP16 -lm
 fi
+tools/ctr-harness/get-font.sh # the stand-in system font (font/README.md)
 printf '[' > "$out/games.json"; sep=
 for game in $games; do
   line=$(awk -v g="$game" '$1==g' tools/ctr-harness/games.txt)
@@ -30,15 +31,19 @@ for game in $games; do
   # The data the game reads: a native run with ROMLOG lists the RomFS files it opens. GL=1 skips
   # the software drawing, so the run plays the whole song in a minute or two. The run plays without
   # input (the "try again" ending); the other endings' sounds and the epilogue pictures are added by name.
+  # A second, short run plays the title card and practice (which waits for input) for the files they read.
   list=build/ctr/web-files-$game.txt
   if [ ! -s "$list" ] || [ build/ctr/run -nt "$list" ]; then
-    { GL=1 INTERLEAVE=1 GSP=1 GAME=$game START=200 HWAKE=1 WORKERS=all,tramp,gsp SECS=${SECS:-200} ROMLOG=1 build/ctr/run 0x100000 2>&1 |
-        awk '/^  file /{print $2}'
+    { for practice in 0 1; do
+        [ $practice = 1 ] && secs=40 || secs=${SECS:-200}
+        GL=1 INTERLEAVE=1 GSP=1 GAME=$game START=200 HWAKE=1 WORKERS=all,tramp,gsp SECS=$secs ROMLOG=1 PRACTICE=$practice build/ctr/run 0x100000 2>&1 |
+          awk '/^  file /{print $2}'
+      done
       awk '{print $3}' build/ctr/romfs-index.txt | grep -E "^sound/group/GROUP_(EPILOGUE|RESULT)_|^layout/epilogue_$name"
     } | sort -u > "$list" || true
   fi
   { printf '%s\n' build/ctr/code-text.bin build/ctr/code-rodata.bin build/ctr/code-data.bin build/ctr/romfs-meta.bin \
-      build/ctr/romfs-index.txt tools/ctr-harness/noops.txt
+      build/ctr/romfs-index.txt tools/ctr-harness/noops.txt build/ctr/standin.bcfnt
     sed 's|^|build/ctr/romfs/|' "$list"; } > "$out/files-$game.txt"
   # Music: decoded once, to 16-bit stereo next to each .aac (as the native harness reads it).
   for f in $(grep '\.aac$' "$out/files-$game.txt"); do

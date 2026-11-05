@@ -39,12 +39,15 @@ gcc -O3 -w tools/ctr-harness/run.c build/ctr/split/part[0-9][0-9].o build/ctr/sp
 INTERLEAVE=1 GSP=1 GAME=67 START=200 HWAKE=1 WORKERS=all,tramp,gsp SECS=100 FRAMES=/tmp/frames EVERY=20 build/ctr/run 0x100000
 ```
 
-`GAME=67` starts Animal Acrobat through the game's own start sequence (77 LumBEARjack, 14 its short version). `FRAMES`/`EVERY` write top-screen
+`GAME=67` starts Animal Acrobat through the game's own start sequence (77 LumBEARjack 2, 14 LumBEARjack, 69 Super Samurai Slice). `FRAMES`/`EVERY` write top-screen
 frames as PPM, `DSPWAV=file` writes the audio (32728 Hz stereo s16). Logging: `DSPLOG`, `GSPLOG`, `PICALOG`,
 `TF` (chart commands), `ROMLOG`, `WAKELOG`, `COUNT=addr,...`, `JLOG` (judged inputs), `CKLOG` (input
 checkers), `POLLLOG` (input polls), `NANLOG` (NaN shader constants or vertex outputs). `PRESS=vblank[:len[:mask]],...`
 presses A (or the buttons in the hex mask, 2 = B); `INPUTAGE=ms` and `LATENCY=ms` act like the browser's audio delay; `GLUNTIL=vblank` skips the
-software drawing until then. Notes: /mnt/project-files/notes/megamix-re.md.
+software drawing until then. `PRACTICE=1` plays the game's title card and practice first, as on a first play;
+`PRACTICE=0` plays the title card and skips the practice; without it the game starts as on a retry (no title
+card, no practice), which the press lists and frame counts above assume. Text is drawn with the stand-in
+system font in `font/` (see its README). Notes: /mnt/project-files/notes/megamix-re.md.
 
 Browser build (needs `emcc` on PATH, and the native steps above done first):
 

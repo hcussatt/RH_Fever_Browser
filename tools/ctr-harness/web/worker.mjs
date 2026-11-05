@@ -34,6 +34,8 @@ onmessage=async({data})=>{
     print:t=>console.log(t),printErr:t=>console.log(t),
     // Each judged input's offset from its cue (ms, late is positive), shown on the page.
     onJudge:(ms,kind)=>postMessage({type:'judge',ms,kind,tick:lastTick}),
+    // The game's practice is over (played or skipped): the page hides its Skip button.
+    onPracticeDone:()=>postMessage({type:'practice',done:true}),
     preRun:[m=>Object.assign(m.ENV,env,data.env)],
     hostLatency:()=>{const b=behind(performance.timeOrigin+performance.now());return Math.round(Math.max(0,(b??queued/32728*1000+outputLatency)+extraDelay)*10);},
     async hostVblank(rgb,drawn,samples,n,cmd,ncmd,vtx,tick){tick/=1000;lastTick=tick;

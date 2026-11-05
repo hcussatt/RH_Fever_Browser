@@ -224,6 +224,15 @@ void call(uint32_t a){
       wr8(rd32(0x54ef10)+0x34,g);r[0]=rd32(0x54ef10);call(0x258dc0);r[0]=rd32(0x54ef10);call(0x258da0);r[0]=rd32(0x54ef10);call(0x258d94);
       wr8(rd32(0x54ef2c)+0xa45,1); // as the scene base does when a scene ends with a game queued
       memcpy(r,saved,64);}}
+  // Practice. A game's start flow reads 0xa46 (tickflow op 0x75 sub 1): set, as on a retry, it skips the title
+  // card and the practice (how the harness started games before); clear, it plays the title card, then the
+  // practice unless 0x549d15 is set (read by the practice label's op 0xa7 sub 2; the flow's op 0xa6 sub 0 has
+  // just cleared it). PRACTICE=1 plays the practice, PRACTICE=0 skips it; otherwise (unset, or PRACTICE=retry
+  // from the page) nothing changes, as the cue tick lists of the tests assume.
+  {const char*pr=getenv("PRACTICE");if(a==0x25c3a0&&r[1]==0x75&&r[2]==1&&getenv("GAME")&&pr&&(*pr=='0'||*pr=='1')&&!pr[1]){static int once;if(!once++){
+    wr8(rd32(0x54ef2c)+0xa46,0);if(*pr=='0')wr8(0x549d15,1);}}}
+  // sub_Glb_skip_common (system tickflow sub 0xc) ends a practice, played or skipped: the page hides its Skip.
+  if(a==0x25c3a0&&r[1]==4&&rd32(r[3])==0xc)WEB_PRACTICE_DONE();
   if(a==0x25c3a0&&getenv("TF")&&r[1]==0x52){static int once;if(!once++){uint32_t F=rd32(0x54ef2c),w=rd32(F+0x104);fprintf(stderr,"op52 weak %x:",w);if(w)for(int i=0;i<4;i++)fprintf(stderr," %x",rd32(w+4*i));fprintf(stderr,"\n");if(w&&rd32(w+4)){uint32_t o=rd32(w+4),v=rd32(o);fprintf(stderr,"snd obj %x 9c %x 169 %x vt %x:",o,rd8(o+0x9c),rd8(o+0x169),v);watch_here(p(o+0x169,1));for(int i=0;i<12;i++)fprintf(stderr," %x",rd32(v+4*i));fprintf(stderr,"\n");}}}
   if(a==0x25c3a0&&getenv("TF"))fprintf(stderr,"tf op %x arg0 %x at %x frame %u\n",r[1],r[2],r[3]-4,vblanks);
   if(a==0x10f970){wr32(0x54dd74,0x10080000);r[0]=0;return;} // APT GetSharedFont + map: the stand-in font
@@ -324,7 +333,10 @@ int main(int argc,char**argv){
   load("build/ctr/code-rodata.bin",0x39a000);
   load("build/ctr/code-data.bin",0x521000);
   r[13]=0x10000000;r[14]=0;
-  make_font(0x10080000);
+  // The stand-in system font (make-font.py) when it is there, else the one-glyph blank one.
+  {FILE*ff=fopen("build/ctr/standin.bcfnt","rb");if(ff){fseek(ff,0,SEEK_END);long n=ftell(ff);fseek(ff,0,SEEK_SET);
+    for(long i=0;i<n;i++)wr8(0x10080080+i,fgetc(ff));fclose(ff);wr32(0x10080000,2);wr32(0x10080004,1);wr32(0x10080008,n);}
+   else make_font(0x10080000);}
   if(argc>1)call(strtoul(argv[1],0,0));else call(0x1dc08c);
   printf("scene at %x vtable %x\n",r[0],rd32(r[0]));
 }

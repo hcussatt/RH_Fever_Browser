@@ -10,9 +10,12 @@
   a{color:#8cf}
   #games.list{display:flex;flex-direction:column;gap:10px;min-width:min(90vw,320px)}
   #games.list a{display:block;padding:12px 16px;border-radius:8px;background:#222;text-decoration:none;font-size:18px}
-  #games.list a:hover{background:#2d3a48}
+  #games.list a:hover,button:hover{background:#2d3a48}
+  button{font:inherit;color:#ddd;background:#222;border:1px solid #444;border-radius:8px;padding:10px 16px;cursor:pointer}
+  #skip:not([hidden]){display:block;margin:8px auto}
 </style>
 <canvas width="400" height="240"></canvas>
+<button id="skip" hidden>Skip practice</button>
 <p id="status">Loading...</p>
 <p id="games"></p>
 <p id="judge"></p>
