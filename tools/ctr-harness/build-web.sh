@@ -23,25 +23,32 @@ emcc -O2 -w tools/ctr-harness/run.c "$out"/obj/*.o -o "$out/blanco.mjs" \
   -sFORCE_FILESYSTEM -sEXPORTED_RUNTIME_METHODS=FS,ENV,callMain,HEAPU8,HEAP16 -lm
 fi
 "$PYTHON" tools/ctr-harness/system-font.py # your 3DS system font, for the game's text
-printf '[' > "$out/games.json"; sep=
+# The data each game reads: native runs with ROMLOG list the RomFS files it opens. GL=1 skips the
+# software drawing. The first run plays the song without input (the "try again" ending) and stops at
+# its epilogue; the other endings' sounds and the epilogue pictures are added by name. The second
+# plays the title card and practice, and stops at the last file the practice loads (it then waits
+# for input). The games' runs go side by side (JOBS at a time), and only when the harness changed since.
+running=0
 for game in $games; do
   line=$(awk -v g="$game" '$1==g' tools/ctr-harness/games.txt)
   [ -n "$line" ] || { echo "Game $game is not in tools/ctr-harness/games.txt" >&2; exit 1; }
-  name=$(echo "$line" | awk '{print $2}'); title=$(echo "$line" | cut -d' ' -f3-)
-  # The data the game reads: a native run with ROMLOG lists the RomFS files it opens. GL=1 skips
-  # the software drawing, so the run plays the whole song in a minute or two. The run plays without
-  # input (the "try again" ending); the other endings' sounds and the epilogue pictures are added by name.
-  # A second, short run plays the title card and practice (which waits for input) for the files they read.
+  name=$(echo "$line" | awk '{print $2}')
   list=build/ctr/web-files-$game.txt
-  if [ ! -s "$list" ] || [ build/ctr/run -nt "$list" ]; then
-    { for practice in 0 1; do
-        [ $practice = 1 ] && secs=40 || secs=${SECS:-200}
-        GL=1 INTERLEAVE=1 GSP=1 GAME=$game START=200 HWAKE=1 WORKERS=all,tramp,gsp SECS=$secs ROMLOG=1 PRACTICE=$practice build/ctr/run 0x100000 2>&1 |
-          awk '/^  file /{print $2}'
-      done
-      awk '{print $3}' build/ctr/romfs-index.txt | grep -E "^sound/group/GROUP_(EPILOGUE|RESULT)_|^layout/epilogue_$name"
-    } | sort -u > "$list" || true
-  fi
+  [ ! -s "$list" ] || [ build/ctr/run -nt "$list" ] || continue
+  { { GL=1 INTERLEAVE=1 GSP=1 GAME=$game START=200 HWAKE=1 WORKERS=all,tramp,gsp SECS=${SECS:-200} ROMLOG=1 PRACTICE=0 \
+        ROMEXIT=layout/epilogue_ build/ctr/run 0x100000 2>&1
+      GL=1 INTERLEAVE=1 GSP=1 GAME=$game START=200 HWAKE=1 WORKERS=all,tramp,gsp SECS=60 ROMLOG=1 PRACTICE=1 \
+        ROMEXIT=GROUP_ENDLESS build/ctr/run 0x100000 2>&1; } | awk '/^  file /{print $2}'
+    awk '{print $3}' build/ctr/romfs-index.txt | grep -E "^sound/group/GROUP_(EPILOGUE|RESULT)_|^layout/epilogue_$name"
+  } | sort -u > "$list.part" && mv "$list.part" "$list" &
+  running=$((running+1)); [ "$running" -lt "${JOBS:-4}" ] || { wait; running=0; }
+done
+wait
+printf '[' > "$out/games.json"; sep=
+for game in $games; do
+  line=$(awk -v g="$game" '$1==g' tools/ctr-harness/games.txt)
+  title=$(echo "$line" | cut -d' ' -f3-)
+  list=build/ctr/web-files-$game.txt
   { printf '%s\n' build/ctr/code-text.bin build/ctr/code-rodata.bin build/ctr/code-data.bin build/ctr/romfs-meta.bin \
       build/ctr/romfs-index.txt tools/ctr-harness/noops.txt
     [ ! -f build/ctr/system-font.bcfnt ] || echo build/ctr/system-font.bcfnt

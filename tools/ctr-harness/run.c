@@ -110,6 +110,8 @@ static void rom_read(uint64_t off,uint32_t size,uint32_t ptr){
     if(i==rfile_count){fprintf(stderr,"romfs read outside any file: %llx\n",(unsigned long long)off);return;}
     uint32_t n=rfiles[i].at+rfiles[i].size-off<size?rfiles[i].at+rfiles[i].size-off:size;
     char path[160];snprintf(path,160,"build/ctr/romfs/%s",rfiles[i].path);if(getenv("ROMLOG"))fprintf(stderr,"  file %s +%llx frame %u\n",rfiles[i].path,(unsigned long long)(off-rfiles[i].at),vblanks);
+    // ROMEXIT=a,b: the run ends once a file whose path holds one of these is read (the browser build's file lists).
+    {const char*x=getenv("ROMEXIT");if(x){char k[256];snprintf(k,256,"%s",x);for(char*t=strtok(k,",");t;t=strtok(0,","))if(strstr(rfiles[i].path,t)){fflush(stderr);exit(0);}}}
     rfiles[i].opened=1;
     FILE*f=fopen(path,"rb");
     if(f){fseek(f,off-rfiles[i].at,0);fread(d,1,n,f);fclose(f);}
