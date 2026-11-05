@@ -3,3 +3,4 @@
 77 ctrWoodCat LumBEARjack 2
 14 ctrWoodCat LumBEARjack
 69 ctrDotSamurai Super Samurai Slice
+89 rvlKarate Karate Man
