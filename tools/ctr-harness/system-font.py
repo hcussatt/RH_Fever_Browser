@@ -48,11 +48,13 @@ def lz11(d):
 def normalize(d):
     if d[:1] == b'\x11' and d[:4] != b'CFNT':
         d = lz11(d)
-    if d[:4] != b'CFNT' and d[0x80:0x84] == b'CFNT':
+    # The shared memory copy starts with a 0x80-byte header, and its font says CFNU (the same format).
+    if d[:4] not in (b'CFNT', b'CFNU') and d[0x80:0x84] in (b'CFNT', b'CFNU'):
         d = d[0x80:]
-    if d[:4] != b'CFNT':
-        raise SystemExit('not a 3DS font (no CFNT header)')
+    if d[:4] not in (b'CFNT', b'CFNU'):
+        raise SystemExit(f'not a 3DS font (starts {d[:4].hex()}, no CFNT/CFNU header)')
     f = bytearray(d)
+    f[:4] = b'CFNT'
     u32 = lambda o: struct.unpack_from('<I', f, o)[0]
     put = lambda o, v: struct.pack_into('<I', f, o, v)
     finf = struct.unpack_from('<H', f, 6)[0]
