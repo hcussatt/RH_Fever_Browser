@@ -46,8 +46,10 @@ checkers), `POLLLOG` (input polls), `NANLOG` (NaN shader constants or vertex out
 presses A (or the buttons in the hex mask, 2 = B); `INPUTAGE=ms` and `LATENCY=ms` act like the browser's audio delay; `GLUNTIL=vblank` skips the
 software drawing until then. `PRACTICE=1` plays the game's title card and practice first, as on a first play;
 `PRACTICE=0` plays the title card and skips the practice; without it the game starts as on a retry (no title
-card, no practice), which the press lists and frame counts above assume. Text is drawn with the stand-in
-system font in `font/` (see its README). Notes: /mnt/project-files/notes/megamix-re.md.
+card, no practice), which the press lists and frame counts above assume. The game's text needs your own 3DS
+system font: put `shared_font.bin` (from Citra or Azahar's sysdata folder) or `cbf_std.bcfnt(.lz)` (from
+system archive 0004009B00014002) next to the repository folder, or set `RHF_3DS_FONT`; the builds run
+`system-font.py`, which writes build/ctr/system-font.bcfnt. Without it the text is blank. Notes: /mnt/project-files/notes/megamix-re.md.
 
 Browser build (needs `emcc` on PATH, and the native steps above done first):
 

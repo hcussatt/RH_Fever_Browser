@@ -10,13 +10,13 @@ extern uint32_t *R;
 static uint8_t *code; // 0x100000..0x700000
 static uint8_t *heapm; // 0x08000000..+64MB
 static uint8_t *stackm; // 0x0ff00000..0x10000000
-static uint8_t *dspm;static uint8_t *tlsm;static uint8_t *shm,*linm,*vram; // shared memory blocks 0x10000000..+1MB
+static uint8_t *dspm;static uint8_t *tlsm;static uint8_t *shm,*linm,*vram; // shared memory blocks 0x10000000..+4MB (the system font from +0x80000)
    // 0x1ff82000..+0x1000
 static uint8_t *p(uint32_t a,uint32_t n){
   if(a>=0x100000&&a+n<=0x700000)return code+a-0x100000;
   if(a>=0x08000000&&a+n<=0x0c000000)return heapm+a-0x08000000;
   if(a>=0x0fc00000&&a+n<=0x10000000)return stackm+a-0x0fc00000;
-  if(a>=0x10000000&&a+n<=0x10100000)return shm+a-0x10000000;
+  if(a>=0x10000000&&a+n<=0x10400000)return shm+a-0x10000000;
   if(a>=0x14000000&&a+n<=0x17000000)return linm+a-0x14000000;
   if(a>=0x1f000000&&a+n<=0x1f600000)return vram+a-0x1f000000;
   if(a>=0x1ff00000&&a+n<=0x1ff80000)return dspm+a-0x1ff00000;
@@ -327,14 +327,14 @@ int main(int argc,char**argv){
 #endif
   if(getenv("INPUTAGE"))input_age_ms=atof(getenv("INPUTAGE"));
   if(getenv("LATENCY"))latency_ms=atof(getenv("LATENCY"));
-  code=calloc(1,0x600000);heapm=calloc(1,0x4000000);stackm=calloc(1,0x400000);tlsm=calloc(1,0x3000);shm=calloc(1,0x100000);linm=calloc(1,0x3000000);vram=calloc(1,0x600000);dspm=calloc(1,0x80000);wr32(0x1ff80040,0x04000000); // APPMEMALLOC: 64 MB
+  code=calloc(1,0x600000);heapm=calloc(1,0x4000000);stackm=calloc(1,0x400000);tlsm=calloc(1,0x3000);shm=calloc(1,0x400000);linm=calloc(1,0x3000000);vram=calloc(1,0x600000);dspm=calloc(1,0x80000);wr32(0x1ff80040,0x04000000); // APPMEMALLOC: 64 MB
  
   load("build/ctr/code-text.bin",0x100000);
   load("build/ctr/code-rodata.bin",0x39a000);
   load("build/ctr/code-data.bin",0x521000);
   r[13]=0x10000000;r[14]=0;
-  // The stand-in system font (make-font.py) when it is there, else the one-glyph blank one.
-  {FILE*ff=fopen("build/ctr/standin.bcfnt","rb");if(ff){fseek(ff,0,SEEK_END);long n=ftell(ff);fseek(ff,0,SEEK_SET);
+  // Your own 3DS system font (system-font.py) when it is there, else a one-glyph blank stand-in.
+  {FILE*ff=fopen("build/ctr/system-font.bcfnt","rb");if(ff){fseek(ff,0,SEEK_END);long n=ftell(ff);fseek(ff,0,SEEK_SET);
     for(long i=0;i<n;i++)wr8(0x10080080+i,fgetc(ff));fclose(ff);wr32(0x10080000,2);wr32(0x10080004,1);wr32(0x10080008,n);}
    else make_font(0x10080000);}
   if(argc>1)call(strtoul(argv[1],0,0));else call(0x1dc08c);

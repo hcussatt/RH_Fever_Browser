@@ -22,7 +22,7 @@ emcc -O2 -w tools/ctr-harness/run.c "$out"/obj/*.o -o "$out/blanco.mjs" \
   -sINITIAL_MEMORY=512MB -sALLOW_MEMORY_GROWTH -sSTACK_SIZE=8MB -sINVOKE_RUN=0 -sEXIT_RUNTIME=0 \
   -sFORCE_FILESYSTEM -sEXPORTED_RUNTIME_METHODS=FS,ENV,callMain,HEAPU8,HEAP16 -lm
 fi
-tools/ctr-harness/get-font.sh # the stand-in system font (font/README.md)
+"$PYTHON" tools/ctr-harness/system-font.py # your 3DS system font, for the game's text
 printf '[' > "$out/games.json"; sep=
 for game in $games; do
   line=$(awk -v g="$game" '$1==g' tools/ctr-harness/games.txt)
@@ -43,7 +43,8 @@ for game in $games; do
     } | sort -u > "$list" || true
   fi
   { printf '%s\n' build/ctr/code-text.bin build/ctr/code-rodata.bin build/ctr/code-data.bin build/ctr/romfs-meta.bin \
-      build/ctr/romfs-index.txt tools/ctr-harness/noops.txt build/ctr/standin.bcfnt
+      build/ctr/romfs-index.txt tools/ctr-harness/noops.txt
+    [ ! -f build/ctr/system-font.bcfnt ] || echo build/ctr/system-font.bcfnt
     sed 's|^|build/ctr/romfs/|' "$list"; } > "$out/files-$game.txt"
   # Music: decoded once, to 16-bit stereo next to each .aac (as the native harness reads it).
   for f in $(grep '\.aac$' "$out/files-$game.txt"); do

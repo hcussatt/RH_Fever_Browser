@@ -7,7 +7,7 @@
 static uint32_t pica_virt(uint32_t pa){
   if(pa>=0x18000000&&pa<0x18600000)return pa-0x18000000+0x1f000000;
   if(pa>=0x20000000&&pa<0x28000000)return pa-0x20000000+0x14000000;
-  if(pa>=0x1c000000&&pa<0x1c100000)return pa-0x0c000000; // shared memory blocks (the system font), converted like linear memory
+  if(pa>=0x1c000000&&pa<0x1c400000)return pa-0x0c000000; // shared memory blocks (the system font), converted like linear memory
   return pa;}
 static uint8_t*pm(uint32_t pa,uint32_t n){return p(pica_virt(pa),n);}
 static int pica_log=-1;

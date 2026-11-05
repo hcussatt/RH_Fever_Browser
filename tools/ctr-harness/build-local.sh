@@ -62,8 +62,8 @@ fi
 [ build/ctr/split/tables.c -nt build/ctr/blanco.inc ] || "$RHF_PYTHON" tools/ctr-harness/split.py 24
 
 # 4. The native harness: it lists the files each game reads for the browser build.
-step "Building the stand-in system font"
-RHF_PYTHON="$RHF_PYTHON" tools/ctr-harness/get-font.sh
+step "Your 3DS system font (for the game's text)"
+"$RHF_PYTHON" tools/ctr-harness/system-font.py
 
 step "Compiling the native harness"
 ls build/ctr/split/part*.c build/ctr/split/tables.c | xargs -P "$JOBS" -I{} sh -c '
