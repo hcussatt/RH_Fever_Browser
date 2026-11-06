@@ -1,5 +1,6 @@
 // The probe page: lists the games, runs the picked one in a worker (it starts at once), draws its top
-// screen and passes the A button (Space, Left Shift or left click) and B (Right Shift or right click).
+// screen and passes the A button (Space, Left Shift or left click), B (Right Shift or right click) and the
+// + Control Pad (arrow keys).
 let canvas=document.querySelector('canvas');
 const status=document.getElementById('status'),judge=document.getElementById('judge'),skip=document.getElementById('skip');
 let ctx; // the 2D fallback when the worker cannot draw with WebGL
@@ -19,7 +20,7 @@ let game=games.find(g=>String(g.game)===params.get('GAME'));
 // its audio back until then.
 function showGame(){
   document.title=game.title;canvas.hidden=false;judge.hidden=false;
-  status.textContent=`Starting ${game.title} (A: Space, Left Shift or left click; B: Right Shift or right click).`;
+  status.textContent=`Starting ${game.title} (A: Space, Left Shift or left click; B: Right Shift or right click; + Control Pad: arrow keys).`;
   const list=document.getElementById('games');list.className='';list.innerHTML='<a href="./">All games</a>';
 }
 if(!game){
@@ -88,7 +89,9 @@ function run(shaders,practice){
 }
 // Keys are taken from the whole page (capture phase, default actions blocked), so Space never
 // scrolls or presses a focused control; losing focus releases everything held.
-const KEYS={Space:1,ShiftLeft:1,ShiftRight:2},MOUSE={0:1,2:2};
+// The arrow keys are the + Control Pad (3DS bits: right 0x10, left 0x20, up 0x40, down 0x80), which some
+// games use as a button of its own (Catchy Tune's left side).
+const KEYS={Space:1,ShiftLeft:1,ShiftRight:2,ArrowRight:0x10,ArrowLeft:0x20,ArrowUp:0x40,ArrowDown:0x80},MOUSE={0:1,2:2};
 function listen(c){
   c.addEventListener('pointerdown',e=>{e.preventDefault();if(!worker)return;if(MOUSE[e.button]){c.setPointerCapture(e.pointerId);held.set('mouse'+e.button,MOUSE[e.button]);pad(e);}});
   c.addEventListener('pointerup',e=>{if(held.delete('mouse'+e.button))pad(e);});

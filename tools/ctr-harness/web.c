@@ -1,7 +1,7 @@
 // The browser host's side of the harness (tools/ctr-harness/web/). Natively these do nothing.
 // Each vblank of the game's main thread hands the page the top screen and the audio mixed since the
 // last one, then waits (the wasm stack is suspended, JSPI) until the page wants the next frame.
-// The page answers with the buttons held (bit 0 = A, bit 1 = B) and, above them in tenths of a millisecond,
+// The page answers with the buttons held (3DS bits: 0 = A, 1 = B, 4-7 = + Control Pad) and, above them in tenths of a millisecond,
 // how long ago as heard the latest change of buttons happened (see input_age_ms in run.c).
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>

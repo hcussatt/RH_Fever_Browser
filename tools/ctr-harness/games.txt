@@ -5,3 +5,5 @@
 69 ctrDotSamurai Super Samurai Slice
 89 rvlKarate Karate Man
 5 ntrRobot Fillbots
+7 rvlBadminton Air Rally
+13 ctrStep Catchy Tune

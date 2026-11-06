@@ -61,7 +61,7 @@ tools/ctr-harness/play.sh             # serves on port 8090 and opens /build/ctr
 The game runs in a worker; each vblank it hands the page its top screen and audio and waits on the
 audio clock (JSPI stack switching, Chrome 137 or later); the page draws the newest finished screen once per
 display refresh. A game picked from the list starts at once. Space, Left Shift or a left click press A; Right
-Shift or a right click press B.
+Shift or a right click press B; the arrow keys are the + Control Pad.
 Debug switches pass through the address, e.g. `/build/ctr/web/?TF=1`. `?perf=1` shows a line under the game
 counting vblanks over 20 ms (`?perf=ms` sets the bar) and audio gaps, with the worst one's game and GPU time.
 
