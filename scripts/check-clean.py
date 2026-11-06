@@ -30,13 +30,17 @@ BLOCKED_EXT = {
     '.dol', '.elf', '.rel', '.o', '.a', '.map',
     '.szs', '.arc', '.u8', '.carc', '.brsar', '.brstm', '.brwsd', '.brbnk', '.brseq', '.brwar',
     '.rwar', '.rwav', '.rseq', '.rbnk', '.rwsd', '.brcad', '.tpl', '.brlyt', '.brlan', '.brfnt',
+    '.cia', '.3ds', '.cci', '.cxi', '.cfa', '.ncch', '.romfs', '.exefs', '.bccad', '.bcsar', '.bcstm',
+    '.bcwav', '.bcseq', '.bcwar', '.bcbnk', '.bcgrp', '.ctpk', '.bclim', '.bflim', '.bcfnt', '.tickflow', '.zlib',
     '.bin', '.inc', '.wasm', '.wav', '.ogg', '.mp3', '.png', '.jpg', '.jpeg', '.gif', '.webp',
 }
 SIGNATURES = {
     b'Yaz0': 'Yaz0 archive', b'\x55\xaa\x38\x2d': 'U8 archive', b'RSAR': 'sound archive',
     b'RWAR': 'wave archive', b'RWAV': 'wave', b'RSEQ': 'sequence', b'RBNK': 'sound bank',
     b'RWSD': 'sound data', b'RLYT': 'layout', b'RLAN': 'layout animation', b'\x00asm': 'WASM',
-    b'\x89PNG': 'PNG image', b'RIFF': 'RIFF media', b'\x00\x20\xaf\x30': 'TPL texture',
+    b'NCSD': '3DS image', b'NCCH': '3DS program', b'IVFC': '3DS RomFS', b'CSAR': '3DS sound archive',
+    b'CWAV': '3DS wave', b'CSTM': '3DS stream', b'CSEQ': '3DS sequence', b'CWAR': '3DS wave archive',
+    b'CBNK': '3DS sound bank', b'CTPK': '3DS textures', b'\x89PNG': 'PNG image', b'RIFF': 'RIFF media', b'\x00\x20\xaf\x30': 'TPL texture',
 }
 COMMON_KEY_SHA256 = 'de38aeab4fe0c36d828a47e6fd315100e7ce234d3b00aa25e6ad6f5ff2824af8'
 MAX_BYTES = 1_000_000

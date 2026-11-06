@@ -5,7 +5,10 @@ import { extname, join, normalize, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const args = process.argv.slice(2);
-const shouldOpen = args.includes("--open");
+// --open opens the site root in the browser; --open=/some/path/ opens that page instead.
+const openArgument = args.find((argument) => argument === "--open" || argument.startsWith("--open="));
+const shouldOpen = Boolean(openArgument);
+const openPath = openArgument?.startsWith("--open=") ? "/" + openArgument.slice(7).replace(/^\/+/, "") : "/";
 const portArgument = args.find((argument) => /^\d+$/.test(argument));
 const root = resolve(process.cwd());
 const preferredPort = Number(process.env.PORT || portArgument || 8080);
@@ -98,7 +101,7 @@ function listen(port) {
     console.log(`Rhythm Heaven Fever web running at ${url}`);
     console.log("Open it in Chrome and pick a game.");
     if (shouldOpen) {
-      openInBrowser(url);
+      openInBrowser(new URL(openPath, url).href);
     }
   });
 }

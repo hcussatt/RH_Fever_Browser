@@ -1,0 +1,67 @@
+// Runs the translated game. Each vblank the game hands over its top screen and the audio mixed since
+// the last one (see web.c); the worker sends the audio straight to the page's AudioWorklet and
+// waits while the worklet holds more than AHEAD samples, so the game runs on the audio clock.
+import createModule from './blanco.mjs';
+import {createGpu} from './gl.mjs';
+let AHEAD=1100; // game samples (32728 Hz) queued ahead of the speakers: ~34 ms, about two vblanks
+let drawnCount=0,t0=performance.now(),audio,queued=0,wake=null,pad=0,frames=0,tap=0,tapAt=0;
+// Input timing: the time (ms since the epoch) of the latest button change, the page's speaker
+// latency, and an extra delay the player can set. A change reaches the game with its age as heard:
+// the audio still queued, the speaker latency and the time since the key, which the game's own
+// input queue then judges that much earlier (see input_age_ms in run.c).
+let snapRange=null,perf=false,lastEnd=0,lastTick=0,clock=false,padAt=0,outputLatency=0,extraDelay=0,ageSent=0;
+// Which game sample is heard when: the worklet reports the sample (pos) it plays at context time t, the
+// page when context time ctx reaches the speakers (perf, ms since the epoch); posted counts the samples
+// sent. Without these (an old browser) the queued count and the reported speaker latency stand in.
+let posted=0,block=null,heardMap=null;
+// Tests (?rec=1): the left channel of what is posted, in pieces with their posted position (clock events
+// carry the same positions as at - heardAt(), see chrome-music.mjs).
+let rec=null,recN=0;
+let gaps=0,inTask=0; // audio blocks that ran dry; vblanks run since the worker last yielded (only the last is shown)
+const heard=P=>block&&heardMap?block.pos+(heardMap.ctx+(P-heardMap.perf)/1000-block.t)*32728:null; // sample heard at time P
+const heardAt=s=>heardMap.perf+(block.t+(s-block.pos)/32728-heardMap.ctx)*1000; // when sample s is heard
+const behind=P=>{const h=heard(P);return h===null?null:(posted-h)/32.728;}; // ms from the newest sample to the one heard at P
+const env={INTERLEAVE:'1',GSP:'1',START:'200',HWAKE:'1',WORKERS:'all,tramp,gsp'};
+onmessage=async({data})=>{
+  // A press is passed on even if its release comes before the game's next vblank (a quick tap): that
+  // vblank sees it held, aged from the press; the harness keeps it held until the game reads it.
+  if(data.type==='pad'){if(data.pad&~pad){tap=data.pad&~pad;tapAt=data.at;}pad=data.pad;padAt=data.at;}
+  if(data.type==='latency')outputLatency=data.ms;
+  if(data.type==='heard')heardMap=data;
+  if(data.type!=='start')return;
+  audio=data.port;extraDelay=+(data.delay||0);outputLatency=data.latency||0;clock=!!data.env.clock;delete data.env.clock;if(data.env.rec){rec=[];delete data.env.rec;}perf=data.env.perf?+data.env.perf||20:false;if(data.env.perf==='1')perf=20;delete data.env.perf;if(data.env.snap){snapRange=data.env.snap.split('-').map(Number);delete data.env.snap;}if(data.env.ahead){AHEAD=+data.env.ahead;delete data.env.ahead;}
+  const gpu=data.canvas?createGpu(data.canvas,data.shaders||{},(key,src)=>postMessage({type:'shader',key,src})):null;if(gpu)env.GL='1';
+  audio.onmessage=({data})=>{queued=data.queued;gaps=data.gaps??gaps;if(data.t!==undefined)block=data;if(wake&&queued<=AHEAD){const w=wake;wake=null;w();}};
+  const list=(await (await fetch(`files-${data.env.GAME}.txt`)).text()).split('\n').filter(Boolean);
+  const files=await Promise.all(list.map(async f=>[f,new Uint8Array(await (await fetch('data/'+f)).arrayBuffer())]));
+  const Module=await createModule({
+    print:t=>console.log(t),printErr:t=>console.log(t),
+    // Each judged input's offset from its cue (ms, late is positive), shown on the page.
+    onJudge:(ms,kind)=>postMessage({type:'judge',ms,kind,tick:lastTick}),
+    // The game's practice is over (played or skipped): the page hides its Skip button.
+    onPracticeDone:()=>postMessage({type:'practice',done:true}),
+    preRun:[m=>Object.assign(m.ENV,env,data.env)],
+    hostLatency:()=>{const b=behind(performance.timeOrigin+performance.now());return Math.round(Math.max(0,(b??queued/32728*1000+outputLatency)+extraDelay)*10);},
+    async hostVblank(rgb,drawn,samples,n,cmd,ncmd,vtx,tick){tick/=1000;lastTick=tick;
+      // ?snap=from-to: the presented picture of every 3rd vblank in that tick range goes to the page (tests)
+      if(gpu&&snapRange){gpu.snap.want=tick>=snapRange[0]&&tick<=snapRange[1]&&frames%3===0;gpu.snap.got=px=>postMessage({type:'snap',tick,px},[px.buffer]);}
+      const tA=performance.now();if(gpu&&ncmd)gpu.run(Module.HEAPU8,cmd,ncmd,vtx);
+      // ?perf=1: report slow vblanks (over 20 ms; ?perf=ms sets the bar) (game time since the last one, GPU time, new shaders and textures)
+      if(perf){const tB=performance.now(),game=tA-lastEnd;if(game+tB-tA>=perf)postMessage({type:'perf',at:tB,tick:lastTick,game,gpu:tB-tA,compiles:gpu?.stats.compiles,uploads:gpu?.stats.uploads,skipped:gpu?.stats.skipped,gaps,inTask});}
+      frames++;if(frames%120===0)postMessage({type:'status',text:`vblank ${frames}, ${((performance.now()-t0)/1000).toFixed(1)} s, audio queued ${queued|0}, drawn ${drawnCount}`});
+      if(n){const pcm=Module.HEAP16.slice(samples>>1,(samples>>1)+n*2);if(rec){rec.push(pcm.filter((v,i)=>!(i&1)));recN+=n;if(recN>=65536){const all=new Int16Array(recN);let o=0;for(const c of rec){all.set(c,o);o+=c.length;}postMessage({type:'rec',pos:posted+n-recN,pcm:all},[all.buffer]);rec=[];recN=0;}}queued+=n;posted+=n;audio.postMessage(pcm,[pcm.buffer]);}
+      if(drawn){drawnCount++;const src=Module.HEAPU8.subarray(rgb,rgb+400*240*3),px=new Uint8ClampedArray(400*240*4);
+        for(let i=0,j=0;i<px.length;i+=4,j+=3){px[i]=src[j];px[i+1]=src[j+1];px[i+2]=src[j+2];px[i+3]=255;}
+        postMessage({type:'frame',px,frames},[px.buffer]);}
+      inTask++;if(queued>AHEAD){await new Promise(r=>wake=r);inTask=0;}
+      const now=performance.timeOrigin+performance.now(),at=tap&&!(pad&tap)?tapAt:padAt,b=at?behind(at):null,age=at?Math.max(0,(b??now-at+queued/32728*1000+outputLatency)+extraDelay):0;
+      // Tests (?clock=1) get the song tick of the frame just run and when it is heard: the start of the
+      // audio that frame made (the last n samples queued), as the game's judging counts it.
+      lastEnd=performance.now();if(clock&&tick)postMessage({type:'clock',tick,pos:posted-n,at:block&&heardMap?heardAt(posted-n):now+(queued-n)/32728*1000+outputLatency});
+      const held=pad|tap;tap=0;
+      return held|Math.min(Math.round(age*10),1<<22)<<8;
+    }});
+  for(const [f,bytes] of files){Module.FS.mkdirTree(f.slice(0,f.lastIndexOf('/')));Module.FS.writeFile(f,bytes);}
+  postMessage({type:'status',text:'running'});
+  try{await Module.callMain(['0x100000']);}catch(e){postMessage({type:'status',text:'stopped: '+e});}
+};

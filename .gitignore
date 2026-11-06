@@ -10,6 +10,10 @@
 *.iso
 *.wbfs
 *.rvz
+*.cia
+*.3ds
+*.cci
+*.cxi
 *.dol
 *.elf
 *.wasm

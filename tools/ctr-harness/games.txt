@@ -1,0 +1,10 @@
+# Megamix games the browser build knows: index in the game table (GAME=), internal name, title.
+67 ctrBlanco Animal Acrobat
+77 ctrWoodCat LumBEARjack 2
+14 ctrWoodCat LumBEARjack
+69 ctrDotSamurai Super Samurai Slice
+89 rvlKarate Karate Man
+5 ntrRobot Fillbots
+7 rvlBadminton Air Rally
+13 ctrStep Catchy Tune
+96 remix Honeybee Remix

@@ -1,0 +1,23 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Megamix games</title>
+<style>
+  :root{color-scheme:dark}
+  body{margin:0;background:#111;color:#ddd;font:15px system-ui,sans-serif;display:grid;place-items:center;align-content:center;min-height:100vh}
+  canvas{touch-action:none;user-select:none;outline:none;width:min(100vw,800px);aspect-ratio:400/240;image-rendering:pixelated;background:#000;cursor:pointer}
+  p{margin:8px 16px;text-align:center}
+  a{color:#8cf}
+  #games.list{display:flex;flex-direction:column;gap:10px;min-width:min(90vw,320px)}
+  #games.list a{display:block;padding:12px 16px;border-radius:8px;background:#222;text-decoration:none;font-size:18px}
+  #games.list a:hover,button:hover{background:#2d3a48}
+  button{font:inherit;color:#ddd;background:#222;border:1px solid #444;border-radius:8px;padding:10px 16px;cursor:pointer}
+  #skip:not([hidden]){display:block;margin:8px auto}
+</style>
+<canvas width="400" height="240"></canvas>
+<button id="skip" hidden>Skip practice</button>
+<p id="status">Loading...</p>
+<p id="games"></p>
+<p id="judge"></p>
+<p id="perf"></p>
+<script type="module" src="host.mjs"></script>
