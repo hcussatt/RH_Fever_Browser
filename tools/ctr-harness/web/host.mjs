@@ -1,5 +1,5 @@
-// The probe page: starts audio on the first click, runs the game in a worker, draws its top screen
-// and passes the A button (Space, Left Shift or left click) and B (Right Shift or right click).
+// The probe page: lists the games, runs the picked one in a worker (it starts at once), draws its top
+// screen and passes the A button (Space, Left Shift or left click) and B (Right Shift or right click).
 let canvas=document.querySelector('canvas');
 const status=document.getElementById('status'),judge=document.getElementById('judge'),skip=document.getElementById('skip');
 let ctx; // the 2D fallback when the worker cannot draw with WebGL
@@ -13,29 +13,39 @@ const setSkipPractice=on=>{try{if(on)localStorage.setItem(SKIP_KEY,'1');else loc
 // The games in this build (games.json, written by build-web.sh). Without ?GAME= the page lists them all;
 // ?GAME=index plays that one.
 const games=await (await fetch('games.json')).json(),params=new URLSearchParams(location.search);
-const game=games.find(g=>String(g.game)===params.get('GAME'));
+let game=games.find(g=>String(g.game)===params.get('GAME'));
+// A game picked from the list starts at once: the page stays and the click that picked it lets its audio
+// play. Opened by its address, the game starts too, and waits for a click or key if the browser holds
+// its audio back until then.
+function showGame(){
+  document.title=game.title;canvas.hidden=false;judge.hidden=false;
+  status.textContent=`Starting ${game.title} (A: Space, Left Shift or left click; B: Right Shift or right click).`;
+  const list=document.getElementById('games');list.className='';list.innerHTML='<a href="./">All games</a>';
+}
 if(!game){
   document.title='Megamix games';canvas.hidden=true;judge.hidden=true;status.textContent='Pick a game:';
   const list=document.getElementById('games');list.className='list';
-  list.innerHTML=games.map(g=>`<a href="?GAME=${g.game}">${g.title}</a>`).join('')+'<button id="skip-practice" role="switch"></button>';
+  list.innerHTML=games.map(g=>`<a href="?GAME=${g.game}" data-game="${g.game}">${g.title}</a>`).join('')+'<button id="skip-practice" role="switch"></button>';
+  list.querySelectorAll('a[data-game]').forEach(a=>a.onclick=e=>{if(e.button||e.metaKey||e.ctrlKey||e.shiftKey||e.altKey)return;e.preventDefault();
+    game=games.find(g=>String(g.game)===a.dataset.game);params.set('GAME',a.dataset.game);history.pushState(null,'',a.href);showGame();start();});
   const toggle=document.getElementById('skip-practice');
   const show=()=>{const on=skipPractice();toggle.setAttribute('aria-checked',String(on));toggle.textContent=`Skip practice: ${on?'On':'Off'}`;};
   toggle.onclick=()=>{setSkipPractice(!skipPractice());show();};show();
-}else{
-  document.title=game.title;
-  status.textContent=`Click to start ${game.title} (A: Space, Left Shift or left click; B: Right Shift or right click).`;
-  document.getElementById('games').innerHTML='<a href="./">All games</a>';
 }
+addEventListener('popstate',()=>location.reload()); // Back from a game started in place: the list again
 // Each change carries its event time, so the game can judge it from when it happened.
 function pad(e){worker?.postMessage({type:'pad',pad:[...held.values()].reduce((a,b)=>a|b,0),at:performance.timeOrigin+(e?.timeStamp??performance.now())});}
 // Speaker latency as the browser reports it; ?delay=ms (or the site's saved audio delay) adds what the
 // browser cannot see, such as Bluetooth headphones.
 const latency=()=>((audio.outputLatency||0)+(audio.baseLatency||0))*1000;
-let delay=0;
-async function start(){
+let delay=0,started=false;
+async function start(){if(started)return;started=true;
   // At the DSP's own rate when the browser allows it, so the browser's resampler (not ours) converts.
   try{audio=new AudioContext({latencyHint:'interactive',sampleRate:32728});}catch{audio=new AudioContext({latencyHint:'interactive'});}
   await audio.audioWorklet.addModule('audio.js');
+  if(audio.state!=='running'){status.textContent=`Click or press Space to start ${game.title}.`;
+    await new Promise(r=>{const go=()=>{audio.resume();removeEventListener('pointerdown',go,true);removeEventListener('keydown',go,true);r();};
+      addEventListener('pointerdown',go,true);addEventListener('keydown',go,true);});}
   let saved=0;try{saved=+localStorage.getItem('rhf-audio-delay-ms')||0;}catch{}
   delay=params.has('delay')?+params.get('delay'):saved;
   setInterval(()=>worker?.postMessage({type:'latency',ms:latency()}),1000);
@@ -47,6 +57,7 @@ async function start(){
   addEventListener('probe-shader',({detail:{key,src}})=>{const v=key.split('|')[0];for(const k of Object.keys(shaders))if(k.split('|')[0]!==v)delete shaders[k];shaders[key]=src;try{localStorage.setItem(SHADERS,JSON.stringify(shaders));}catch{}});
   run(shaders,!skipPractice());
 }
+const perfStats={n:0,gaps:0,worst:0,at:null},perfLine=document.getElementById('perf');
 // One run of the game: a fresh worker, audio node and canvas (a canvas hands its drawing to one worker only).
 function run(shaders,practice){
   node=new AudioWorkletNode(audio,'game-audio',{outputChannelCount:[2]});node.connect(audio.destination);
@@ -57,6 +68,9 @@ function run(shaders,practice){
     if(data.type==='status')status.textContent=data.text;
     if(data.type==='practice')skip.hidden=true;
     if(['clock','judge','perf','shader','snap','rec'].includes(data.type))dispatchEvent(new CustomEvent('probe-'+data.type,{detail:data})); // tests listen too
+    // ?perf=1: a line under the game counting slow vblanks and audio gaps, with the worst one's details.
+    if(data.type==='perf'&&data.tick>0){const p=perfStats;p.n++;p.gaps=data.gaps;const ms=data.game+data.gpu;if(ms>=p.worst){p.worst=ms;p.at=data;}
+      const w=p.at;perfLine.textContent=`slow vblanks ${p.n}, audio gaps ${p.gaps}; worst ${p.worst.toFixed(0)} ms at tick ${w.tick.toFixed(0)} (game ${w.game.toFixed(1)}, GPU ${w.gpu.toFixed(1)} ms, shaders ${w.compiles}, textures ${w.uploads}); last at tick ${data.tick.toFixed(0)}: ${data.game.toFixed(1)} + ${data.gpu.toFixed(1)} ms`;}
     if(data.type==='judge')judge.textContent=`last input ${data.ms>0?'+':''}${data.ms.toFixed(0)} ms (${['outside the windows','barely','just'][data.kind]})`;};
   // Harness settings from the address (?FSTAT=1&DSPLOG=1 ...) pass through to the game's environment;
   // ?PRACTICE=0 or 1 overrides the Skip practice switch; ?PRACTICE=retry starts as on a retry (no title card
@@ -76,11 +90,12 @@ function run(shaders,practice){
 // scrolls or presses a focused control; losing focus releases everything held.
 const KEYS={Space:1,ShiftLeft:1,ShiftRight:2},MOUSE={0:1,2:2};
 function listen(c){
-  c.addEventListener('pointerdown',e=>{e.preventDefault();if(!worker){if(game)start();return;}if(MOUSE[e.button]){c.setPointerCapture(e.pointerId);held.set('mouse'+e.button,MOUSE[e.button]);pad(e);}});
+  c.addEventListener('pointerdown',e=>{e.preventDefault();if(!worker)return;if(MOUSE[e.button]){c.setPointerCapture(e.pointerId);held.set('mouse'+e.button,MOUSE[e.button]);pad(e);}});
   c.addEventListener('pointerup',e=>{if(held.delete('mouse'+e.button))pad(e);});
   c.addEventListener('pointercancel',e=>{if(held.delete('mouse'+e.button)|held.delete('mouse0')|held.delete('mouse2'))pad();});}
 listen(canvas);
-addEventListener('keydown',e=>{if(!KEYS[e.code])return;e.preventDefault();if(e.repeat)return;if(!worker){if(game)start();return;}held.set(e.code,KEYS[e.code]);pad(e);},true);
+addEventListener('keydown',e=>{if(!KEYS[e.code])return;e.preventDefault();if(e.repeat)return;if(!worker)return;held.set(e.code,KEYS[e.code]);pad(e);},true);
 addEventListener('keyup',e=>{if(!KEYS[e.code])return;e.preventDefault();if(held.delete(e.code))pad(e);},true);
 addEventListener('blur',()=>{if(held.size){held.clear();pad();}});
 document.addEventListener('contextmenu',e=>e.preventDefault());
+if(game){showGame();start();}

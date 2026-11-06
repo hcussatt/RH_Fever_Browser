@@ -112,10 +112,25 @@ export function createGpu(canvas,saved={},onNew=()=>{}){const stats={compiles:0,
         stats.uploads++;gl.bindTexture(gl.TEXTURE_2D,t.tex);gl.texSubImage2D(gl.TEXTURE_2D,0,0,0,w,h,gl.RGBA,gl.UNSIGNED_BYTE,heap.subarray(ptr,ptr+w*h*4));}
       else if(k===3){draw(c.subarray(i,i+99));i+=99;}
       else if(k===4){const t=[...targets.values()].find(t=>t.addr===c[i+1]&&t.w===480&&t.h===400),flip=c[i+2]&1;i+=3;
-        if(!t)continue;gl.bindFramebuffer(gl.FRAMEBUFFER,null);gl.viewport(0,0,400,240);gl.disable(gl.SCISSOR_TEST);gl.disable(gl.BLEND);gl.disable(gl.DEPTH_TEST);gl.colorMask(true,true,true,true);
-        gl.useProgram(present.p);gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,t.tex);gl.bindSampler(0,null);gl.uniform1i(present.uT[0],0);gl.uniform1i(present.uFlip,flip);
-        gl.drawArrays(gl.TRIANGLES,0,3);if(snap.want){const px=new Uint8Array(400*240*4);gl.readPixels(0,0,400,240,gl.RGBA,gl.UNSIGNED_BYTE,px);snap.got(px);}} // one triangle covering the canvas
+        if(!t)continue;keep(t);shown={flip};if(snap.want||!paced){blit();if(snap.want){const px=new Uint8Array(400*240*4);gl.readPixels(0,0,400,240,gl.RGBA,gl.UNSIGNED_BYTE,px);snap.got(px);}}}
       else break;}}
+  // The screen the game last presented, drawn to the canvas (one triangle covering it). The game runs on
+  // the audio clock, so its frames don't line up with the display's: drawn as they come, two could land
+  // in one display refresh and none in the next, a visible stutter in anything moving. So the canvas is
+  // drawn once per display refresh (requestAnimationFrame) with the newest finished screen.
+  // The game draws its next screen into the same buffer, so the finished one is copied aside first.
+  let shown=null,drawn=null,copy=null;
+  function keep(t){if(!copy){const tex=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,tex);gl.texStorage2D(gl.TEXTURE_2D,1,gl.RGBA8,480,400);
+      gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+      const fbo=gl.createFramebuffer();gl.bindFramebuffer(gl.FRAMEBUFFER,fbo);gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,tex,0);copy={tex,fbo};}
+    gl.bindFramebuffer(gl.READ_FRAMEBUFFER,t.fbo);gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER,copy.fbo);gl.disable(gl.SCISSOR_TEST);gl.colorMask(true,true,true,true);
+    gl.blitFramebuffer(0,0,480,400,0,0,480,400,gl.COLOR_BUFFER_BIT,gl.NEAREST);gl.bindFramebuffer(gl.FRAMEBUFFER,null);}
+  function blit(){if(!shown)return;drawn=shown;gl.bindFramebuffer(gl.FRAMEBUFFER,null);gl.viewport(0,0,400,240);gl.disable(gl.SCISSOR_TEST);gl.disable(gl.BLEND);gl.disable(gl.DEPTH_TEST);gl.colorMask(true,true,true,true);
+    gl.useProgram(present.p);gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,copy.tex);gl.bindSampler(0,null);gl.uniform1i(present.uT[0],0);gl.uniform1i(present.uFlip,shown.flip);
+    gl.drawArrays(gl.TRIANGLES,0,3);}
+  const paced=typeof requestAnimationFrame==='function';
+  if(paced){const tick=()=>{if(shown&&shown!==drawn)blit();requestAnimationFrame(tick);};requestAnimationFrame(tick);}
   function draw(d){
     const reg=r=>d[22+r-0xc0],texcfg=d[12],at=reg(0x104);
     const params=[d[14],d[17],d[20]],border=params.map(p=>(p>>12&7)===1|((p>>8&7)===1)<<1);
