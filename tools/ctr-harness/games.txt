@@ -68,3 +68,9 @@
 53 rvlGoma2 Flipper-Flop 2
 63 rvlSeesaw See-Saw
 16 agbClap2 The Clappy Trio 2
+78 agbClap3 The Snappy Trio
+79 agbSpaceDance2 Cosmic Dance
+80 agbTap2 Tap Trial 2
+81 ntrFrog2 Jumpin' Jazz
+82 ntrIdol2 Fan Club 2
+84 rvlGolf2 Hole in One 2
