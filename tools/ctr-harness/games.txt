@@ -57,3 +57,5 @@
 59 rvlRobot Screwbot Factory
 65 rvlWatch Monkey Watch
 68 ctrChameleon Tongue Lashing
+70 ctrFruitbasket2 Fruit Basket 2
+76 ctrTeppan Kitties!
