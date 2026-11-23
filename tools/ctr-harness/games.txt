@@ -42,3 +42,6 @@
 30 ntrBackbeat Lockstep
 31 ntrBlueBirds Blue Birds
 47 rvlBook Cheer Readers
+60 rvlRocket Launch Party
+20 agbMarcher Marching Orders
+23 agbRabbit Bunny Hop
