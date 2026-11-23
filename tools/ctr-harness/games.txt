@@ -38,3 +38,7 @@
 37 ntrNinja Dog Ninja
 52 rvlGolf Hole in One
 25 agbShuji Power Calligraphy
+74 ctrSumou Sumo Brothers
+30 ntrBackbeat Lockstep
+31 ntrBlueBirds Blue Birds
+47 rvlBook Cheer Readers
