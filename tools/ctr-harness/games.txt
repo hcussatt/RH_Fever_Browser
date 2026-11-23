@@ -65,3 +65,6 @@
 45 rvlBatting Exhibition Match
 50 rvlFlea2 Micro-Row 2
 56 rvlMuscle2 Figure Fighter 2
+53 rvlGoma2 Flipper-Flop 2
+63 rvlSeesaw See-Saw
+16 agbClap2 The Clappy Trio 2
