@@ -34,3 +34,7 @@
 26 agbSpaceDance Space Dance
 66 ctrBear Blue Bear
 72 ctrPillow Pajama Party
+33 ntrCameraMan Freeze Frame
+37 ntrNinja Dog Ninja
+52 rvlGolf Hole in One
+25 agbShuji Power Calligraphy
