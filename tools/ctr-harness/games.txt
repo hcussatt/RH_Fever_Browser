@@ -61,3 +61,7 @@
 76 ctrTeppan Kitties!
 39 ntrRobot2 Fillbots 2
 40 ntrShooting2 Shoot-'em-up 2
+44 rvlBadminton2 Air Rally 2
+45 rvlBatting Exhibition Match
+50 rvlFlea2 Micro-Row 2
+56 rvlMuscle2 Figure Fighter 2
