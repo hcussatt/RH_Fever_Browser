@@ -13,3 +13,8 @@
 10 rvlMuscle Figure Fighter
 11 ctrFruitbasket Fruit Basket
 97 remix Machine Remix
+0 agbClap The Clappy Trio
+6 ntrShooting Shoot-'em-up
+8 rvlFlea Micro-Row
+12 ctrInterpreter First Contact
+98 remix Citrus Remix
