@@ -46,3 +46,7 @@
 20 agbMarcher Marching Orders
 23 agbRabbit Bunny Hop
 32 ntrBoxShow The Dazzles
+48 rvlDate Double Date
+49 rvlFishing Catch of the Day
+51 rvlFork Fork Lifter
+54 rvlInterview Ringside
