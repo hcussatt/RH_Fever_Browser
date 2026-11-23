@@ -30,3 +30,7 @@
 35 ntrFrog Frog Hop
 75 ctrTango Tangotronic 3000
 101 remix Songbird Remix
+15 agbBatter Spaceball
+26 agbSpaceDance Space Dance
+66 ctrBear Blue Bear
+72 ctrPillow Pajama Party
