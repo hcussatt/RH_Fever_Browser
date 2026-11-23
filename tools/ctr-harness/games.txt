@@ -54,3 +54,6 @@
 58 rvlReceive Bossa Nova
 61 rvlRotation2 Board Meeting
 64 rvlSort Packing Pests
+59 rvlRobot Screwbot Factory
+65 rvlWatch Monkey Watch
+68 ctrChameleon Tongue Lashing
