@@ -22,3 +22,7 @@
 4 ntrPingpong Rhythm Rally
 9 rvlGoma Flipper-Flop
 99 remix Donut Remix
+100 remix Barbershop Remix
+24 agbRat Rat Race
+36 ntrIdol Fan Club
+55 rvlManju Working Dough
