@@ -38,7 +38,7 @@ for game in $games; do
   { { GL=1 INTERLEAVE=1 GSP=1 GAME=$game START=200 HWAKE=1 WORKERS=all,tramp,gsp SECS=${SECS:-200} ROMLOG=1 PRACTICE=0 \
         ROMEXIT=layout/epilogue_ build/ctr/run 0x100000 2>&1
       GL=1 INTERLEAVE=1 GSP=1 GAME=$game START=200 HWAKE=1 WORKERS=all,tramp,gsp SECS=60 ROMLOG=1 PRACTICE=1 \
-        ROMEXIT=GROUP_ENDLESS build/ctr/run 0x100000 2>&1; } | awk '/^  file /{print $2}'
+        ROMEXIT=GROUP_ENDLESS build/ctr/run 0x100000 2>&1; } | sed -n 's/^  file \(.*\) +[0-9a-f]* frame [0-9]*$/\1/p' # paths can hold spaces (Munchy Monk's "ntr_shugyo 32k.aac")
     awk '{print $3}' build/ctr/romfs-index.txt | grep -E "^sound/group/GROUP_(EPILOGUE|RESULT)_|^layout/epilogue_$name"
   } | sort -u > "$list.part" && mv "$list.part" "$list" &
   running=$((running+1)); [ "$running" -lt "${JOBS:-4}" ] || { wait; running=0; }
@@ -54,10 +54,10 @@ for game in $games; do
     [ ! -f build/ctr/system-font.bcfnt ] || echo build/ctr/system-font.bcfnt
     sed 's|^|build/ctr/romfs/|' "$list"; } > "$out/files-$game.txt"
   # Music: decoded once, to 16-bit stereo next to each .aac (as the native harness reads it).
-  for f in $(grep '\.aac$' "$out/files-$game.txt"); do
-    [ "$f.pcm" -nt "$f" ] || "$PYTHON" tools/ctr-harness/decode-aac.py "$f"
-    echo "$f.pcm" >> "$out/files-$game.txt"
-  done
+  grep '\.aac$' "$out/files-$game.txt" | while read -r f; do
+    [ "$f.pcm" -nt "$f" ] || "$PYTHON" tools/ctr-harness/decode-aac.py "$f" >&2 </dev/null
+    echo "$f.pcm"
+  done >> "$out/files-$game.txt"
   while read -r f; do
     [ "$out/data/$f" -nt "$f" ] && continue
     # the dump's files can be read-only (and so their earlier copies): make the copy writable
