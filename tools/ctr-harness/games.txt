@@ -18,3 +18,7 @@
 8 rvlFlea Micro-Row
 12 ctrInterpreter First Contact
 98 remix Citrus Remix
+1 agbGhost Sneaky Spirits
+4 ntrPingpong Rhythm Rally
+9 rvlGoma Flipper-Flop
+99 remix Donut Remix
