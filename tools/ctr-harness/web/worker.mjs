@@ -48,7 +48,7 @@ onmessage=async({data})=>{
       const tA=performance.now();if(gpu&&ncmd)gpu.run(Module.HEAPU8,cmd,ncmd,vtx);
       // ?perf=1: report slow vblanks (over 20 ms; ?perf=ms sets the bar) (game time since the last one, GPU time, new shaders and textures)
       if(perf){const tB=performance.now(),game=tA-lastEnd;if(game+tB-tA>=perf)postMessage({type:'perf',at:tB,tick:lastTick,game,gpu:tB-tA,compiles:gpu?.stats.compiles,uploads:gpu?.stats.uploads,skipped:gpu?.stats.skipped,gaps,inTask});}
-      frames++;if(frames%120===0)postMessage({type:'status',text:`vblank ${frames}, ${((performance.now()-t0)/1000).toFixed(1)} s, audio queued ${queued|0}, drawn ${drawnCount}`});
+      frames++;if(frames%120===0)postMessage({type:'status',text:`vblank ${frames}, ${((performance.now()-t0)/1000).toFixed(1)} s, audio queued ${queued|0}, drawn ${drawnCount}, heard ${(behind(performance.timeOrigin+performance.now())??NaN).toFixed(0)} ms after it is made (speaker ${outputLatency.toFixed(0)} ms, delay ${extraDelay} ms)`});
       if(n){const pcm=Module.HEAP16.slice(samples>>1,(samples>>1)+n*2);if(rec){rec.push(pcm.filter((v,i)=>!(i&1)));recN+=n;if(recN>=65536){const all=new Int16Array(recN);let o=0;for(const c of rec){all.set(c,o);o+=c.length;}postMessage({type:'rec',pos:posted+n-recN,pcm:all},[all.buffer]);rec=[];recN=0;}}queued+=n;posted+=n;audio.postMessage(pcm,[pcm.buffer]);}
       if(drawn){drawnCount++;const src=Module.HEAPU8.subarray(rgb,rgb+400*240*3),px=new Uint8ClampedArray(400*240*4);
         for(let i=0,j=0;i<px.length;i+=4,j+=3){px[i]=src[j];px[i+1]=src[j+1];px[i+2]=src[j+2];px[i+3]=255;}
