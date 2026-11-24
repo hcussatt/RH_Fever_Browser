@@ -14,6 +14,8 @@ This project ports original Rhythm Heaven Fever minigames into standalone client
 
 Preserve original timing windows, float operation order, scoring, and Perfect rules. Do not force results, widen windows, or enable rollback. Unsupported instructions and platform calls must be investigated rather than silently ignored. Do not describe static translation or fallback original objects as completed decompilation, or claim 1:1 fidelity from autoplay alone. Treat older notes about missing features as historical; inspect current code before relying on them.
 
+For console GPU emulation (the 3DS harness in `tools/ctr-harness/`), match the original hardware's precision and behavior, not the browser GPU's: for example, 24-bit float shader math, 24-bit depth, and 8-bit color, with values rounded to those formats. Games rely on exact equality at that precision, such as sprites drawn with depth EQUAL or LEQUAL at the same depth.
+
 ## Source layout
 
 - `games/<id>/game.json`: game manifests, original units, banks, sounds, timing, and projection.
