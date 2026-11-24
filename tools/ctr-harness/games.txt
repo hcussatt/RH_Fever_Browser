@@ -75,3 +75,11 @@
 84 rvlGolf2 Hole in One 2
 86 rvlMuscle3 Figure Fighter 3
 87 ctrBlanco2 Jungle Gymnast
+85 rvlManju2 Working Dough 2
+71 ctrInterpreter2 Second Contact
+88 ctrDotSamurai2 Super Samurai Slice 2
+18 agbHair2 Rhythm Tweezers 2
+28 agbTono Ninja Bodyguard
+73 ctrStep2 Catchy Tune 2
+19 agbHopping Bouncy Road
+21 agbNightWalk Night Walk
