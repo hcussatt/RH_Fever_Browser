@@ -13,6 +13,8 @@ const skipPractice=()=>{try{return localStorage.getItem(SKIP_KEY)==='1';}catch{r
 const setSkipPractice=on=>{try{if(on)localStorage.setItem(SKIP_KEY,'1');else localStorage.removeItem(SKIP_KEY);}catch{}};
 // The games in this build (games.json, written by build-web.sh). Without ?GAME= the page lists them all;
 // ?GAME=index plays that one.
+// Each story remix (game table index) and the four games it mixes, in the order they play in the story.
+const REMIXES={96:[89,5,7,13],97:[2,3,10,11],98:[0,6,8,12],99:[24,36,55,67],100:[1,4,9,14],101:[27,35,75,54]};
 const games=await (await fetch('games.json')).json(),params=new URLSearchParams(location.search);
 let game=games.find(g=>String(g.game)===params.get('GAME'));
 // A game picked from the list starts at once: the page stays and the click that picked it lets its audio
@@ -26,7 +28,12 @@ function showGame(){
 if(!game){
   document.title='Megamix games';canvas.hidden=true;judge.hidden=true;status.textContent='Pick a game:';
   const list=document.getElementById('games');list.className='list';
-  list.innerHTML=games.map(g=>`<a href="?GAME=${g.game}" data-game="${g.game}">${g.title}</a>`).join('')+'<button id="skip-practice" role="switch"></button>';
+  // One column per remix, the remix on top and its four games under it; the other games below.
+  const byIndex=new Map(games.map(g=>[g.game,g])),link=(g,c='')=>`<a class="${c}" href="?GAME=${g.game}" data-game="${g.game}">${g.title}</a>`;
+  const sets=Object.entries(REMIXES).filter(([r])=>byIndex.has(+r)),inSet=new Set(sets.flatMap(([r,m])=>[+r,...m]));
+  const others=games.filter(g=>!inSet.has(g.game)).sort((a,b)=>a.game-b.game);
+  list.innerHTML=`<div class="remixes">${sets.map(([r,m])=>`<div class="set">${link(byIndex.get(+r),'remix')}${m.filter(i=>byIndex.has(i)).map(i=>link(byIndex.get(i))).join('')}</div>`).join('')}</div>`+
+    (others.length?`<h2>Other games</h2><div class="others">${others.map(g=>link(g)).join('')}</div>`:'')+'<button id="skip-practice" role="switch"></button>';
   list.querySelectorAll('a[data-game]').forEach(a=>a.onclick=e=>{if(e.button||e.metaKey||e.ctrlKey||e.shiftKey||e.altKey)return;e.preventDefault();
     game=games.find(g=>String(g.game)===a.dataset.game);params.set('GAME',a.dataset.game);history.pushState(null,'',a.href);showGame();start();});
   const toggle=document.getElementById('skip-practice');

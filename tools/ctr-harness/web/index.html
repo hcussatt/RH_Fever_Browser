@@ -8,8 +8,14 @@
   canvas{touch-action:none;user-select:none;outline:none;width:min(100vw,800px);aspect-ratio:400/240;image-rendering:pixelated;background:#000;cursor:pointer}
   p{margin:8px 16px;text-align:center}
   a{color:#8cf}
-  #games.list{display:flex;flex-direction:column;gap:10px;min-width:min(90vw,320px)}
-  #games.list a{display:block;padding:12px 16px;border-radius:8px;background:#222;text-decoration:none;font-size:18px}
+  #games.list{display:flex;flex-direction:column;gap:12px;width:min(calc(100vw - 32px),1100px)}
+  #games.list .remixes,#games.list .others{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;align-items:start}
+  #games.list .set{display:flex;flex-direction:column;gap:8px}
+  #games.list h2{margin:12px 0 0;font-size:16px;font-weight:600;color:#aaa;text-align:left}
+  #games.list a{display:block;padding:10px 12px;border-radius:8px;background:#222;text-decoration:none;font-size:16px;text-align:left}
+  #games.list a.remix{background:#3a2a48;font-weight:600}
+  #games.list a.remix:hover{background:#4a3a5c}
+  #games.list #skip-practice{align-self:center}
   #games.list a:hover,button:hover{background:#2d3a48}
   button{font:inherit;color:#ddd;background:#222;border:1px solid #444;border-radius:8px;padding:10px 16px;cursor:pointer}
   #skip:not([hidden]){display:block;margin:8px auto}
